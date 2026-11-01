@@ -239,8 +239,9 @@ impl<'o> Dlg<'o> {
                 let mut stops = std::mem::take(&mut r.stops);
                 stops.sort_by_key(|s| s.2);
                 r.prev = stops.into_iter().map(|s| (s.0, s.1)).collect();
-                r.prev_items = std::mem::take(&mut r.items);
+                r.prev_items = group_list(std::mem::take(&mut r.items));
                 r.brk = false;
+                r.cont = false;
                 r.pass = frame;
             }
             r.prev.clone()
@@ -960,8 +961,10 @@ struct Ring {
     prev: Vec<(egui::Id, StopKind)>,
     /// This pass's controls for the arrows' groups (whether each starts
     /// one), a group box drawn since the last, and last pass's.
-    items: Vec<(egui::Id, GroupKind, bool)>,
+    items: Vec<RawItem>,
     brk: bool,
+    /// The next control continues the group before it (no WS_GROUP).
+    cont: bool,
     prev_items: Vec<(egui::Id, GroupKind, bool)>,
 }
 
@@ -987,13 +990,55 @@ fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
     let Some(d) = cur_dlg(ctx) else { return };
     ctx.data_mut(|m| {
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
-        if r.items.iter().any(|s| s.0 == id) {
+        if r.items.iter().any(|s| s.id == id) {
             return;
         }
-        let start = r.brk || kind == GroupKind::Other || r.items.last().is_none_or(|l| l.1 != kind);
-        r.items.push((id, kind, start));
+        // Its place in the template's order, where the drawing order differs.
+        let place = m.get_temp::<Option<u32>>(egui::Id::new("fv_tab_index")).flatten();
+        let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
+        let place = place.unwrap_or(10_000 + r.items.len() as u32);
+        let (brk, cont) = (r.brk, r.cont);
+        r.items.push(RawItem { id, kind, brk, cont, place });
         r.brk = false;
+        r.cont = false;
     });
+}
+
+/// A control drawn for the arrows' groups, before the groups are made.
+#[derive(Clone, Copy)]
+struct RawItem {
+    id: egui::Id,
+    kind: GroupKind,
+    /// A group box was drawn before it.
+    brk: bool,
+    /// It has no WS_GROUP of its own: it continues the span before it
+    /// whatever that holds (537's radios after the combo box of «Ic»).
+    cont: bool,
+    place: u32,
+}
+
+/// The controls in the template's order with whether each starts a group:
+/// after a group box, or when it is another kind than the one before it, or
+/// a control that keeps the arrows (a label and its combo or edit begin a
+/// span in the templates) — unless the template gives it no WS_GROUP.
+fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool)> {
+    raw.sort_by_key(|i| i.place);
+    let mut out: Vec<(egui::Id, GroupKind, bool)> = Vec::new();
+    for i in raw {
+        let start = !i.cont && (i.brk || i.kind == GroupKind::Other || out.last().is_none_or(|l| l.1 != i.kind));
+        out.push((i.id, i.kind, start));
+    }
+    out
+}
+
+/// The next control has no WS_GROUP: it joins the span before it, a combo
+/// box included (clone, page 537: ↑ from «Расчетный» reaches the combo box
+/// of «Ic», ↓ from «Измеренный» goes round to it).
+pub fn group_continue(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).cont = true);
+    }
 }
 
 /// A group box drawn: the next control starts a group.
@@ -2233,6 +2278,59 @@ mod tests {
         assert_eq!(group_step(&items, 3, false), 1, "round to the first radio");
         assert_eq!(group_step(&items, 1, true), 3, "back round to the last");
         assert_eq!(group_step(&items, 5, false), 4);
+    }
+
+    /// A span that mixes kinds (clone, page 537: the radios after the combo
+    /// box of «Ic» have no WS_GROUP): ↑ from the first radio focuses that
+    /// combo box (it is not clicked), ↓ from the last goes round to it, and
+    /// the combo box keeps its arrows. The template's order is not the
+    /// drawing order here (the radios are drawn first).
+    #[test]
+    fn an_arrow_reaches_the_combo_of_a_mixed_span() {
+        let ctx = egui::Context::default();
+        let ids = std::cell::RefCell::new(Vec::new());
+        let choice = std::cell::Cell::new(0usize);
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "t").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 200.0), egui::Sense::hover());
+                    let r = |y: f32| Rect::from_min_size(client.min + Vec2::new(10.0, y), Vec2::new(150.0, 18.0));
+                    group_continue(ui);
+                    tab_index(ui, 3);
+                    let a = win_radio_en(ui, r(40.0), "a", true, true);
+                    tab_index(ui, 3);
+                    let b = win_radio_en(ui, r(70.0), "b", false, true);
+                    let items = vec!["x".to_string(), "y".to_string(), "z".to_string()];
+                    tab_index(ui, 2);
+                    if let Some(k) = win_combo_list(ui, r(10.0), egui::Id::new("combo"), &items, choice.get(), true) {
+                        choice.set(k);
+                    }
+                    let _ = (a, b);
+                    *ids.borrow_mut() = vec![egui::Id::new("combo")];
+                });
+            });
+        };
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }];
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        let combo = ids.borrow()[0];
+        let focused = || ctx.memory(|m| m.focused());
+        // Tab: combo (2), radio a (3, the checked one); ↑ from it.
+        pass(key(egui::Key::Tab));
+        pass(vec![]);
+        assert!(focused().is_some_and(|f| f != combo), "the checked radio holds the focus");
+        pass(key(egui::Key::ArrowUp));
+        pass(vec![]);
+        assert_eq!(focused(), Some(combo), "↑ from the first radio reaches the combo box");
+        assert_eq!(choice.get(), 0, "it is focused, not stepped");
+        pass(key(egui::Key::ArrowDown));
+        pass(vec![]);
+        assert_eq!((focused(), choice.get()), (Some(combo), 1), "the combo box keeps its arrows");
     }
 
     /// ↓ on a focused radio focuses and clicks the next one of its frame

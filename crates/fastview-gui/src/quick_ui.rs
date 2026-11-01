@@ -734,6 +734,9 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
     pg.group(ui, (6, 12, 319, 113), "Ток 3Io");
     crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (238, 17, 86, 10), "Отключить", &mut f.zero_i_off, !u_off, true);
+    // The radios have no WS_GROUP: with the combo box of «Ic» they make one
+    // span for the arrows (clone: ↑ from «Расчетный» reaches that combo).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (72, 36, 53, 10), "Расчетный", f.zero_i != 2, !i_off) {
         f.zero_i = 1;
@@ -750,12 +753,18 @@ fn zero_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) {
         pg.combo(ui, (36, cy, 132, 54), ["q_zia", "q_zib", "q_zic"][k], v, names, !i_off && calc);
     }
     pg.label(ui, (179, 57, 14, 8), "3Io:", true, !i_off);
+    // Last in the span of «Uc» and the voltage radios (its label follows it
+    // in the template).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 8);
     pg.combo(ui, (198, 55, 120, 54), "q_z3io", &mut f.i3o, names, !i_off && !calc);
     pg.group(ui, (6, 132, 318, 138), "Напряжение 3Uo");
     crate::dialogs::tab_index(ui, 13);
     pg.check(ui, (244, 137, 78, 8), "Отключить", &mut f.zero_u_off, !i_off, true);
     for (m, (r, text)) in [((54, 156, 107, 10), "Расчитанный из Ua, Ub, Uc"), ((198, 156, 102, 10), "Расчитанный из Uни, Uик"), ((198, 228, 72, 10), "Измеренный")].into_iter().enumerate() {
+        if m == 0 {
+            crate::dialogs::group_continue(ui);
+        }
         crate::dialogs::tab_index(ui, 7);
         if pg.radio(ui, r, text, f.zero_u == m as u8 + 1, !u_off) {
             f.zero_u = m as u8 + 1;
@@ -802,6 +811,8 @@ fn phase_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[String]) 
     pg.label(ui, (174, 80, 102, 8), "- ток точной работы", false, true);
     pg.group(ui, (7, 99, 315, 127), "Ток 3Io*");
     pg.label(ui, (42, 111, 152, 8), "Расчет коэффициента компенсации тока 3Io", false, true);
+    // No WS_GROUP: the radios join the span of «Ic»'s combo box.
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 3);
     if pg.radio(ui, (24, 123, 103, 10), "По удельным параметрам", f.per_unit, true) {
         f.per_unit = true;
