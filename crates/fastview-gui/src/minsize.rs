@@ -15,6 +15,7 @@ const WM_RUN_DIALOGS: u32 = WM_APP + 0x51;
 
 static DONE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
+#[cfg_attr(test, allow(dead_code))]
 /// Post the frame its turn for the queued system dialogs (false: no frame is subclassed yet).
 pub fn post_run() -> bool {
     let hwnd = DONE.load(std::sync::atomic::Ordering::Relaxed) as HWND;

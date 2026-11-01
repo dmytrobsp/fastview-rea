@@ -30,9 +30,11 @@ pub enum Job {
 }
 
 /// The dialog in progress and what runs when it ends.
+type Then = Box<dyn FnOnce(&mut App, &egui::Context, Picked)>;
+
 pub struct Pending {
     rx: Receiver<Picked>,
-    then: Box<dyn FnOnce(&mut App, &egui::Context, Picked)>,
+    then: Then,
 }
 
 /// The context to wake when a dialog ends (set by the frame).
@@ -158,12 +160,11 @@ fn start(runner: Box<dyn FnOnce() -> Picked + Send>) -> Receiver<Picked> {
                 wake();
             }))
         });
-        if crate::minsize::post_run() {
-            return rx;
+        if !crate::minsize::post_run() {
+            // No frame to post to: asked now, here.
+            run_queued();
         }
-        // No frame to post to: asked now, here.
-        run_queued();
-        return rx;
+        rx
     }
     #[cfg(test)]
     {
