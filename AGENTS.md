@@ -40,6 +40,9 @@ python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'      # the mil
 
 Run `tools/gates.sh` as its own command, never chained with a commit.
 
+The Rust toolchain is pinned in `rust-toolchain.toml` (local builds and CI use it; rustup installs it on first use);
+bump it on purpose: change `channel` in that one file, run `tools/gates.sh`, and let CI confirm on all three platforms.
+
 ## Hard rules
 
 - **Never publish the original or raw analysis output.** Never commit or push the original program or any part of

@@ -34,6 +34,8 @@ jobs:
       - run: python3 -I -m unittest discover -s tools/milestone -p 'test_*.py'
       # The synthetic-record generator and the user-data check (tools/records).
       - run: python3 -I -m unittest discover -s tools/records -p 'test_*.py'
+      # The clone script's logic (tools/vm).
+      - run: python3 -I -m unittest discover -s tools/vm -p 'test_*.py'
 
   # Whether anything that is built changed since the last commit whose
   # checks passed: notes, docs, tools, indexes or Markdown alone skip the checks
@@ -103,9 +105,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      # The pinned toolchain of rust-toolchain.toml (version, components), not
+      # whatever "stable" is today: a new release's lints cannot break a run.
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustc --version
       # Every run restores main's cache; only main writes one (a cache saved
       # by a tag or PR run is scoped to that ref and would only crowd out
       # main's under the 10 GB limit).
@@ -146,9 +153,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.targets }}
+      # The pinned toolchain of rust-toolchain.toml, plus this job's targets.
+      - name: Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add ${TARGETS//,/ }
+          rustc --version
+        env:
+          TARGETS: ${{ matrix.targets }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
