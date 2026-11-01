@@ -5889,13 +5889,13 @@ mod window_tests {
         std::fs::write(path, util::png_rgba(c.w as u32, c.h as u32, &rgba)).unwrap();
     }
 
-    /// #78 through the call site: a zoomed plane's scroll bar is the
-    /// system's 26 px at 150 % (its grey track across the window's right
+    /// #78, #141 through the call site: a zoomed plane's scroll bar is 25 px at
+    /// 150 % (the system's 26 less one; its grey track across the window's right
     /// edge), not the 100 % width scaled (24).
     #[test]
     fn a_zoomed_planes_scroll_bar_is_the_system_width() {
         let fonts = app_fonts();
-        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 21), (144, 1.5, 26)] {
+        for (dpi_v, native, bar) in [(96u32, 1.0f32, 16usize), (120, 1.25, 20), (144, 1.5, 25)] {
             dpi::set(dpi_v);
             let mut app = demo(&[]);
             app.diag.circle.z = 2.0;
