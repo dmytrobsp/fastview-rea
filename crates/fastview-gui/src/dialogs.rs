@@ -1026,6 +1026,20 @@ pub fn arrow_spans(ctx: &egui::Context, title: &str) -> Vec<Vec<GroupKind>> {
     out
 }
 
+/// `arrow_spans` with the disabled controls kept (each with whether it is enabled; tests).
+#[cfg(test)]
+pub fn arrow_spans_all(ctx: &egui::Context, title: &str) -> Vec<Vec<(GroupKind, bool)>> {
+    let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
+    let mut out: Vec<Vec<(GroupKind, bool)>> = Vec::new();
+    for (_, kind, start, enabled) in ring.prev_items {
+        if start || out.is_empty() {
+            out.push(Vec::new());
+        }
+        out.last_mut().unwrap().push((kind, enabled));
+    }
+    out
+}
+
 /// A control drawn for the arrows' groups, before the groups are made.
 #[derive(Clone, Copy)]
 struct RawItem {

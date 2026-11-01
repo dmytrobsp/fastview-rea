@@ -708,6 +708,8 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
     pg.check(ui, (204, 54, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, !i_off, false);
     pg.label(ui, (27, 102, 162, 8), "* - только в сетях с изолированной нейтралью", false, !i_off);
     pg.group(ui, (6, 126, 307, 108), "Напряжения");
+    // The second «Отключить» has no WS_GROUP either: the two are one span (536 template, as 537's).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (200, 131, 112, 8), "Отключить", &mut f.voltages_off, !i_off, true);
     crate::dialogs::tab_index(ui, 4);
@@ -1016,6 +1018,8 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.label(ui, (149, 363, 24, 8), "Kторм:", true, kt);
     let kts = ["1".to_string(), "0.5".to_string()];
     let kcur = kts.iter().position(|k| *k == f.k_torm).unwrap_or(0);
+    // The «Kторм» combo box has no WS_GROUP: it ends the span of the three radios before it (539 template).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 23);
     if let Some(k) = pg.choice(ui, (185, 362, 42, 30), "q_dif_kt", &kts, kcur, kt) {
         f.k_torm = kts[k].clone();

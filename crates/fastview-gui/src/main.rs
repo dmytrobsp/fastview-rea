@@ -5676,6 +5676,99 @@ mod window_tests {
         has(&w, "Установка настроек программы", &[Push]);
     }
 
+    /// Every dialog's arrow spans are its template's WS_GROUP spans (#183): a
+    /// span runs from a control with WS_GROUP to the next, whatever the kinds
+    /// (labels and group boxes only mark where one starts; the dialog manager
+    /// walks the controls left in it, a disabled one kept in its place:
+    /// lower case below). The list per dialog is the template's spans that hold
+    /// a push button, a radio or a check box (P, R, C; O is any other control),
+    /// read from the 100 templates, so a span no heuristic of kinds can give
+    /// (347's «Свойства...» with «Параметры страницы», 536's two «Отключить»,
+    /// 539's «Kторм» after the radios) is checked too. Not here: 492's progress
+    /// bar with «Отмена» (whether the bar takes the arrows' focus is not known),
+    /// 335 (no dialog of ours).
+    #[test]
+    fn every_dialogs_arrow_spans_follow_its_template() {
+        use crate::dialogs::{arrow_spans_all, GroupKind};
+        let spans = |w: &Win, t: &str| -> Vec<String> {
+            arrow_spans_all(&w.ctx, t)
+                .iter()
+                .map(|s| {
+                    s.iter()
+                        .map(|(k, on)| {
+                            let c = match k {
+                                GroupKind::Push => 'P',
+                                GroupKind::Radio => 'R',
+                                GroupKind::Check => 'C',
+                                GroupKind::Other => 'O',
+                            };
+                            if *on { c } else { c.to_ascii_lowercase() }
+                        })
+                        .collect::<String>()
+                })
+                .filter(|s| s.chars().any(|c| "PRCprc".contains(c)))
+                .collect()
+        };
+        let check = |w: &Win, t: &str, want: &[&str]| assert_eq!(spans(w, t), want, "{t}");
+        // 347 «Печать»: «Свойства...» (off with no printer) with «Параметры страницы»; the preview alone;
+        // OK, Отмена and the five checks.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Print);
+        w.idle(4);
+        check(&w, "Печать", &["pP", "P", "PPCCCCC"]);
+        // 477, 336, 332, 353.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Coefficients);
+        w.idle(4);
+        check(&w, "Коэффициенты трансформации", &["OPP"]);
+        let mut w = Win::new();
+        w.app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        w.idle(4);
+        check(&w, "Настройки частотной диаграммы", &["RR", "RR", "PP"]);
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        w.app.dispatch(app::Command::OmpParams);
+        w.idle(4);
+        check(&w, "omp_params_dialog", &["OPP"]);
+        let mut w = Win::new();
+        w.app.comment_edit = Some(crate::comments::CommentEdit { idx: 0, text: "x".into() });
+        w.idle(4);
+        check(&w, "Комментарии к диаграмме", &["OPP"]);
+        // 558 the finder, 510 the settings (no folder: no link), 554 the pair dialog.
+        let mut w = Win::new();
+        w.app.open_finder();
+        w.idle(4);
+        check(&w, "Поиск файлов", &["PPPOOOO", "POC"]);
+        let mut w = Win::new();
+        w.app.show_settings = true;
+        w.idle(4);
+        check(&w, "Установка настроек программы", &["PP", "P", "RR", "RRRR"]);
+        let mut w = Win::new();
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        w.app.diag.pair_dlg = Some(crate::diagram_ui::PairDialog { diff: true, pairs: Vec::new(), a: Some(names[0].clone()), b: Some(names[1].clone()), sel: None, list_focus: false });
+        w.idle(4);
+        check(&w, "Задать соответствие между дифференциальным током и током торможения", &["PPOOPOp"]);
+        // The quick-analysis pages 536–539, 543 and the formula editor 340 (each with the sheet's own buttons) and 359.
+        let page = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CC", "PP"]);
+        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CC", "PP"]);
+        check(&page(app::AnalysisTab::PhasePhase), "fv_quick_sheet", &["OC", "RROOOO", "PP"]);
+        check(&page(app::AnalysisTab::Phase), "fv_quick_sheet", &["ORR", "PP"]);
+        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "c", "PP"]);
+        let mut w = page(app::AnalysisTab::Formula);
+        check(&w, "fv_quick_sheet", &["OPPPPPPP", "PP"]);
+        w.app.open_formula_dlg();
+        w.idle(4);
+        check(&w, "fv_add_formula", &["OOPP"]);
+    }
+
     /// A bar is no dialog (clone: Tab goes nowhere in the original, a push
     /// button outside a dialog takes no arrow): a frame control holding the
     /// focus keeps Tab and the arrows from walking egui's focus on to another
