@@ -87,8 +87,8 @@ impl WinMetrics {
 /// first run's small frame. Its height there, 54 px, is under the 70 px of the smallest lane; the
 /// bar's rule below is that, INFERRED from those two cases (147). Above the floor it is the
 /// original's own scroll-bar rule (`0x45d4a0`): the lanes taller than the view (after its
-/// horizontal bar) less the ruler band plus 2 — a clone at 125 %: one lane (138 px) in a view 166
-/// high, the band 30, is exactly at the limit and shows no bar; at 150 % in 148 it does. On a first
+/// horizontal bar) less the ruler band plus 2 — a clone at 125 %: one lane (93 px) in a view 166
+/// high, the band 75 (the difference band shown), is exactly at the limit and shows no bar; at 150 % in 148 it does. On a first
 /// run's small frame the bar is also missing at 125 % / 150 % (the view 9 / 0 px high after its
 /// horizontal bar), opened from the command line or in the running program with the frame shown:
 /// not the frame's visibility.
@@ -473,7 +473,7 @@ mod tests {
         let first = view_width_at_creation(229.0, 86.0, 670.0, 30.0, m);
         assert_eq!(first, 203.0);
         assert_eq!(initial_scale(None, first, 60), 0.25);
-        let max = view_width_at_creation(571.0, 310.0, 138.0, 30.0, m);
+        let max = view_width_at_creation(571.0, 310.0, 93.0, 75.0, m);
         assert_eq!(max, 443.0);
         assert_eq!(initial_scale(None, max, 146), 0.125);
         assert_eq!(view_width_at_creation(571.0, 310.0, 70.0, 30.0, m), 469.0, "no bar for lanes that fit");
@@ -489,10 +489,11 @@ mod tests {
         assert_eq!(view_width_at_creation(230.0, 113.0, 670.0, 30.0, m), 176.0);
         assert_eq!(view_width_at_creation(568.0, 334.0, 670.0, 30.0, m), 429.0);
         assert_eq!(view_width_at_creation(568.0, 334.0, 70.0, 30.0, m), 450.0);
-        // One lane (138 px) in the 166 px the view has left: exactly at the limit, no bar (clone:
-        // the original's view stayed 450 wide and opened 140 samples at 0.25); a pixel more, the bar.
-        assert_eq!(view_width_at_creation(568.0, 334.0, 138.0, 30.0, m), 450.0);
-        assert_eq!(view_width_at_creation(568.0, 334.0, 139.0, 30.0, m), 429.0);
+        // One lane (93 px, band 75) in the 166 px the view has left: exactly at the limit, no bar
+        // (clone: the original's view stayed 450 wide and opened 140 samples at 0.25); a pixel more,
+        // the bar.
+        assert_eq!(view_width_at_creation(568.0, 334.0, 93.0, 75.0, m), 450.0);
+        assert_eq!(view_width_at_creation(568.0, 334.0, 94.0, 75.0, m), 429.0);
         assert_eq!(initial_scale(None, 450.0, 140), 0.25);
     }
 
