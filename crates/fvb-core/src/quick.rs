@@ -371,6 +371,21 @@ pub fn taken_names<'a>(osc: &crate::comtrade::Oscillogram, computed: impl IntoIt
     rec.chain(computed.into_iter().map(String::from)).collect()
 }
 
+/// The names the channels of `batch` get once added to `existing_names` (each made unique against the record, the
+/// existing definitions and the batch's earlier ones): the names the definition list holds when the batch is
+/// evaluated (`0x41699d`), which the name guard of the formulas compares against (#30).
+pub fn batch_names<'a>(osc: &crate::comtrade::Oscillogram, existing_names: impl IntoIterator<Item = &'a str>, batch: &[(String, String)]) -> Vec<String> {
+    let mut taken = taken_names(osc, existing_names);
+    batch
+        .iter()
+        .map(|(name, _)| {
+            let n = unique_name(name, &taken);
+            taken.push(n.clone());
+            n
+        })
+        .collect()
+}
+
 /// A computed channel: its samples and, when the formula's complex value was
 /// valid at every sample, that complex series (used as the channel's phasor).
 #[derive(Debug, Clone, PartialEq)]
@@ -421,13 +436,36 @@ pub fn evaluate_batch_shown(
     batch: &[(String, String)],
     show_primary: bool,
 ) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
+    evaluate_batch_late(osc, shown, None, corr, existing, batch, &[], show_primary)
+}
+
+/// [`evaluate_batch_shown`] with the values `0x426120` returns (`late`, per analog channel, see
+/// [`crate::channels::late_series`]) and the names of the definitions that follow the batch in the definition
+/// list (`tail`): a formula naming its own definition or a later one (the batch's, then `tail`) fails with
+/// 0x1d4 (`0x419074`) instead of reading whatever channel carries the name.
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_batch_late(
+    osc: &crate::comtrade::Oscillogram,
+    shown: Option<&[&[f64]]>,
+    late: Option<Vec<Option<Vec<f64>>>>,
+    corr: Option<crate::freqcorr::FreqCorr<'_>>,
+    existing: &[ComputedChannel],
+    batch: &[(String, String)],
+    tail: &[String],
+    show_primary: bool,
+) -> Result<Vec<ComputedChannel>, crate::expr::FormulaError> {
     use crate::expr::{Context, Expr, ExprError, FormulaError};
     let mut all: Vec<ComputedChannel> = existing.to_vec();
     let mut added = Vec::new();
-    for (name, formula) in batch {
+    let names = batch_names(osc, existing.iter().map(|c| c.name.as_str()), batch);
+    for (bi, (name, formula)) in batch.iter().enumerate() {
         let fail = |error: ExprError| FormulaError { formula: formula.clone(), error };
-        let chans = crate::channels::OscChannels::new_shown(osc, shown, &all, show_primary, corr);
-        let expr = Expr::parse_channels(formula, &chans).map_err(fail)?;
+        let mut chans = crate::channels::OscChannels::new_shown(osc, shown, &all, show_primary, corr);
+        if let Some(l) = &late {
+            chans = chans.with_late(l.clone());
+        }
+        let guard: Vec<String> = names[bi..].iter().cloned().chain(tail.iter().cloned()).collect();
+        let expr = Expr::parse_channels_guarded(formula, &chans, name, &guard).map_err(fail)?;
         let ctx = Context::new();
         let n = chans.len();
         let (mut scal, mut cplx) = (Vec::with_capacity(n), Vec::with_capacity(n));

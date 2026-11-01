@@ -388,6 +388,11 @@ fn shown_by_name(d: &Doc, name: &str) -> fvb_core::units::Shown {
 /// A channel's bins in the frequency diagram (`0x426510`): its window is
 /// round(own rate / 50) with an own rate (`ch+0x108`), else the record's, and
 /// the correction runs at that rate too.
+/// The scale the frequency diagram's noise threshold is taken against (#93): the window's largest |sample|.
+pub(crate) fn freq_magnitude(samples: &[f64], pos: usize, n: usize, periods: usize) -> f64 {
+    fvb_core::views::window_magnitude(samples, pos, n * periods)
+}
+
 pub(crate) fn freq_bins(d: &Doc, samples: &[f64], who: Option<ChanKey>, own_rate: f64, pos: usize, periods: usize, k_max: usize) -> Vec<f64> {
     let mine = match who {
         Some(ChanKey::Analog(i)) => fvb_core::freqcorr::of(&d.osc).and_then(|cr| cr.for_chan(i)).map(|c| c.at_rate(own_rate)),
@@ -1717,6 +1722,7 @@ impl App {
             } else {
                 sp.get(periods).copied().unwrap_or(0.0)
             };
+            let magnitude = freq_magnitude(samples, pos, n, periods);
             let color = ch.color;
             if g.plot_h() - 30 * si - g.h <= 0 {
                 continue;
@@ -1739,7 +1745,7 @@ impl App {
                     painter.px_rect_stroke(bar.shrink(0.5), 0.0, Stroke::new(1.0f32, color));
                 }
                 // The fundamental's own bar reads 100 (an improvement, #60); `use_rms` has its own norm.
-                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms) } else { v };
+                let val = if percent { fvb_core::views::percent_bar_value(v, norm, k == periods && !use_rms, magnitude) } else { v };
                 let label = fvb_core::views::freq_label(val).trim().to_string();
                 // Measured in the diagrams' Tahoma 13 (`0x4705e6`): its
                 // digits advance 6 px, «.» 3 — numbers only reach here.
@@ -2783,5 +2789,27 @@ mod tests {
             assert_eq!(scroll_w(), w, "{dpi}");
         }
         crate::dpi::set(96);
+    }
+
+    /// #93 at the diagram's wiring: a constant channel's window gives a magnitude, and with it every «%» label
+    /// reads 0; a magnitude of 0 (the wiring dropped) would print the noise.
+    #[test]
+    fn a_constant_channel_prints_zero_percent_labels() {
+        let mut app = crate::app::App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        let n = d.osc.samples_per_cycle().max(2);
+        let len = d.osc.analog[0].samples.len();
+        d.osc.analog[0].samples = vec![220.5; len];
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let (pos, periods, k_max) = (len - 1, 1usize, 5usize);
+        let samples = d.shown_samples(0);
+        let sp = freq_bins(d, samples, Some(ChanKey::Analog(0)), d.osc.analog[0].own_rate, pos, periods, k_max);
+        let magnitude = freq_magnitude(samples, pos, n, periods);
+        assert!(magnitude > 200.0, "the window's magnitude is the level");
+        let labels = |m: f64| -> Vec<String> { sp.iter().enumerate().map(|(k, &v)| fvb_core::views::freq_label(fvb_core::views::percent_bar_value(v, sp[periods], k == periods, m)).trim().to_string()).collect() };
+        assert_eq!(labels(magnitude), vec!["0"; k_max + 1]);
+        assert_ne!(labels(0.0), vec!["0"; k_max + 1], "without the magnitude the noise is printed");
     }
 }

@@ -812,6 +812,16 @@ pub struct Doc {
     /// Pasted channels waiting for «Объединить» (bit 14) and their offset in
     /// seconds (`doc+0x6d8`).
     pub pending: Vec<ClipChan>,
+    /// Definitions of the «Редактор формул» list that have no channel (kill-active `0x486d20` writes the page's
+    /// whole list into the record's definitions without computing it, #31): a row added or loaded and not yet
+    /// calculated. A formula channel's own `formula` is its definition.
+    pub loose_defs: Vec<(String, String)>,
+    /// Transient: the next [`Doc::recompute`] is the batch of a flag / value-mode command (`0x415780` over the
+    /// list), which also makes channels of the rows that have none (#31).
+    pub batch_makes_rows: bool,
+    /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
+    /// the formula page lists its rows in it.
+    pub def_order: Vec<String>,
     pub merge_offset: f64,
     /// Shown flag of each digital channel (bit 0; «Каналы» dialog column 1; 32845 / 32846 / 32847).
     pub digital_visible: Vec<bool>,
@@ -916,6 +926,9 @@ impl Doc {
             read_enc: Encoding::Cp1251,
             omp: Default::default(),
             pending: Vec::new(),
+            loose_defs: Vec::new(),
+            batch_makes_rows: false,
+            def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
             undo: Vec::new(),
@@ -948,7 +961,8 @@ impl Doc {
         let analysis = Analysis::compute_over(&self.flagged, &series, fvb_core::freqcorr::of(&self.osc));
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
-        let _ = self.evaluate_formula_list(show_primary);
+        let create = std::mem::take(&mut self.batch_makes_rows);
+        let _ = self.evaluate_formula_list_before(show_primary, &[], create);
     }
 
     /// Analog channel `i`'s window of statistics and phasors: its own rate
@@ -989,32 +1003,128 @@ impl Doc {
         }
     }
 
+    /// What the quick-analysis pages' channel combos list (L9.151): the file's analog channels, the computed ones,
+    /// and the formula editor's definitions that have no channel yet (#31).
+    pub fn quick_names(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.osc.analog.iter().map(|c| c.id.clone()).chain(self.computed.iter().map(|c| c.name.clone())).collect();
+        for (n, _) in &self.loose_defs {
+            if !v.contains(n) {
+                v.push(n.clone());
+            }
+        }
+        v
+    }
+
     /// The batch `0x415780` over the record's formula channels (merged and
     /// ОМП channels carry no formula to re-evaluate): in order,
     /// each updated as it goes; the first failure stops it (the ones before
     /// keep their new values) and is returned; only a full success sweeps
-    /// the groups (`0x415b97` → `0x455c70`).
-    pub fn try_reevaluate_formulas(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    /// the groups (`0x415b97` → `0x455c70`). `new_names`: the definitions that follow the record's in the list
+    /// (the batch of a quick analysis or a new formula, evaluated together with the old ones, `0x416ed6`); a
+    /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
+    pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list(show_primary)
+        self.evaluate_formula_list_before(show_primary, new_names, true)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
-    fn evaluate_formula_list(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    /// The record's definition list (the calculation manager's, `doc+0x190`) in its own order: the formula channels
+    /// and the rows kill-active kept without a channel, ordered by [`Doc::def_order`] (what it does not know follows
+    /// in the present order: the channels, then the rows).
+    pub fn definition_list(&self) -> Vec<Def> {
+        let mut v: Vec<Def> = (0..self.computed.len()).filter(|&j| crate::setfile::is_formula(&self.computed[j])).map(Def::Chan).collect();
+        v.extend((0..self.loose_defs.len()).filter(|&i| !self.computed.iter().any(|c| c.name == self.loose_defs[i].0)).map(Def::Loose));
+        let pos = |d: &Def| {
+            let n = match d {
+                Def::Chan(j) => &self.computed[*j].name,
+                Def::Loose(i) => &self.loose_defs[*i].0,
+            };
+            self.def_order.iter().position(|o| o == n).unwrap_or(usize::MAX)
+        };
+        v.sort_by_key(|d| pos(d));
+        v
+    }
+
+    /// The list as (name, formula) pairs, in order: what the `.set` saves as `CalculatedChannels` (`0x4153a0`).
+    pub fn definition_pairs(&self) -> Vec<(String, String)> {
+        self.definition_list()
+            .into_iter()
+            .map(|d| match d {
+                Def::Chan(j) => (self.computed[j].name.clone(), self.computed[j].formula.clone()),
+                Def::Loose(i) => self.loose_defs[i].clone(),
+            })
+            .collect()
+    }
+
+    /// `0x415780` over the definition list in the list's order: each formula channel is recomputed in place; with
+    /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
+    /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
+    /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        let is_def = |c: &Computed| crate::setfile::is_formula(c);
+        let seq = self.definition_list();
+        let names: Vec<String> = seq
+            .iter()
+            .map(|d| match d {
+                Def::Chan(j) => self.computed[*j].name.clone(),
+                Def::Loose(i) => self.loose_defs[*i].0.clone(),
+            })
+            .collect();
+        // Channels that carry no formula (ОМП, merged) are always there to read.
         let mut done: Vec<fvb_core::quick::ComputedChannel> = Vec::new();
         for j in 0..self.computed.len() {
-            let c = &self.computed[j];
-            if c.formula != "ОМП" && c.formula != "объединение" && c.formula != crate::merge_ui::PENDING {
-                let batch = [(c.name.clone(), c.formula.clone())];
-                let mut out = self.eval_formulas(&done, &batch, show_primary)?;
-                if let Some(new) = out.pop() {
-                    self.computed[j].set_values(new.samples, new.phasors);
+            if !is_def(&self.computed[j]) {
+                self.reflag_computed(j);
+                done.push(self.computed[j].as_core());
+            }
+        }
+        let (len0, loose0) = (self.computed.len(), self.loose_defs.clone());
+        let mut created: Vec<String> = Vec::new();
+        let mut walk = || -> Result<(), fvb_core::expr::FormulaError> {
+            for (si, def) in seq.iter().enumerate() {
+                let tail: Vec<String> = names[si + 1..].iter().cloned().chain(new_names.iter().cloned()).collect();
+                match def {
+                    Def::Chan(j) => {
+                        let batch = [(self.computed[*j].name.clone(), self.computed[*j].formula.clone())];
+                        let mut out = self.eval_formulas_before(&done, &batch, &tail, show_primary)?;
+                        if let Some(new) = out.pop() {
+                            self.computed[*j].set_values(new.samples, new.phasors);
+                        }
+                        // A later formula reads this one through the accessor and the phasor cache: flagged.
+                        self.reflag_computed(*j);
+                        done.push(self.computed[*j].as_core());
+                    }
+                    Def::Loose(i) if create_loose => {
+                        let (name, formula) = self.loose_defs[*i].clone();
+                        let mut out = self.eval_formulas_before(&done, &[(name, formula)], &tail, show_primary)?;
+                        let Some(c) = out.pop() else { continue };
+                        let place = self.kind0_order().len();
+                        let color = channel_color(&c.name, "", place);
+                        let mut cc = Computed::new(c.name.clone(), c.formula, Vec::new(), color);
+                        cc.unit = c.unit;
+                        cc.set_values(c.samples, c.phasors);
+                        self.computed.push(cc);
+                        created.push(c.name);
+                        let j = self.computed.len() - 1;
+                        self.reflag_computed(j);
+                        done.push(self.computed[j].as_core());
+                    }
+                    Def::Loose(_) => {}
                 }
             }
-            // A later formula reads this one through the accessor and the
-            // phasor cache: flagged.
-            self.reflag_computed(j);
-            done.push(self.computed[j].as_core());
+            Ok(())
+        };
+        if let Err(e) = walk() {
+            if !created.is_empty() {
+                self.computed.truncate(len0);
+                self.loose_defs = loose0;
+                self.channels_changed();
+            }
+            return Err(e);
+        }
+        if !created.is_empty() {
+            self.loose_defs.retain(|(n, _)| !created.contains(n));
+            self.channels_changed();
         }
         self.prune_groups();
         Ok(())
@@ -1023,8 +1133,22 @@ impl Doc {
     /// The formula batch `0x415780` over the record's channels as the accessor `0x426020` returns them
     /// ([`Doc::shown_samples`]: x·k − dc·k, not `(x − dc)·k`, #105).
     pub fn eval_formulas(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
+        self.eval_formulas_before(existing, batch, &[], show_primary)
+    }
+
+    /// [`Doc::eval_formulas`] when the definitions `tail` follow the batch in the definition list: a formula
+    /// naming its own definition, a later one of the batch or one of `tail` fails with 0x1d4 (`0x419074`), and
+    /// a channel reference after an analysis function reads its value through `0x426120` (#30).
+    pub fn eval_formulas_before(&self, existing: &[fvb_core::quick::ComputedChannel], batch: &[(String, String)], tail: &[String], show_primary: bool) -> Result<Vec<fvb_core::quick::ComputedChannel>, fvb_core::expr::FormulaError> {
         let shown: Vec<&[f64]> = (0..self.flagged.analog.len()).map(|i| self.shown_samples(i)).collect();
-        fvb_core::quick::evaluate_batch_shown(&self.flagged, Some(&shown), fvb_core::freqcorr::of(&self.osc), existing, batch, show_primary)
+        let late: Vec<Option<Vec<f64>>> = (0..self.osc.analog.len())
+            .map(|i| {
+                let (c, v) = (&self.osc.analog[i], &self.chans[i]);
+                fvb_core::channels::late_series(c, v.primary, v.adc_counts, v.remove_dc, v.invert, self.dc_mean[i].0, shown_factor(c, v))
+            })
+            .collect();
+        let late = late.iter().any(Option::is_some).then_some(late);
+        fvb_core::quick::evaluate_batch_late(&self.flagged, Some(&shown), late, fvb_core::freqcorr::of(&self.osc), existing, batch, tail, show_primary)
     }
 
     /// Computed channel `j`'s flags over its evaluation (`0x428490` for a
@@ -1380,6 +1504,16 @@ pub struct DocSnapshot {
     /// The names' bytes go with the channels (the original's snapshot is
     /// its channel list, the raw names in it); the code page stays.
     pub name_raw: Vec<RawName>,
+    /// The formula editor's definitions without a channel and the list's row order (#31).
+    pub loose_defs: Vec<(String, String)>,
+    pub def_order: Vec<String>,
+}
+
+/// An entry of the definition list: a formula channel, or a row without a channel yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Def {
+    Chan(usize),
+    Loose(usize),
 }
 
 /// A name as read (`+0x64`): its bytes, the text last decoded from them in
@@ -2194,14 +2328,13 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_flag_selected(f);
                 }
-                if matches!(f, crate::chansel::ChanFlag::Invert | crate::chansel::ChanFlag::RemoveDc | crate::chansel::ChanFlag::Adc) {
-                    self.recompute_active();
-                }
+                self.after_flag_command(f);
             }
             Command::SetValueMode(m) => {
                 if let Some(d) = self.active_doc_mut() {
                     d.set_mode_selected(m);
                 }
+                self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
                 let (w, left) = (self.view_width, self.view_left);
@@ -2259,6 +2392,7 @@ impl App {
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_stats_row(k);
                 }
+                self.run_definition_batch();
             }
             Command::ZoomX(zin) => {
                 let (w, left) = (self.view_width, self.view_left);
@@ -2421,10 +2555,27 @@ impl App {
 
     /// The full recompute after a value-changing command (`0x42f4b0` tail):
     /// the active record's derived data and, when its result is shown, ОМП.
-    pub fn recompute_active(&mut self) {
-        if let Some(ai) = self.active {
+    /// What a flag command (32817–32824 `0x42fad3`, 32849–32852 `0x4305e3`) does after toggling: the full
+    /// recompute for invert / DC / ADC, and for all of them the batch `0x415780` over the definition list, which
+    /// makes channels of the rows that have none (#31).
+    pub fn after_flag_command(&mut self, f: crate::chansel::ChanFlag) {
+        use crate::chansel::ChanFlag;
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
+        if matches!(f, ChanFlag::Invert | ChanFlag::RemoveDc | ChanFlag::Adc) {
+            self.docs[ai].batch_makes_rows = true;
             self.recompute_doc(ai);
+        } else {
+            self.run_definition_batch();
         }
+    }
+
+    /// The batch `0x415780` over the definition list that 32817–32824 (stats rows, value modes, invert / DC,
+    /// `0x45c980` → `0x42f4b0`, `0x42fad3`), 32849–32852 and 32866 end in: it also makes channels of the rows that
+    /// have none (#31).
+    pub fn run_definition_batch(&mut self) {
+        let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
+        let show_primary = self.docs[ai].primary_values();
+        let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
     }
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
@@ -2915,6 +3066,8 @@ impl App {
             digital_visible: d.digital_visible.clone(),
             dig_flags: d.dig_flags.clone(),
             name_raw: d.name_raw.clone(),
+            loose_defs: d.loose_defs.clone(),
+            def_order: d.def_order.clone(),
         }
     }
 
@@ -2930,6 +3083,8 @@ impl App {
         d.digital_visible = s.digital_visible;
         d.dig_flags = s.dig_flags;
         d.name_raw = s.name_raw;
+        d.loose_defs = s.loose_defs;
+        d.def_order = s.def_order;
         d.sel_anchor = None;
         let last = d.osc.time.len().saturating_sub(1);
         for k in [&mut d.main_cursor, &mut d.aux_cursor, &mut d.v3_cursor, &mut d.first] {
@@ -2985,7 +3140,9 @@ impl App {
         // whole list: the older formula channels take the current values
         // and correction too (L9.103); an old one failing aborts the batch
         // — its box, nothing added (`0x416ed6`–`0x416f69`).
-        if let Err(e) = d.try_reevaluate_formulas(show_primary) {
+        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
+        let before = (d.computed.len(), d.loose_defs.clone());
+        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
             self.dlg.push_alert(e.to_string());
             return None;
         }
@@ -3008,6 +3165,14 @@ impl App {
             // A computed channel's evaluation failure is a box (`0x415780`
             // → `0x475680`).
             Err(e) => {
+                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
+                if let Some(d) = self.active_doc_mut() {
+                    if d.computed.len() > before.0 {
+                        d.computed.truncate(before.0);
+                        d.loose_defs = before.1;
+                        d.channels_changed();
+                    }
+                }
                 self.dlg.push_alert(e.to_string());
                 None
             }
@@ -3019,7 +3184,15 @@ impl App {
     /// reference / show-values and the circle readout, and remember the
     /// differential pairs.
     pub fn apply_quick(&mut self, g: &fvb_core::quick::Generated) {
-        let Some(names) = self.append_computed(&g.channels) else {
+        // The batch `0x415780` runs over the record's whole definition list, the formula editor's rows that have
+        // no channel yet included (#31): `append_computed` makes them channels in front of the page's own.
+        let batch = g.channels.clone();
+        let Some(names) = self.append_computed(&batch) else {
+            // The original has added the batch's channels by then and deletes them again when the recompute fails
+            // (`0x416f1b`), each deletion sweeping the review list (`0x42ecf0`, #31).
+            if let Some(d) = self.active_doc_mut().filter(|_| !batch.is_empty()) {
+                d.sweep_review_list();
+            }
             return;
         };
         // Map generated names to the names actually given; a name generated
@@ -3063,6 +3236,29 @@ impl App {
                 d.set.modified = true;
             }
         }
+    }
+}
+
+/// Test support for the commands that end in the diagrams' refresh-all (#23): a flag the sweeps would clear.
+#[cfg(test)]
+pub(crate) mod stale_flags {
+    use super::App;
+
+    /// The first channel is left on the circle and vector diagrams with a unit neither accepts.
+    pub fn make(app: &mut App) {
+        let d = app.active_doc_mut().unwrap();
+        d.osc.analog[0].unit = "Hz".into();
+        d.chans[0].on_circle = true;
+        d.chans[0].on_vector = true;
+    }
+
+    pub fn swept(app: &App) -> bool {
+        let c = &app.active_doc().unwrap().chans[0];
+        !c.on_circle && !c.on_vector
+    }
+
+    pub fn is_stale(app: &App) -> bool {
+        !swept(app)
     }
 }
 
@@ -4213,5 +4409,430 @@ mod tests {
         assert_eq!((s[3].as_str(), s[5].as_str()), ("Гор. визир 1:    5 ", "Разница г. визиров: 2000 "));
         // No document: the panes keep what they showed.
         assert!(App::new().cursor_status().is_none());
+    }
+
+    fn enter_key() -> egui::RawInput {
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        raw
+    }
+
+    /// #23 / L9.208: the quick analysis (137, `0x4543a0`) ends in the diagrams' refresh-all, which clears a circle /
+    /// vector flag the unit no longer allows.
+    #[test]
+    fn quick_analysis_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.dispatch(Command::QuickAnalysis);
+        crate::app::stale_flags::make(&mut app);
+        assert!(crate::app::stale_flags::is_stale(&app));
+        app.quick_calc();
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// 33030 «Цвет канала» (`0x465879`): the accepted dialog ends in the refresh-all.
+    #[test]
+    fn the_channel_colour_dialog_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
+        app.color_dialog = Some(egui::Color32::from_rgb(10, 20, 30));
+        crate::app::stale_flags::make(&mut app);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(enter_key(), |ctx| app.color_window(ctx));
+        assert!(app.color_dialog.is_none(), "Enter accepted the dialog");
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// The file-info dialog's «Закрыть» (`0x449f40`, `0x44a294`, `0x44a2ed`) ends in the refresh-all.
+    #[test]
+    fn the_file_info_ok_ends_in_the_refresh_all() {
+        let mut app = demo_app();
+        app.show_file_params = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        crate::app::stale_flags::make(&mut app);
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params, "Enter closed the dialog");
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// #31 / L9.56: leaving the formula editor (kill-active `0x486d20`) writes the page's list into the record's
+    /// definitions without computing it: a channel keeps its values under the new formula text, a row without a
+    /// channel is kept as a definition (the page, the pages' combos), and the next calculation of any page
+    /// evaluates it (L9.151).
+    #[test]
+    fn leaving_the_formula_editor_writes_the_definitions() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let values = app.active_doc().unwrap().computed[0].samples.clone();
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows[0].1 = "Ub*3".into();
+        app.formula_page.dirty = true;
+        app.fp_add_row("Z1".into(), "X+1".into());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed[0].formula, "Ua*2", "nothing written before kill-active");
+        assert!(d.loose_defs.is_empty());
+        app.fp_kill_active();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed[0].formula, "Ub*3", "the definition changed");
+        assert_eq!(d.computed[0].samples, values, "without a recompute");
+        assert_eq!(d.loose_defs, [("Z1".to_string(), "X+1".to_string())]);
+        assert!(d.quick_names().contains(&"Z1".to_string()), "the pages' combos list the row");
+        assert!(!d.computed.iter().any(|c| c.name == "Z1"));
+        // «Отмена», then a new sheet: the page shows the definitions.
+        app.quick_open = false;
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(app.formula_page.rows, [("X".to_string(), "Ub*3".to_string()), ("Z1".to_string(), "X+1".to_string())]);
+        // Another page's calculation evaluates the whole list (`0x415780`): the row becomes a channel.
+        let g = fvb_core::quick::Generated { channels: vec![("Z2".into(), "Z1*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        let names: Vec<_> = d.computed.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["X", "Z1", "Z2"]);
+        assert!(d.loose_defs.is_empty());
+    }
+
+    /// #31 / L9.201: a quick analysis whose recompute fails deletes the channels it added through `0x42ecf0`, which
+    /// sweeps the review list: an element naming a missing channel goes, the hot element is reset.
+    #[test]
+    fn a_failed_quick_analysis_sweeps_the_review_list() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        let kept = fvb_core::recset::CommentRec {
+            kind: fvb_core::recset::CommentKindRec::Level { channel: "Нет".into(), y: 0.0, from: 0, to: 1 },
+            text: String::new(),
+            locked: false,
+            visible: true,
+        };
+        d.comments = vec![crate::comments::Comment { kind: crate::comments::CommentKind::Kept(Box::new(kept)), text: String::new(), locked: false, hidden: false }];
+        d.comment_hot = Some(0);
+        d.computed[0].formula = "Нет*2".into();
+        let g = fvb_core::quick::Generated { channels: vec![("Y".into(), "Ub*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        let d = app.active_doc().unwrap();
+        assert!(app.dlg.alert().is_some(), "the box");
+        assert!(d.comments.is_empty(), "swept");
+        assert_eq!(d.comment_hot, None);
+        // Nothing added, nothing deleted: no sweep.
+        let mut app = demo_app();
+        let d = app.active_doc_mut().unwrap();
+        d.comments = vec![crate::comments::Comment { kind: crate::comments::CommentKind::Moment { pos: 1 }, text: String::new(), locked: false, hidden: false }];
+        d.comment_hot = Some(0);
+        app.apply_quick(&fvb_core::quick::Generated::default());
+        assert_eq!(app.active_doc().unwrap().comment_hot, Some(0));
+    }
+
+    /// #30: a channel reference after an analysis function (`coeffpriv:` …) reads its value through `0x426120`:
+    /// for a primary-stored channel the stored value times secondary / primary only when primary values are shown,
+    /// then the DC and the inversion as the accessor applies them.
+    #[test]
+    fn a_reference_after_an_analysis_function_reads_the_late_value() {
+        for (show_primary, remove_dc, invert) in [(false, false, false), (true, false, false), (false, true, true), (true, true, false)] {
+            let mut app = demo_app();
+            let d = app.active_doc_mut().unwrap();
+            let (p, s) = (1234.0, 5.5);
+            d.osc.analog[0].is_primary = true;
+            d.osc.analog[0].primary = p;
+            d.osc.analog[0].secondary = s;
+            d.chans[0].primary = show_primary;
+            d.chans[0].remove_dc = remove_dc;
+            d.chans[0].invert = invert;
+            d.recompute(show_primary);
+            let name = d.osc.analog[0].id.clone();
+            let raw = d.osc.analog[0].samples.clone();
+            let k = if show_primary { 1.0 } else { s / p };
+            let f = if show_primary { s / p } else { 1.0 };
+            let dck = d.dc_mean[0].0 * k;
+            let want = |x: f64, f: f64| {
+                let y = f * (x * k);
+                let y = if remove_dc { y - dck } else { y };
+                if invert { -y } else { y }
+            };
+            assert!(app.append_computed(&[("P".into(), format!("{name} * 1")), ("X".into(), format!("coeffpriv:({name}, 1)"))]).is_some(), "{:?}", app.dlg.alert());
+            let d = app.active_doc().unwrap();
+            for i in [20, 111, 190] {
+                let acc = if remove_dc { raw[i] * k - dck } else { raw[i] * k };
+                let acc = if invert { -acc } else { acc };
+                assert_eq!(d.computed[0].samples[i], acc, "accessor {show_primary} {remove_dc} {invert}");
+                assert_eq!(d.computed[1].samples[i], want(raw[i], f), "late {show_primary} {remove_dc} {invert}");
+            }
+        }
+    }
+
+    /// #30: the name guard (error 0x1d4) in the formula editor: a row naming its own definition or a later row
+    /// fails with "<row>: '<name>' -  не определен", whether or not a channel of that name exists.
+    #[test]
+    fn the_formula_page_refuses_a_row_naming_itself_or_a_later_one() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.rows[0].1 = "y + 1".into();
+        app.formula_page.dirty = true;
+        app.fp_apply();
+        assert_eq!(app.dlg.alert(), Some("X: 'y' -  не определен"), "a later row, though a channel Y exists");
+        assert_eq!(app.active_doc().unwrap().computed[0].formula, "Ua*2");
+        app.dlg.alerts.clear();
+        app.formula_page.rows[0].1 = "Ua*3".into();
+        app.formula_page.rows[1].1 = "x + y".into();
+        app.fp_apply();
+        assert_eq!(app.dlg.alert(), Some("Y: 'y' -  не определен"), "its own name");
+        app.dlg.alerts.clear();
+        app.formula_page.rows[1].1 = "x + 1".into();
+        app.fp_apply();
+        assert!(app.dlg.alert().is_none(), "an earlier row is fine: {:?}", app.dlg.alert());
+        assert_eq!(app.active_doc().unwrap().computed[1].formula, "x + 1");
+    }
+
+    /// #31: the formula page keeps its rows in the order ↑ / ↓ gave them (the definition list's, written by
+    /// kill-active), not the channels'.
+    #[test]
+    fn the_definition_order_is_the_pages() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_add_row("Z1".into(), "Uc*2".into());
+        app.formula_page.selected = Some(2);
+        app.fp_move(true);
+        let order = |app: &App| app.formula_page.rows.iter().map(|r| r.0.clone()).collect::<Vec<_>>();
+        assert_eq!(order(&app), ["Y", "Z1", "X"]);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.dispatch(Command::QuickAnalysis);
+        assert_eq!(order(&app), ["Y", "Z1", "X"]);
+        let names: Vec<_> = app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect();
+        assert_eq!(names, ["X", "Y"], "the channels keep their places");
+    }
+
+    /// #31: undo and redo restore the definitions without a channel and the list's order with the channels.
+    #[test]
+    fn undo_and_redo_carry_the_definitions() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        let d = app.active_doc_mut().unwrap();
+        d.loose_defs = vec![("Z1".into(), "Ub".into())];
+        d.def_order = vec!["Z1".into(), "X".into()];
+        let snap = App::snapshot_of_doc(d);
+        App::push_undo(d, snap);
+        d.loose_defs.clear();
+        d.def_order.clear();
+        app.undo();
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.loose_defs, [("Z1".to_string(), "Ub".to_string())]);
+        assert_eq!(d.def_order, ["Z1", "X"]);
+        app.redo();
+        let d = app.active_doc().unwrap();
+        assert!(d.loose_defs.is_empty() && d.def_order.is_empty());
+    }
+
+    /// #31: the definitions are evaluated in the list's order, each one's name guard covering the names after it
+    /// in that order: with Y moved above X, X may name y; with X above Y it may not.
+    #[test]
+    fn definitions_are_evaluated_in_the_lists_order() {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into()), ("Y".into(), "Ub*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "y+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        let g = fvb_core::quick::Generated { channels: vec![("Z".into(), "Uc*2".into())], ..Default::default() };
+        app.apply_quick(&g);
+        assert!(app.dlg.alert().is_none(), "Y first, then X naming y: {:?}", app.dlg.alert());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X", "Y", "Z"]);
+        assert_eq!(d.computed[0].formula, "y+1");
+        // Moved back (X above Y), the same formula is refused.
+        app.dispatch(Command::QuickAnalysis);
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.apply_quick(&g);
+        assert_eq!(app.dlg.alert(), Some("X: 'y' -  не определен"));
+        // A row without a channel above a channel naming it works too.
+        app.dlg.alerts.clear();
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("L1".into(), "Ub*2".into());
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "l1+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.apply_quick(&g);
+        assert!(app.dlg.alert().is_none(), "{:?}", app.dlg.alert());
+        let d = app.active_doc().unwrap();
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X", "L1", "Z"]);
+    }
+
+    /// #31: the quick-analysis pages avoid the names of the rows kill-active kept: the generated channel is renamed
+    /// up front, so a formula of the batch that names it names the renamed one, not the row.
+    #[test]
+    fn generated_names_avoid_the_loose_rows() {
+        let mut app = demo_app();
+        app.active_doc_mut().unwrap().loose_defs = vec![("3I0".into(), "Ia*1".into())];
+        app.analysis_tab = AnalysisTab::Zero;
+        let q = &mut app.quick[crate::quick_ui::page_index(AnalysisTab::Zero).unwrap()];
+        q.ia = "Ia".into();
+        q.ib = "Ib".into();
+        q.ic = "Ic".into();
+        q.ua = "Ua".into();
+        q.ub = "Ub".into();
+        q.uc = "Uc".into();
+        app.quick_calc();
+        let d = app.active_doc().unwrap();
+        let names: Vec<_> = d.computed.iter().map(|c| c.name.as_str()).collect();
+        assert!(names.contains(&"3I0") && names.contains(&"3I0_2"), "{names:?}");
+        let s0 = d.computed.iter().find(|c| c.name.starts_with("S0")).unwrap();
+        assert!(s0.formula.to_lowercase().contains("3i0_2"), "{}", s0.formula);
+    }
+
+    /// 33030 refreshes whatever the colour dialog returned (`0x465850`): also on Esc.
+    #[test]
+    fn the_colour_dialog_refreshes_on_cancel_too() {
+        let mut app = demo_app();
+        app.color_dialog = Some(egui::Color32::from_rgb(10, 20, 30));
+        crate::app::stale_flags::make(&mut app);
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let _ = egui::Context::default().run(raw, |ctx| app.color_window(ctx));
+        assert!(app.color_dialog.is_none());
+        assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// A demo record with channel X = l1 + 1 and the definition row L1 = Ub*2
+    /// kept without a channel (the formula page's kill-active), for the
+    /// definition batch's tests (#31).
+    fn kept_row_app() -> App {
+        let mut app = demo_app();
+        assert!(app.append_computed(&[("X".into(), "Ua*2".into())]).is_some());
+        app.dispatch(Command::QuickAnalysis);
+        app.fp_add_row("L1".into(), "Ub*2".into());
+        app.formula_page.selected = Some(1);
+        app.fp_move(true);
+        app.formula_page.rows[1].1 = "l1+1".into();
+        app.formula_page.dirty = true;
+        app.fp_kill_active();
+        app.quick_open = false;
+        app.active_doc_mut().unwrap().selection = std::collections::BTreeSet::from([ChanKey::Analog(0)]);
+        app
+    }
+
+    fn computed_names(app: &App) -> Vec<String> {
+        app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// «Коэффициенты» OK with nothing edited: the dialog's OK (`0x47b610`) ends
+    /// as OnCancel when its dirty flag is clear, so `0x42fdb0` sees no IDOK and
+    /// sets no modified mark (`0x42fea7`); its common tail still recomputes and
+    /// runs the batch (`0x42ff54`).
+    #[test]
+    fn coefficients_ok_with_nothing_edited_is_a_cancel() {
+        let mut app = kept_row_app();
+        let ai = app.active.unwrap();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        assert!(app.dlg.coef.is_some());
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none(), "Enter closed the dialog");
+        assert!(!app.docs[ai].set.modified, "a clean OK is a Cancel: no modified mark");
+        assert_eq!(computed_names(&app), ["X", "L1"], "the batch still runs");
+        // Edited (dirty), OK is IDOK: modified, changed values or not.
+        let mut app = kept_row_app();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        app.dlg.coef.as_mut().unwrap().dirty = true;
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none());
+        assert!(app.docs[ai].set.modified, "a dirty OK marks the document modified");
+        assert_eq!(computed_names(&app), ["X", "L1"]);
+    }
+
+    /// «Коэффициенты» closed by its caption's close box: the dialog has no
+    /// close handler of its own (its message map holds only WM_DRAWITEM), so
+    /// the box is IDCANCEL and `0x42fdb0` recomputes and runs the batch
+    /// (`0x42ff54`), as on «Отмена» / Esc.
+    #[test]
+    fn coefficients_close_box_is_a_cancel() {
+        let mut app = kept_row_app();
+        let ai = app.active.unwrap();
+        app.docs[ai].set.modified = false;
+        app.dispatch(Command::Coefficients);
+        let ctx = egui::Context::default();
+        let mut t = 0.0;
+        let mut frame = |app: &mut App, events: Vec<egui::Event>| {
+            t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0))), time: Some(t), events, ..Default::default() };
+            let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        };
+        for _ in 0..6 {
+            frame(&mut app, vec![]);
+        }
+        let r = ctx.memory(|m| m.area_rect(egui::Id::new("Коэффициенты трансформации"))).expect("dialog drawn");
+        // The close box: the caption's right end.
+        let at = egui::pos2(r.right() - 20.0, r.top() + 10.0);
+        let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&mut app, vec![ev(true)]);
+        frame(&mut app, vec![ev(false)]);
+        assert!(app.dlg.coef.is_none(), "the close box closed the dialog");
+        assert!(!app.docs[ai].set.modified);
+        assert_eq!(computed_names(&app), ["X", "L1"], "the batch runs on the close box too");
+    }
+
+    /// #31: the flag and value-mode commands run the batch over the definition list (`0x42fad3`, `0x42ff54`,
+    /// `0x4305e3`): a kept row becomes a channel and a channel naming it computes.
+    #[test]
+    fn flag_and_mode_commands_make_channels_of_kept_rows() {
+        let setup = kept_row_app;
+        let names = computed_names;
+        let cmds: [(&str, Command); 5] = [
+            ("invert", Command::ToggleFlag(crate::chansel::ChanFlag::Invert)),
+            ("diagram flag", Command::ToggleFlag(crate::chansel::ChanFlag::OnVector)),
+            ("primary values", Command::SetPrimaryValues(true)),
+            ("value mode", Command::SetValueMode(ValueMode::Rms)),
+            ("stats row", Command::StatsRow(0)),
+        ];
+        for (what, cmd) in cmds {
+            let mut app = setup();
+            assert_eq!(names(&app), ["X"], "{what}");
+            app.dispatch(cmd);
+            assert_eq!(names(&app), ["X", "L1"], "{what}");
+            let d = app.active_doc().unwrap();
+            assert!(d.loose_defs.is_empty(), "{what}");
+            // X = l1 + 1 computed from L1 (Ub*2), whatever the value mode.
+            let (l1, x) = (&d.computed[1].samples, &d.computed[0].samples);
+            assert!(x.iter().zip(l1).all(|(x, l)| (x - (l + 1.0)).abs() < 1e-9), "{what}");
+        }
+        // «Коэффициенты» recomputes and runs the batch whatever the dialog returns: Cancel too.
+        let mut app = setup();
+        app.dispatch(Command::Coefficients);
+        assert!(app.dlg.coef.is_some());
+        let mut raw = egui::RawInput::default();
+        raw.events.push(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.coef_window(ctx));
+        let _ = ctx.run(raw, |ctx| app.coef_window(ctx));
+        assert!(app.dlg.coef.is_none(), "Esc closed the dialog");
+        assert_eq!(names(&app), ["X", "L1"], "coefficients cancel");
+        // Opening a record and undo run no batch: a plain recompute keeps the row.
+        let mut app = setup();
+        let ai = app.active.unwrap();
+        app.docs[ai].recompute(false);
+        assert_eq!(names(&app), ["X"]);
     }
 }

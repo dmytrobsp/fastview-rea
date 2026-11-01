@@ -617,6 +617,8 @@ impl App {
         for c in self.docs[ai].chans.iter_mut() {
             c.primary = primary;
         }
+        // 32866–32868 (`0x42ff54`) run the batch over the definition list too.
+        self.docs[ai].batch_makes_rows = true;
         self.recompute_doc(ai);
     }
 
@@ -835,6 +837,8 @@ impl App {
                 d.set.modified = true;
                 d.recompute_signals();
             }
+            // «Закрыть» (`0x449f40`) ends in the refresh-all (`0x44a294`, `0x44a2ed`).
+            self.refresh_blocks();
             self.show_file_params = false;
         } else if !open || esc {
             self.show_file_params = false;
