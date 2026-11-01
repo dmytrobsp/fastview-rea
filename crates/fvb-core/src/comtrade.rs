@@ -2355,3 +2355,45 @@ mod cfg_atof_tests {
         assert_eq!((c.a, c.b, c.primary, c.secondary), (0.5, 2.0, 1.0, 1.0));
     }
 }
+
+#[cfg(test)]
+mod short_binary_tests {
+    /// A synthetic 2A + 1D record of `rows` rows in `fmt` (BINARY or binary32).
+    fn record(fmt: &str, rows: u32) -> super::Oscillogram {
+        let cfg = format!(
+            "Syn,Dev,1999\r\n3,2A,1D\r\n1,Ia,A,,A,0.0123,0,0,-32767,32767,1234,5,S\r\n2,Ib,B,,A,0.0456,0,0,-32767,32767,1234,5,S\r\n\
+             1,D1,,,0\r\n50\r\n1\r\n1250,{rows}\r\n01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\n{fmt}\r\n1\r\n"
+        );
+        let mut dat = Vec::new();
+        for i in 1..=rows {
+            dat.extend((i).to_le_bytes());
+            dat.extend(((i - 1) * 800).to_le_bytes());
+            for v in [100 * i as i32, -50 * i as i32] {
+                if fmt == "BINARY" {
+                    dat.extend((v as i16).to_le_bytes());
+                } else {
+                    dat.extend(v.to_le_bytes());
+                }
+            }
+            dat.extend(((i & 1) as u16).to_le_bytes());
+        }
+        super::parse(&cfg, &dat).unwrap()
+    }
+
+    /// The original (a clone run, #171) dies with an access violation on a
+    /// BINARY (`0x451be0`) or binary32 (`0x4521bd`) record of one, two or
+    /// three rows: its size check reads the first three sample numbers, and
+    /// the fourth after 1, 2, 3, unconditionally. Ours loads them at the
+    /// computed record size (a difference left to the maintainer's call).
+    #[test]
+    fn a_record_of_fewer_than_four_rows_loads_at_the_computed_size() {
+        for fmt in ["BINARY", "binary32"] {
+            for rows in 1..=3u32 {
+                let r = record(fmt, rows);
+                assert_eq!(r.time.len(), rows as usize, "{fmt} {rows}");
+                assert_eq!(r.analog[1].samples.len(), rows as usize, "{fmt} {rows}");
+                assert_eq!(r.digital[0].samples, (1..=rows).map(|i| i & 1 == 1).collect::<Vec<_>>(), "{fmt} {rows}");
+            }
+        }
+    }
+}
