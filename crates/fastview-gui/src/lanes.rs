@@ -26,18 +26,21 @@ const ROW_FONT: FontId = FontId::proportional(11.0);
 const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
 /// the view's window scroll bars, at the default system metric (96 dpi).
+#[cfg(test)]
 const HSCROLL_H: f32 = 17.0;
+#[cfg(test)]
 const VSCROLL_W: f32 = 17.0;
 
 /// The view's window scroll bars at the system DPI: SM_CXVSCROLL / SM_CYHSCROLL
-/// grow for a system-DPI-aware window (VM: 17, 21, 26 px at 100, 125,
-/// 150 %); what the view paints in them stays its own.
+/// grow for a system-DPI-aware window: MulDiv(17, dpi, 96), the metric graph-scaling measured on clones
+/// (17, 21, 26, 30, 34 px at 100, 125, 150, 175, 200 %; `oscgeom::WinMetrics`); what the view paints in them
+/// stays its own.
 pub(crate) fn scroll_w() -> f32 {
-    crate::dpi::measured(VSCROLL_W, 21.0, 26.0)
+    crate::oscgeom::WinMetrics::at(crate::dpi::dpi()).scroll
 }
 
 fn scroll_h() -> f32 {
-    crate::dpi::measured(HSCROLL_H, 21.0, 26.0)
+    scroll_w()
 }
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
@@ -2949,6 +2952,17 @@ mod menu_tests {
         fn doc(&self) -> &crate::app::Doc {
             self.app.active_doc().unwrap()
         }
+    }
+
+    /// The view's bars are the system metric MulDiv(17, dpi, 96), also past 150 % where the first-zoom rule
+    /// (`WinMetrics`) measured 30 / 34 px (a straight line through 17, 21, 26 gave 31 / 36).
+    #[test]
+    fn the_view_scroll_bars_follow_the_system_metric() {
+        for (dpi, w) in [(96, 17.0), (120, 21.0), (144, 26.0), (168, 30.0), (192, 34.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((scroll_w(), scroll_h()), (w, w), "{dpi}");
+        }
+        crate::dpi::set(96);
     }
 
     #[test]

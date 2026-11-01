@@ -170,10 +170,10 @@ const AXES: Color32 = Color32::from_rgb(150, 150, 150);
 const SCROLL_W: f32 = 16.0;
 
 /// The plane windows' scroll bars at the system DPI: the system metric less the pixel the plane's own edge
-/// takes (SM_CXVSCROLL 17 / 21 / 26, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 %): not the 100 %
-/// width scaled (24 at 150 %), not the lanes' metric.
+/// takes (SM_CXVSCROLL 17 / 21 / 26 / 30 / 34, the bars on a clone 16 / 20 / 25 px at 100 / 125 / 150 % and one
+/// less than the metric beyond): not the 100 % width scaled (24 at 150 %).
 pub(crate) fn scroll_w() -> f32 {
-    // One rule with the lanes' (17 / 21 / 26 = MulDiv(17, dpi, 96)): less the plane's own edge pixel.
+    // One rule with the lanes' (MulDiv(17, dpi, 96)): less the plane's own edge pixel.
     if crate::dpi::unscaled() {
         SCROLL_W
     } else {
@@ -2861,7 +2861,7 @@ mod tests {
     /// 125 / 150 % — the system metric less one (the lanes' are 17 / 21 / 26), not the 100 % width scaled.
     #[test]
     fn the_plane_scroll_bars_follow_the_system_metric() {
-        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0)] {
+        for (dpi, w) in [(96, 16.0), (120, 20.0), (144, 25.0), (168, 29.0), (192, 33.0)] {
             crate::dpi::set(dpi);
             assert_eq!(scroll_w(), w, "{dpi}");
         }
