@@ -2284,10 +2284,10 @@ impl App {
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
             .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
-            .constrain_to(crate::popmenu::bounds(ctx))
+            .constrain_to(crate::popmenu::bounds(ctx, menu.pos))
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
-                    crate::popmenu::cut_to_screen(ui, menu_id, |ui| {
+                    crate::popmenu::cut_to_screen(ui, menu_id, menu.pos, |ui| {
                         let mut pick = |c: MenuCmd| chosen = Some(c);
                         match menu.kind {
                             LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),

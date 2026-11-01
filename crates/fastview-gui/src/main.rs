@@ -841,12 +841,15 @@ impl App {
                         (Some(h), false) => (h + n - 1) % n,
                     });
                 }
+                if let (Some(h), true) = (hot, list_keys.0 || list_keys.1) {
+                    crate::popmenu::reveal(ui.ctx(), list_id.with(serial), lit.left_bottom(), h as f32 * crate::popmenu::row_pitch(), crate::popmenu::row_pitch());
+                }
                 if list_keys.2 {
                     activate = hot.and_then(|h| order.get(h).copied());
                 }
-                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain_to(crate::popmenu::bounds(ui.ctx())).show(ui.ctx(), |ui| {
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain_to(crate::popmenu::bounds(ui.ctx(), lit.left_bottom())).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        crate::popmenu::cut_to_screen(ui, list_id.with(serial), |ui| {
+                        crate::popmenu::cut_to_screen(ui, list_id.with(serial), lit.left_bottom(), |ui| {
                             for (k, i) in order.iter().copied().enumerate() {
                                 if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
                                     activate = Some(i);
@@ -1036,10 +1039,10 @@ impl App {
         let id = egui::Id::new("fv_status_menu");
         let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
-        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain_to(crate::popmenu::bounds(ctx)).show(ctx, |ui| {
+        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain_to(crate::popmenu::bounds(ctx, at)).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
-                crate::popmenu::cut_to_screen(ui, id, |ui| {
+                crate::popmenu::cut_to_screen(ui, id, at, |ui| {
                     for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
                         if i == 6 {
                             crate::popmenu::panel_separator(ui);

@@ -526,13 +526,14 @@ pub fn menu_origin(at: Pos2, size: Vec2, screen: Rect) -> Pos2 {
     }
 }
 
-/// Where a popup menu may be: the window's client as far as the monitor's work area reaches (the
-/// original's menus are bounded by the work area and cut at it, clone; ours cannot leave the
-/// window, #178), in points; the screen elsewhere.
-pub fn bounds(ctx: &egui::Context) -> Rect {
+/// Where a popup menu at `at` may be: the window's client as far as the work area of the monitor
+/// at the menu's point reaches (CMFCPopupMenu's layout takes that monitor, MonitorFromPoint then
+/// GetMonitorInfoW, mfc120u `0x100dcd23`–`0x100dcd5b`; ours cannot leave the window, #209), in
+/// points; the screen elsewhere.
+pub fn bounds(ctx: &egui::Context, #[cfg_attr(not(windows), allow(unused_variables))] at: Pos2) -> Rect {
     let screen = ctx.screen_rect();
     #[cfg(windows)]
-    if let Some(w) = work_in_client(ctx.pixels_per_point()) {
+    if let Some(w) = work_in_client(ctx.pixels_per_point(), at) {
         let r = screen.intersect(w);
         if r.width() > 50.0 && r.height() > 50.0 {
             return r;
@@ -541,47 +542,112 @@ pub fn bounds(ctx: &egui::Context) -> Rect {
     screen
 }
 
-/// The work area of the monitor the active window is on, in that window's client points.
+/// The work area of the monitor at `p` among `monitors` (monitor rect, work rect): the one that
+/// contains it, else the nearest (MONITOR_DEFAULTTONEAREST).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn work_at(monitors: &[(Rect, Rect)], p: Pos2) -> Option<Rect> {
+    let dist = |r: &Rect| {
+        let d = Vec2::new((r.left() - p.x).max(0.0).max(p.x - r.right()), (r.top() - p.y).max(0.0).max(p.y - r.bottom()));
+        d.length_sq()
+    };
+    monitors.iter().min_by(|a, b| dist(&a.0).total_cmp(&dist(&b.0))).map(|m| m.1)
+}
+
+/// The work area of the monitor at the client point `at` of our frame, in the frame's client points.
 #[cfg(windows)]
-fn work_in_client(ppp: f32) -> Option<Rect> {
-    use windows_sys::Win32::Foundation::POINT;
-    use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
-    let hwnd = crate::dialogs::Owner::active()?.hwnd();
+fn work_in_client(ppp: f32, at: Pos2) -> Option<Rect> {
+    use windows_sys::Win32::Foundation::{LPARAM, POINT, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO};
+    let hwnd = crate::minsize::frame()?;
     let mut origin = POINT { x: 0, y: 0 };
-    // SAFETY: plain queries about our own active window into local structs.
+    unsafe extern "system" fn each(m: HMONITOR, _: HDC, _: *mut RECT, data: LPARAM) -> i32 {
+        // SAFETY: `data` is the Vec below, alive for the enumeration.
+        let out = &mut *(data as *mut Vec<(RECT, RECT)>);
+        let mut mi: MONITORINFO = std::mem::zeroed();
+        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoW(m, &mut mi) != 0 {
+            out.push((mi.rcMonitor, mi.rcWork));
+        }
+        1
+    }
+    let mut found: Vec<(RECT, RECT)> = Vec::new();
+    // SAFETY: plain queries about our own frame into local values; the callback only fills `found`.
     unsafe {
         if ClientToScreen(hwnd, &mut origin) == 0 {
             return None;
         }
-        let mut mi: MONITORINFO = std::mem::zeroed();
-        mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-        if GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mut mi) == 0 {
-            return None;
-        }
-        let w = mi.rcWork;
-        let k = 1.0 / ppp;
-        Some(Rect::from_min_max(Pos2::new((w.left - origin.x) as f32 * k, (w.top - origin.y) as f32 * k), Pos2::new((w.right - origin.x) as f32 * k, (w.bottom - origin.y) as f32 * k)))
+        EnumDisplayMonitors(std::ptr::null_mut(), std::ptr::null(), Some(each), &mut found as *mut _ as LPARAM);
     }
+    let k = 1.0 / ppp;
+    let rect = |r: &RECT| Rect::from_min_max(Pos2::new((r.left - origin.x) as f32 * k, (r.top - origin.y) as f32 * k), Pos2::new((r.right - origin.x) as f32 * k, (r.bottom - origin.y) as f32 * k));
+    let mons: Vec<(Rect, Rect)> = found.iter().map(|(m, w)| (rect(m), rect(w))).collect();
+    work_at(&mons, at)
 }
 
 /// [`menu_origin`] for the area `id`, whose height is last pass's (an area's first pass is a hidden
 /// sizing one, so the menu is never seen at the wrong place).
 pub fn menu_pos(ctx: &egui::Context, id: egui::Id, at: Pos2) -> Pos2 {
     let size = ctx.memory(|m| m.area_rect(id)).map_or(Vec2::ZERO, |r| r.size());
-    menu_origin(at, size, bounds(ctx))
+    menu_origin(at, size, bounds(ctx, at))
 }
 
 
-/// The scroll arrows of a menu taller than the screen are 16 px bands (inferred: the binary's scroll
-/// mode is read at `0x100dd6a9`–`0x100dd733`, the arrows' size and rate were not run) that scroll
-/// the rows while the pointer is on them, a row per 100 ms; the wheel scrolls by rows.
+/// The scroll arrows of a menu taller than the work area (clone, work area shrunk by an appbar):
+/// a 15 px band along the top and the bottom, each shown only while there are rows beyond it, a small
+/// solid triangle in it; the pointer resting on one scrolls the rows a row per 80 ms (the popup's
+/// mouse-move handler starts timer 0xEC16 at 80 ms, `SetTimer` at mfc120u `0x100deaad`), a wheel
+/// notch one row (22 px); the menu's top is the work area's top, its height the work area's.
 pub fn arrow_band() -> f32 {
-    crate::dpi::s(16.0)
+    crate::dpi::s(15.0)
 }
 
-/// Pixels a menu scrolls while the pointer rests on an arrow for `dt` seconds.
-pub fn scroll_speed(dt: f32) -> f32 {
-    row_pitch() * dt / 0.1
+/// The period of the scroll arrow's timer.
+pub const SCROLL_TICK: f32 = 0.08;
+
+/// Whole rows a menu scrolls in `dt` seconds with the pointer on an arrow (`acc` carries the rest).
+pub fn scroll_ticks(acc: &mut f32, dt: f32) -> f32 {
+    *acc += dt;
+    let n = (*acc / SCROLL_TICK).floor();
+    *acc -= n * SCROLL_TICK;
+    n
+}
+
+/// `scroll` moved the least that shows the rows `top..top + h` in a view `view` high.
+pub fn scroll_to_show(scroll: f32, top: f32, h: f32, view: f32) -> f32 {
+    if top < scroll {
+        top
+    } else if top + h > scroll + view {
+        top + h - view
+    } else {
+        scroll
+    }
+}
+
+/// Where the row `i` of `entries` starts in a menu's rows (rows a pitch apart, a shown separator
+/// 8 px, or 4 in an unpadded panel menu).
+pub fn row_top<C>(entries: &[Entry<C>], i: usize, pad: bool) -> f32 {
+    let shown = shown_seps(entries);
+    let mut y = 0.0;
+    for (k, e) in entries.iter().enumerate().take(i) {
+        y += match e {
+            Entry::Sep => {
+                if !shown[k] {
+                    0.0
+                } else if pad {
+                    8.0
+                } else {
+                    4.0
+                }
+            }
+            _ => row_pitch(),
+        };
+    }
+    y
+}
+
+/// The height of a cut menu's rows between its bands, as [`scrolled`] lays it out at most.
+pub fn view_height(avail: f32) -> f32 {
+    (avail - 12.0 - 2.0 * arrow_band()).max(arrow_band())
 }
 
 /// `add` (the rows) in a menu cut to `avail` high: an arrow band above and below, the rows between,
@@ -602,14 +668,30 @@ fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce
         let d = if up { -1.0 } else { 1.0 };
         ui.painter().add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.0, 1.5 * -d), c + Vec2::new(3.0, 1.5 * -d), c + Vec2::new(0.0, 1.5 * d)], MFC_TEXT, Stroke::NONE));
         if ui.rect_contains_pointer(row) {
-            *scroll += d * scroll_speed(dt);
-            ui.ctx().request_repaint();
+            let tick = ui.id().with("fv_tick");
+            let mut acc: f32 = ui.ctx().data(|dd| dd.get_temp(tick)).unwrap_or(0.0);
+            *scroll += d * scroll_ticks(&mut acc, dt) * row_pitch();
+            ui.ctx().data_mut(|dd| dd.insert_temp(tick, acc));
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f32(SCROLL_TICK));
         }
     };
     // A wheel notch over the menu: one row.
     if ui.rect_contains_pointer(ui.max_rect()) {
-        let notches: f32 = ui.ctx().input(|i| i.events.iter().map(|e| if let egui::Event::MouseWheel { delta, unit: egui::MouseWheelUnit::Line, .. } = e { delta.y } else { 0.0 }).sum());
-        *scroll -= notches * row_pitch();
+        // Line notches count whole; pixel deltas (a precision touchpad) pile up to whole rows.
+        let (lines, px): (f32, f32) = ui.ctx().input(|i| {
+            i.events.iter().fold((0.0, 0.0), |(l, p), e| match e {
+                egui::Event::MouseWheel { delta, unit: egui::MouseWheelUnit::Line, .. } => (l + delta.y, p),
+                egui::Event::MouseWheel { delta, unit: egui::MouseWheelUnit::Page, .. } => (l + delta.y * 3.0, p),
+                egui::Event::MouseWheel { delta, unit: egui::MouseWheelUnit::Point, .. } => (l, p + delta.y),
+                _ => (l, p),
+            })
+        });
+        let acc_id = ui.id().with("fv_wheel_px");
+        let mut acc: f32 = ui.ctx().data(|d| d.get_temp(acc_id)).unwrap_or(0.0) + px;
+        let rows = (acc / row_pitch()).trunc();
+        acc -= rows * row_pitch();
+        ui.ctx().data_mut(|d| d.insert_temp(acc_id, acc));
+        *scroll -= (lines + rows) * row_pitch();
     }
     let top_on = *scroll > 0.5;
     let body = room - if top_on { band } else { 0.0 };
@@ -636,9 +718,9 @@ fn scrolled<R>(ui: &mut egui::Ui, avail: f32, scroll: &mut f32, add: impl FnOnce
 
 /// The rows of the Area `id`'s menu, cut to the screen and scrolled when the menu (as last drawn)
 /// is taller than it, as [`show`]'s are; the scroll state is kept in the context.
-pub fn cut_to_screen<R>(ui: &mut egui::Ui, id: egui::Id, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+pub fn cut_to_screen<R>(ui: &mut egui::Ui, id: egui::Id, at: Pos2, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let ctx = ui.ctx().clone();
-    let avail = bounds(&ctx).height();
+    let avail = bounds(&ctx, at).height();
     let key = id.with("fv_cut");
     let (mut tall, mut scroll) = ctx.data(|d| d.get_temp::<(bool, f32)>(key)).unwrap_or((false, 0.0));
     if ctx.memory(|m| m.area_rect(id)).is_some_and(|r| r.height() > avail) {
@@ -647,6 +729,16 @@ pub fn cut_to_screen<R>(ui: &mut egui::Ui, id: egui::Id, add: impl FnOnce(&mut e
     let r = if tall { scrolled(ui, avail, &mut scroll, add) } else { add(ui) };
     ctx.data_mut(|d| d.insert_temp(key, (tall, scroll)));
     r
+}
+
+/// Scroll the cut menu of Area `id` (see [`cut_to_screen`]) so that the rows `top..top + h` show.
+pub fn reveal(ctx: &egui::Context, id: egui::Id, at: Pos2, top: f32, h: f32) {
+    let key = id.with("fv_cut");
+    let (tall, scroll) = ctx.data(|d| d.get_temp::<(bool, f32)>(key)).unwrap_or((false, 0.0));
+    if tall {
+        let view = view_height(bounds(ctx, at).height());
+        ctx.data_mut(|d| d.insert_temp(key, (tall, scroll_to_show(scroll, top, h, view))));
+    }
 }
 
 /// Show an open menu for one frame.
@@ -712,6 +804,10 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         if home || end {
             menu.hot = step(entries, None, home);
         }
+        // The highlight stays in view in a cut menu (the keys move it, the scroll follows).
+        if let (true, Some(h), true) = (menu.tall, menu.hot, up || down || home || end) {
+            menu.scroll = scroll_to_show(menu.scroll, row_top(entries, h, menu.pad), row_pitch(), view_height(bounds(ctx, menu.pos).height()));
+        }
         let into_sub = (right || enter) && sub_entries(menu.hot).is_some();
         if into_sub {
             menu.sub = menu.hot;
@@ -736,7 +832,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         });
     };
     let root_id = area_id(base, menu.serial);
-    let avail = bounds(ctx).height();
+    let avail = bounds(ctx, menu.pos).height();
     // Taller than the screen: cut to it and scrolled (once seen so, always: the cut menu is never taller).
     if ctx.memory(|m| m.area_rect(root_id)).is_some_and(|r| r.height() > avail) {
         menu.tall = true;
@@ -746,7 +842,7 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
         .kind(egui::UiKind::Menu)
         .order(egui::Order::Foreground)
         .fixed_pos(menu_pos(ctx, root_id, menu.pos))
-        .constrain_to(bounds(ctx))
+        .constrain_to(bounds(ctx, menu.pos))
         .show(ctx, |ui| {
             frame_ui(ui, &mut |ui| {
                 let mut rows = |ui: &mut egui::Ui| {
@@ -772,12 +868,12 @@ pub fn show<C: Clone>(ctx: &egui::Context, base: &str, menu: &mut PopMenu, entri
             let h = ctx.memory(|m| m.area_rect(sub_id)).map_or(0.0, |r| r.height());
             // Its border a pixel inside the parent's right one and a pixel
             // above its item (VM: «Каналы» of the vector pane).
-            let y = if at.top() - 1.0 + h > bounds(ctx).bottom() { at.bottom() + 1.0 - h } else { at.top() - 1.0 };
+            let y = if at.top() - 1.0 + h > bounds(ctx, at.min).bottom() { at.bottom() + 1.0 - h } else { at.top() - 1.0 };
             let area = egui::Area::new(sub_id)
                 .kind(egui::UiKind::Menu)
                 .order(egui::Order::Foreground)
                 .fixed_pos(Pos2::new(at.right(), y))
-                .constrain_to(bounds(ctx))
+                .constrain_to(bounds(ctx, at.min))
                 .show(ctx, |ui| {
                     frame_ui(ui, &mut |ui| {
                         let (mut none, mut r) = (None, None);
@@ -955,7 +1051,7 @@ mod tests {
             let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
                 let a = egui::Area::new(id).fixed_pos(Pos2::new(100.0, 0.0)).constrain(true).show(ctx, |ui| {
                     mfc_frame(ui, |ui| {
-                        cut_to_screen(ui, id, |ui| {
+                        cut_to_screen(ui, id, Pos2::new(100.0, 0.0), |ui| {
                             for n in 0..50 {
                                 mark_item_hot(ui, &format!("row {n}"), true, None, false);
                             }
@@ -1004,5 +1100,84 @@ mod tests {
         frame(&mut m, vec![wheel(-1.0)]);
         frame(&mut m, vec![wheel(1.0)]);
         assert!((m.scroll - row_pitch()).abs() < 1.0, "two down, one up: {}", m.scroll);
+    }
+
+    /// Keys in a cut menu keep the highlighted row in view: 30 x Down, then End, then Home.
+    #[test]
+    fn keys_in_a_cut_menu_scroll_the_highlight_into_view() {
+        let entries: Vec<Entry<u8>> = (0..60).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let mut m = PopMenu::new(1, Pos2::new(400.0, 100.0));
+        let mut t = 0.0;
+        let mut frame = |m: &mut PopMenu, key: Option<egui::Key>| {
+            t += 0.05;
+            let events = key.map(|key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }).into_iter().collect();
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
+                show(ctx, "t", m, &entries);
+            });
+        };
+        for _ in 0..4 {
+            frame(&mut m, None);
+        }
+        let visible = |m: &PopMenu| {
+            let top = row_top(&entries, m.hot.unwrap(), true);
+            top >= m.scroll - 0.5 && top + row_pitch() - 1.0 <= m.scroll + view_height(300.0) + arrow_band() + 0.5 // at the end the lower band is gone
+        };
+        for _ in 0..30 {
+            frame(&mut m, Some(egui::Key::ArrowDown));
+            assert!(visible(&m), "row {:?} at scroll {}", m.hot, m.scroll);
+        }
+        assert!(m.scroll > 0.0);
+        frame(&mut m, Some(egui::Key::End));
+        assert_eq!(m.hot, Some(59));
+        assert!(visible(&m));
+        frame(&mut m, Some(egui::Key::Home));
+        assert!(visible(&m) && m.scroll == 0.0, "back at the top: {}", m.scroll);
+    }
+
+    /// The work area is that of the monitor at the menu's point, the nearest one outside any.
+    #[test]
+    fn the_work_area_is_that_of_the_monitor_at_the_point() {
+        let m1 = (Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1920.0, 1080.0)), Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1920.0, 1040.0)));
+        let m2 = (Rect::from_min_max(Pos2::new(1920.0, 0.0), Pos2::new(3200.0, 800.0)), Rect::from_min_max(Pos2::new(1920.0, 0.0), Pos2::new(3200.0, 752.0)));
+        let ms = [m1, m2];
+        assert_eq!(work_at(&ms, Pos2::new(100.0, 100.0)), Some(m1.1));
+        assert_eq!(work_at(&ms, Pos2::new(2500.0, 300.0)), Some(m2.1));
+        assert_eq!(work_at(&ms, Pos2::new(3300.0, 900.0)), Some(m2.1), "nearest");
+        assert_eq!(work_at(&[], Pos2::ZERO), None);
+    }
+
+    /// The arrow's timer: a row per 80 ms, the remainder carried.
+    #[test]
+    fn the_scroll_arrow_steps_whole_rows_every_80_ms() {
+        let mut acc = 0.0;
+        let rows: f32 = (0..10).map(|_| scroll_ticks(&mut acc, 0.05)).sum();
+        assert_eq!(rows, 6.0, "0.5 s: 6 ticks of 80 ms");
+    }
+
+    /// A touchpad's pixel deltas pile up to whole rows.
+    #[test]
+    fn pixel_wheel_deltas_scroll_a_cut_menu_in_rows() {
+        let entries: Vec<Entry<u8>> = (0..60).map(|n| Entry::item(format!("item {n}"), true, Mark::None, n)).collect();
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 300.0));
+        let mut m = PopMenu::new(1, Pos2::new(400.0, 100.0));
+        let mut t = 0.0;
+        let mut frame = |m: &mut PopMenu, events: Vec<egui::Event>| {
+            t += 0.05;
+            let _ = ctx.run(egui::RawInput { screen_rect: Some(screen), time: Some(t), events, ..Default::default() }, |ctx| {
+                show(ctx, "t", m, &entries);
+            });
+        };
+        for _ in 0..4 {
+            frame(&mut m, vec![]);
+        }
+        frame(&mut m, vec![egui::Event::PointerMoved(Pos2::new(450.0, 120.0))]);
+        let px = |d: f32| egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, d), modifiers: Default::default() };
+        frame(&mut m, vec![px(-10.0)]);
+        assert_eq!(m.scroll, 0.0, "less than a row waits");
+        frame(&mut m, vec![px(-14.0)]);
+        assert!((m.scroll - row_pitch()).abs() < 0.5, "a row after 24 px: {}", m.scroll);
     }
 }
