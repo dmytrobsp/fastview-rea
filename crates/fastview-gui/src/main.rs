@@ -7201,7 +7201,7 @@ mod window_tests {
                 egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| app.plane_ui(ui));
             });
             let y = 250;
-            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [235, 235, 235] || c.px[y * c.w + x] == [190, 190, 190]).count();
+            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [240, 240, 240] || c.px[y * c.w + x] == [133, 133, 133]).count();
             assert_eq!(run, bar, "{dpi_v}: the scroll bar's width");
         }
         dpi::set(96);
