@@ -20,7 +20,8 @@
 # enabled, rectangle — into shots/), "FLOATAT x,y" (the first visible
 # floating pane's mini-frame moved so that its top-left corner is at x,y,
 # its size kept), "CLIPEMF name.emf" (the clipboard's enhanced metafile
-# saved into shots/).
+# saved into shots/), "SCROLL name.txt" (the scroll bars of the front window
+# and its descendants: range, page and position — appended to shots/).
 # Logs next to itself.
 param([Parameter(Mandatory)][string]$Exe, [string]$Open = '', [string]$ArgLine = '', [string]$Keys = '', [int]$WaitSec = 6, [string]$Shot = '', [switch]$Leave, [switch]$Soft, [string]$SoftLog = '')
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -121,6 +122,18 @@ public static class In {
   }
   public static string Tree() {
     var o = new System.Text.StringBuilder(); Tree(GetForegroundWindow(), 0, o); return o.ToString();
+  }
+  [StructLayout(LayoutKind.Sequential)] public struct SCROLLINFO { public uint cbSize, fMask; public int nMin, nMax; public uint nPage; public int nPos, nTrackPos; }
+  [DllImport("user32.dll")] public static extern bool GetScrollInfo(IntPtr h, int bar, ref SCROLLINFO si);
+  static void Scroll(IntPtr h, int depth, System.Text.StringBuilder o) {
+    foreach (int bar in new[] { 0, 1 }) {
+      var si = new SCROLLINFO(); si.cbSize = (uint)Marshal.SizeOf(typeof(SCROLLINFO)); si.fMask = 0x1F;
+      if (GetScrollInfo(h, bar, ref si) && si.nMax > si.nMin) o.AppendFormat("{0}{1} {2}: min={3} max={4} page={5} pos={6}\n", new string(' ', depth * 2), Desc(h), bar == 0 ? "H" : "V", si.nMin, si.nMax, si.nPage, si.nPos);
+    }
+    for (IntPtr c = GetWindow(h, 5); c != IntPtr.Zero; c = GetWindow(c, 2)) Scroll(c, depth + 1, o);
+  }
+  public static string Scroll() {
+    var o = new System.Text.StringBuilder(); Scroll(GetForegroundWindow(), 0, o); return o.ToString();
   }
   [DllImport("user32.dll")] public static extern IntPtr GetClipboardData(uint f);
   [DllImport("gdi32.dll")] public static extern uint GetEnhMetaFileBits(IntPtr h, uint n, byte[] buf);
@@ -250,6 +263,8 @@ foreach ($k in ($Keys -split ';')) {
         if ($b) { [IO.File]::WriteAllBytes((Join-Path (Join-Path $here 'shots') $Matches[1]), $b) } else { "no EMF" | Out-File $log -Append -Encoding utf8 }
     } elseif ($k -match '^CLIP (.+)$') {
         "--- after step $($k)`n" + [In]::Clip() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Append -Encoding utf8
+    } elseif ($k -match '^SCROLL (.+)$') {
+        "--- after step $($k)`n" + [In]::Scroll() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Append -Encoding utf8
     } elseif ($k -match '^TREE (.+)$') {
         [In]::Tree() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^WINS (.+)$') {

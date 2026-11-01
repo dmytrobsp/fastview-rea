@@ -699,23 +699,33 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
 }
 
 /// The first sample after a page of the view's horizontal scroll bar
-/// (Shift+wheel, `0x45d990`). The bar runs 0…10000, its position read back
-/// from the first sample: a page is ⌊V·10000 / N⌋ (V the samples shown, N
-/// the record's), the first sample ⌊(N − V)·pos / 10000⌋, never past the
-/// last screen (VM: two notches from 0 land on the bar's second page, short of
-/// two visible widths).
-pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> usize {
+/// (Shift+wheel, `0x45d990`) and the bar's position then. The bar runs
+/// 0…10000 (its range is 0…10000 + a page); a page is ⌊V·10000 / N⌋ (V the
+/// samples shown, N the record's), the first sample ⌊(N − V)·pos / 10000⌋,
+/// never past the last screen. The position is the bar's own
+/// (`GetScrollPos`): the scroll-bar update (`0x45d4a0`, after a zoom, a
+/// resize, any other move) sets it to ⌊first·10000 / (N − V)⌋ + 1, the wheel
+/// sets the sum or difference it computed and leaves it, so a notch back
+/// starts from where the notch before left the bar, not from a position read
+/// off the first sample again (`kept`: the bar's position when the wheel set
+/// it last and nothing has changed it since). The bar clamps a position to
+/// 0…10001.
+pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool, kept: Option<usize>) -> (usize, usize) {
     let range = n.saturating_sub(visible);
     if n == 0 || range == 0 {
-        return 0;
+        return (0, kept.unwrap_or(1));
     }
     let step = visible * 10000 / n;
-    let pos = first * 10000 / range;
-    if up {
-        range * pos.saturating_sub(step) / 10000
+    let pos = kept.unwrap_or_else(|| first * 10000 / range + 1);
+    let (new_pos, first) = if up {
+        let p = pos.saturating_sub(step);
+        (p, range * p / 10000)
     } else {
-        (range * (pos + step) / 10000).min(range)
-    }
+        let p = pos + step;
+        let f = range * p / 10000;
+        if f > range { (10000, range) } else { (p, f) }
+    };
+    (first, new_pos.min(10001))
 }
 
 /// The «*K» test (`0x462b22`–`0x462b8f`): the channel's shown and stored primary / secondary flags
@@ -1234,6 +1244,8 @@ enum Act {
     Drag(VizDrag),
     EndDrag,
     SetFirst(usize),
+    /// The horizontal bar's position as the wheel left it: the first sample, the samples shown and the record's with it.
+    SetHPos(Option<(usize, usize, usize, usize)>),
     SetVScroll(f32),
     PlaceComment(crate::comments::Comment, bool),
     CommentDrag(usize, crate::comments::Part),
@@ -1891,6 +1903,8 @@ impl App {
         if resp.hovered() && !menu_busy {
             let (wheels, buttons) = ui.input(|i| (wheel_deltas(&i.events), i.pointer.any_down()));
             let (mut first_w, mut vscroll_w) = (first as i64, vscroll);
+            // The bar's position as the last Shift+wheel left it, while the view is as it left it.
+            let mut hpos_w = doc.hscroll_pos.filter(|&(f, v, nn, _)| f == first && v == visible && nn == n).map(|k| k.3);
             for delta in wheels {
                 let up = delta > 0.0;
                 if alt {
@@ -1898,8 +1912,14 @@ impl App {
                 } else if ctrl && !shift && !buttons {
                     actions.push(Act::Cmd(Command::ZoomX(up)));
                 } else if shift && !ctrl && !buttons {
-                    first_w = (hscroll_page(first_w.max(0) as usize, n, visible, up) as i64).clamp(0, hmax as i64);
+                    let (f, pos) = hscroll_page(first_w.max(0) as usize, n, visible, up, hpos_w);
+                    first_w = (f as i64).clamp(0, hmax as i64);
+                    hpos_w = Some(pos);
+                    // A clone run reads the bar's position from this trace (FV_SOFTLOG).
+                    #[cfg(windows)]
+                    crate::softrun::trace(&format!("hscroll up={up} first={first_w} pos={pos} visible={visible} n={n}"));
                     actions.push(Act::SetFirst(first_w as usize));
+                    actions.push(Act::SetHPos(Some((first_w as usize, visible, n, pos))));
                 } else {
                     vscroll_w += delta;
                     actions.push(Act::SetVScroll(vscroll_w));
@@ -2021,6 +2041,7 @@ impl App {
                 Act::Drag(k) => self.vizir_drag = Some(k),
                 Act::EndDrag => self.vizir_drag = None,
                 Act::SetFirst(v) => d.first = v.min(hmax_c),
+                Act::SetHPos(k) => d.hscroll_pos = k,
                 Act::SetVScroll(v) => d.vscroll = v.clamp(vmin_c, 0.0),
                 Act::PlaceComment(c, drag) => {
                     // The tools are one-shot: a moment ends here, a level line or
@@ -3387,10 +3408,10 @@ mod menu_tests {
         assert!(h.doc().vscroll < 0.0, "plain wheel scrolls the lanes");
         // The bar's page, by the rule on a synthetic record (9746 samples, 1523
         // shown: page 1562 of 10000, the bar spans 8223 samples).
-        assert_eq!(hscroll_page(0, 9746, 1523, false), 1284);
-        assert_eq!(hscroll_page(1284, 9746, 1523, false), 2568);
-        assert_eq!(hscroll_page(2568, 9746, 1523, true), 1282);
-        assert_eq!(hscroll_page(8000, 9746, 1523, false), 8223, "the last screen");
+        assert_eq!(hscroll_page(0, 9746, 1523, false, None), (1285, 1563));
+        assert_eq!(hscroll_page(1285, 9746, 1523, false, Some(1563)), (2569, 3125));
+        assert_eq!(hscroll_page(2569, 9746, 1523, true, Some(3125)), (1285, 1563), "one notch back lands on the first notch's sample");
+        assert_eq!(hscroll_page(8000, 9746, 1523, false, None).0, 8223, "the last screen");
         // Shift+wheel: a page sideways (zoomed in so there is room).
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
@@ -3413,6 +3434,29 @@ mod menu_tests {
         let touch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, 30.0), modifiers: egui::Modifiers::NONE };
         h.frame_mod(vec![egui::Event::PointerMoved(at), touch], egui::Modifiers::NONE);
         assert_eq!(h.doc().vscroll, v + 30.0, "raw pixels");
+    }
+
+    /// Shift+wheel one notch back returns to the first notch's sample (clone,
+    /// #196: the original read the bar's own position, left where the notch before
+    /// set it, ⌊first·10000/(N−V)⌋ + 1 only after a zoom or other update; the
+    /// position read off the first sample again landed samples before it), and a
+    /// zoom in between makes the bar start again from the first sample.
+    #[test]
+    fn shift_wheel_one_notch_back_returns_to_the_first_notch() {
+        let mut h = Harness::new();
+        let at = Pos2::new(600.0, h.row(0).y);
+        h.button(at, egui::PointerButton::Primary);
+        for _ in 0..3 {
+            h.wheel(at, 1.0, egui::Modifiers::CTRL);
+        }
+        let start = h.doc().first;
+        h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+        let one = h.doc().first;
+        h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+        let two = h.doc().first;
+        assert!(start < one && one < two, "two notches right: {start} {one} {two}");
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        assert_eq!(h.doc().first, one, "one notch back lands on the first notch's sample");
     }
 
     /// With the whole record in view there is no horizontal bar (seen on

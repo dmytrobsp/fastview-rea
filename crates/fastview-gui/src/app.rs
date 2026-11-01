@@ -777,6 +777,9 @@ pub struct Doc {
     pub comment_mode: u8,
     /// First visible sample (`view+0xfc`).
     pub first: usize,
+    /// The horizontal scroll bar's position (first sample, samples shown, record's, position) as the
+    /// Shift+wheel left it (`0x45d990` sets the bar and leaves it); valid while those still hold.
+    pub hscroll_pos: Option<(usize, usize, usize, usize)>,
     /// Horizontal scale `f` (`view+0xf0`, a power of two ≤ 1, 25·f px per
     /// sample); `None` until the view first lays out (initial = stored
     /// `View/XScale`, else twice the fit scale).
@@ -906,6 +909,7 @@ impl Doc {
             group_names: Default::default(),
             comment_mode: 0,
             first: 0,
+            hscroll_pos: None,
             xscale: None,
             vscroll: 0.0,
             diff_band: true,
