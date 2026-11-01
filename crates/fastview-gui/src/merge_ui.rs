@@ -493,7 +493,7 @@ impl App {
         let s = &d.osc.stamps;
         let own_start = format!("{}, {}", s.start_date, s.start_time);
         let own_hdr = d.hdr_text();
-        let own = HeaderSide { title: &d.name, station: &d.osc.station, block: &d.osc.device, start: &own_start, comment: &own_hdr };
+        let own = HeaderSide { title: &d.title(), station: &d.osc.station, block: &d.osc.device, start: &own_start, comment: &own_hdr };
         let other = HeaderSide { title: &rec.title, station: &rec.station_id, block: &rec.block_id, start: &rec.start_time, comment: &rec.hdr_file };
         d.hdr = Some(merged_header(&own, &other));
         d.hdr_cp = crate::setfile::cp_of(1);
