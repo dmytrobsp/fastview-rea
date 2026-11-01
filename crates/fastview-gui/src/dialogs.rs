@@ -239,8 +239,10 @@ impl<'o> Dlg<'o> {
                 let mut stops = std::mem::take(&mut r.stops);
                 stops.sort_by_key(|s| s.2);
                 r.prev = stops.into_iter().map(|s| (s.0, s.1)).collect();
-                r.prev_items = std::mem::take(&mut r.items);
+                r.prev_items = group_list(std::mem::take(&mut r.items));
                 r.brk = false;
+                r.cont = false;
+                r.start = false;
                 r.pass = frame;
             }
             r.prev.clone()
@@ -293,7 +295,7 @@ impl<'o> Dlg<'o> {
             if let Some(mut at) = on {
                 for key in take_arrows(ctx) {
                     at = group_step(&items, at, matches!(key, egui::Key::ArrowLeft | egui::Key::ArrowUp));
-                    let (to, kind, _) = items[at];
+                    let (to, kind, ..) = items[at];
                     ctx.memory_mut(|m| m.request_focus(to));
                     if kind == GroupKind::Radio {
                         ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_arrow_click"), (to, frame)));
@@ -447,9 +449,7 @@ pub fn win_button_en(ui: &mut egui::Ui, r: Rect, text: &str, default: bool, enab
     // default button loses meanwhile (the dialog manager's DM_SETDEFID;
     // VM: «Печать»'s OK plain while «Свойства...» has the focus); its focus
     // rectangle with the cues.
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Push);
-    }
+    group_item(ui, resp.id, GroupKind::Push, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Button, enabled);
     let default = (default && !other_button_focused(ui, resp.id)) || focused;
     let face = r.shrink(1.0);
@@ -568,9 +568,7 @@ pub fn win_radio_en(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabl
     // the focus as it gets checked.
     let pressed = ui.input(|i| i.pointer.primary_pressed()) && resp.contains_pointer();
     let held = ui.memory(|m| m.has_focus(resp.id));
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Radio);
-    }
+    group_item(ui, resp.id, GroupKind::Radio, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled && (checked || pressed || held));
     // The theme's 13 px disc, larger at > 100 %.
     let (rad, dot) = (crate::dpi::half(6.5), (3.0 * crate::dpi::k()).round());
@@ -780,6 +778,8 @@ pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -
     let (client, _) = ui.allocate_exact_size(dlu_size(379, 307), egui::Sense::hover());
     let focus = ui.memory(|m| m.focused().is_none());
     win_edit_multiline(ui, dlu(client, 6, 6, 366, 276), id, text, focus);
+    // The buttons follow the edit in its span (template, no WS_GROUP).
+    group_continue(ui);
     if win_button(ui, dlu(client, 244, 288, 62, 14), "OK", true).clicked() {
         return Some(true);
     }
@@ -815,9 +815,7 @@ pub fn win_check(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool) -> bool 
 /// right-aligned before it.
 pub fn win_check_ex(ui: &mut egui::Ui, r: Rect, text: &str, checked: bool, enabled: bool, left: bool) -> bool {
     let resp = ui.interact(r, ui.id().with(("fv_check", text, r.min.x as i32, r.min.y as i32)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
-    if enabled {
-        group_item(ui, resp.id, GroupKind::Check);
-    }
+    group_item(ui, resp.id, GroupKind::Check, enabled);
     let focused = tab_stop_if(ui, resp.id, StopKind::Other, enabled);
     // The theme's 13 px box, larger at > 100 % (VM, 150 %: 20 px).
     let side = crate::dpi::s(13.0);
@@ -923,6 +921,23 @@ fn take_arrows(ctx: &egui::Context) -> Vec<egui::Key> {
     ctx.data_mut(|d| d.remove_temp::<(u64, Vec<egui::Key>)>(egui::Id::new("fv_arrows"))).filter(|(p, _)| p + 1 >= pass).map(|a| a.1).unwrap_or_default()
 }
 
+/// The arrows for the control `id` that holds the focus: those a dialog
+/// kept from egui (`take_dialog_tabs`), or, outside a dialog (the merge
+/// bar's combo boxes: clone, ↑ / ↓ change the choice there too), those
+/// of this pass, which egui is told not to turn into a focus move (nor Esc
+/// into a loss of the focus: a closed list leaves the combo focused).
+pub fn focused_arrows(ui: &egui::Ui, id: egui::Id) -> Vec<egui::Key> {
+    let ctx = ui.ctx();
+    let mut keys = take_arrows(ctx);
+    ctx.memory_mut(|m| m.set_focus_lock_filter(id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
+    for k in [egui::Key::ArrowUp, egui::Key::ArrowDown, egui::Key::ArrowLeft, egui::Key::ArrowRight] {
+        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, k)) {
+            keys.push(k);
+        }
+    }
+    keys
+}
+
 /// What a tab stop is, for the keys the dialog manager gives it.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum StopKind {
@@ -943,9 +958,13 @@ struct Ring {
     prev: Vec<(egui::Id, StopKind)>,
     /// This pass's controls for the arrows' groups (whether each starts
     /// one), a group box drawn since the last, and last pass's.
-    items: Vec<(egui::Id, GroupKind, bool)>,
+    items: Vec<RawItem>,
     brk: bool,
-    prev_items: Vec<(egui::Id, GroupKind, bool)>,
+    /// The next control starts a span of its own (`group_start`).
+    start: bool,
+    /// The next control continues the group before it (no WS_GROUP).
+    cont: bool,
+    prev_items: Vec<(egui::Id, GroupKind, bool, bool)>,
 }
 
 /// A control as the arrows see it (the dialog manager's
@@ -964,19 +983,94 @@ pub enum GroupKind {
 }
 
 /// Register `id` as the next control of the dialog being drawn for the
-/// arrows' groups (an enabled one: the dialog manager skips the others).
-fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
+/// arrows' groups. A disabled one stays in its span (with its WS_GROUP) and
+/// the arrows skip it, as the dialog manager does.
+fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind, enabled: bool) {
     let ctx = ui.ctx();
     let Some(d) = cur_dlg(ctx) else { return };
+    if ctx.data(|m| m.get_temp::<bool>(egui::Id::new("fv_no_span"))).unwrap_or(false) {
+        return;
+    }
     ctx.data_mut(|m| {
         let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
-        if r.items.iter().any(|s| s.0 == id) {
+        if r.items.iter().any(|s| s.id == id) {
             return;
         }
-        let start = r.brk || kind == GroupKind::Other || r.items.last().is_none_or(|l| l.1 != kind);
-        r.items.push((id, kind, start));
+        // Its place in the template's order, where the drawing order differs.
+        let place = m.get_temp::<Option<u32>>(egui::Id::new("fv_tab_index")).flatten();
+        let r: &mut Ring = m.get_temp_mut_or_default(d.with("fv_tab_ring"));
+        let place = place.unwrap_or(10_000 + r.items.len() as u32);
+        let (brk, cont) = (r.brk || r.start, r.cont);
+        r.items.push(RawItem { id, kind, brk, cont, place, enabled });
         r.brk = false;
+        r.cont = false;
+        r.start = false;
     });
+}
+
+/// The arrows' spans of the dialog `title` as of the last frame, each a run
+/// of kinds in the template's order (tests).
+#[cfg(test)]
+pub fn arrow_spans(ctx: &egui::Context, title: &str) -> Vec<Vec<GroupKind>> {
+    let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
+    let mut out: Vec<Vec<GroupKind>> = Vec::new();
+    for (_, kind, start, enabled) in ring.prev_items {
+        if start || out.is_empty() {
+            out.push(Vec::new());
+        }
+        if enabled {
+            out.last_mut().unwrap().push(kind);
+        }
+    }
+    out.retain(|s| !s.is_empty());
+    out
+}
+
+/// A control drawn for the arrows' groups, before the groups are made.
+#[derive(Clone, Copy)]
+struct RawItem {
+    id: egui::Id,
+    kind: GroupKind,
+    /// A group box was drawn before it.
+    brk: bool,
+    /// It has no WS_GROUP of its own: it continues the span before it
+    /// whatever that holds (537's radios after the combo box of «Ic»).
+    cont: bool,
+    place: u32,
+    enabled: bool,
+}
+
+/// The controls in the template's order with whether each starts a group:
+/// after a group box, or when it is another kind than the one before it, or
+/// a control that keeps the arrows (a label and its combo or edit begin a
+/// span in the templates) — unless the template gives it no WS_GROUP.
+fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool, bool)> {
+    raw.sort_by_key(|i| i.place);
+    let mut out: Vec<(egui::Id, GroupKind, bool, bool)> = Vec::new();
+    for i in raw {
+        let start = !i.cont && (i.brk || i.kind == GroupKind::Other || out.last().is_none_or(|l| l.1 != i.kind));
+        out.push((i.id, i.kind, start, i.enabled));
+    }
+    out
+}
+
+/// The next control has a WS_GROUP of its own: it starts a span (a push
+/// button after a group box that the drawing order puts elsewhere, 347).
+pub fn group_start(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).start = true);
+    }
+}
+
+/// The next control has no WS_GROUP: it joins the span before it, a combo
+/// box included (clone, page 537: ↑ from «Расчетный» reaches the combo box
+/// of «Ic», ↓ from «Измеренный» goes round to it).
+pub fn group_continue(ui: &egui::Ui) {
+    let ctx = ui.ctx();
+    if let Some(d) = cur_dlg(ctx) {
+        ctx.data_mut(|m| m.get_temp_mut_or_default::<Ring>(d.with("fv_tab_ring")).cont = true);
+    }
 }
 
 /// A group box drawn: the next control starts a group.
@@ -988,11 +1082,12 @@ fn group_break(ui: &egui::Ui) {
 }
 
 /// The item an arrow (`back`: ← / ↑) passes the focus to from `at`.
-fn group_step(items: &[(egui::Id, GroupKind, bool)], at: usize, back: bool) -> usize {
+fn group_step(items: &[(egui::Id, GroupKind, bool, bool)], at: usize, back: bool) -> usize {
     let s = (0..=at).rev().find(|&k| items[k].2).unwrap_or(0);
     let e = (at + 1..items.len()).find(|&k| items[k].2).unwrap_or(items.len());
     let n = e - s;
-    s + (at - s + if back { n - 1 } else { 1 }) % n
+    // Round the span, past the disabled controls; nothing else enabled: stay.
+    (1..n).map(|i| s + (at - s + if back { n - i } else { i }) % n).find(|&k| items[k].3).unwrap_or(at)
 }
 
 /// The stop holding the focus: the focused control when it is one of
@@ -1012,7 +1107,7 @@ fn cur_dlg(ctx: &egui::Context) -> Option<egui::Id> {
 pub fn tab_stop(ui: &egui::Ui, id: egui::Id, kind: StopKind) -> bool {
     // Push buttons, radios and checks registered themselves; the rest
     // keep the arrows.
-    group_item(ui, id, GroupKind::Other);
+    group_item(ui, id, GroupKind::Other, true);
     let ctx = ui.ctx();
     // A press on it gives it the focus (a Win32 control takes the focus at
     // its WM_LBUTTONDOWN; egui gives none but to its text edits).
@@ -1048,6 +1143,9 @@ pub fn tab_stop_if(ui: &egui::Ui, id: egui::Id, kind: StopKind, on: bool) -> boo
     if on {
         return tab_stop(ui, id, kind);
     }
+    // A disabled control stays in its span, skipped when stepping (the dialog
+    // manager keeps it there, its WS_GROUP included).
+    group_item(ui, id, GroupKind::Other, false);
     ui.ctx().data_mut(|d| d.remove_temp::<Option<u32>>(egui::Id::new("fv_tab_index")));
     false
 }
@@ -1058,6 +1156,15 @@ pub fn no_tab_stop<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), true));
     let r = add(ui);
     ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_tab"), false));
+    r
+}
+
+/// Controls drawn in `add` are in none of the dialog's spans (a hosted child
+/// dialog without DS_CONTROL: DIALOG 359's form).
+pub fn outside_the_spans<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_span"), true));
+    let r = add(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_no_span"), false));
     r
 }
 
@@ -1428,9 +1535,15 @@ pub fn win_combo_list_in(ui: &mut egui::Ui, r: Rect, id: egui::Id, items: &[Stri
     if open {
         return combo_popup(ui, r, id, items, (current < items.len()).then_some(current));
     }
-    // Closed with the focus: ↑ / ↓ pick the previous / next item.
+    // Closed with the focus: F4 drops the list (clone, the merge bar's
+    // method combo box; Space does nothing), ↑ / ↓ pick the previous / next
+    // item.
+    if resp.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F4)) {
+        ui.data_mut(|d| d.insert_temp(open_id, true));
+        return None;
+    }
     if resp.has_focus() && !items.is_empty() {
-        let keys = take_arrows(ui.ctx());
+        let keys = focused_arrows(ui, resp.id);
         let up = keys.iter().any(|k| matches!(k, egui::Key::ArrowUp | egui::Key::ArrowLeft));
         let down = keys.iter().any(|k| matches!(k, egui::Key::ArrowDown | egui::Key::ArrowRight));
         if down && current + 1 < items.len() {
@@ -2205,11 +2318,77 @@ mod tests {
     #[test]
     fn an_arrow_steps_round_its_group() {
         let id = |n: u32| egui::Id::new(("g", n));
-        let items = [(id(0), GroupKind::Other, true), (id(1), GroupKind::Radio, true), (id(2), GroupKind::Radio, false), (id(3), GroupKind::Radio, false), (id(4), GroupKind::Push, true), (id(5), GroupKind::Push, false)];
+        let items = [(id(0), GroupKind::Other, true, true), (id(1), GroupKind::Radio, true, true), (id(2), GroupKind::Radio, false, true), (id(3), GroupKind::Radio, false, true), (id(4), GroupKind::Push, true, true), (id(5), GroupKind::Push, false, true)];
         assert_eq!(group_step(&items, 1, false), 2);
         assert_eq!(group_step(&items, 3, false), 1, "round to the first radio");
         assert_eq!(group_step(&items, 1, true), 3, "back round to the last");
         assert_eq!(group_step(&items, 5, false), 4);
+    }
+
+    /// A span that mixes kinds (clone, page 537: the radios after the combo
+    /// box of «Ic» have no WS_GROUP): ↑ from the first radio focuses that
+    /// combo box (it is not clicked), ↓ from the last goes round to it, and
+    /// the combo box keeps its arrows. The template's order is not the
+    /// drawing order here (the radios are drawn first).
+    #[test]
+    fn an_arrow_reaches_the_combo_of_a_mixed_span() {
+        let ctx = egui::Context::default();
+        let ids = std::cell::RefCell::new(Vec::new());
+        let choice = std::cell::Cell::new(0usize);
+        let mut t = 0.0;
+        let mut pass = |events: Vec<egui::Event>| {
+            t += 0.05;
+            let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+            take_dialog_tabs(&ctx, &mut raw);
+            let _ = ctx.run(raw, |ctx| {
+                dlg(ctx, "t").show(ctx, |ui| {
+                    let (client, _) = ui.allocate_exact_size(Vec2::new(300.0, 200.0), egui::Sense::hover());
+                    let r = |y: f32| Rect::from_min_size(client.min + Vec2::new(10.0, y), Vec2::new(150.0, 18.0));
+                    group_continue(ui);
+                    tab_index(ui, 3);
+                    let a = win_radio_en(ui, r(40.0), "a", true, true);
+                    tab_index(ui, 3);
+                    let b = win_radio_en(ui, r(70.0), "b", false, true);
+                    let items = vec!["x".to_string(), "y".to_string(), "z".to_string()];
+                    tab_index(ui, 2);
+                    if let Some(k) = win_combo_list(ui, r(10.0), egui::Id::new("combo"), &items, choice.get(), true) {
+                        choice.set(k);
+                    }
+                    let _ = (a, b);
+                    *ids.borrow_mut() = vec![egui::Id::new("combo")];
+                });
+            });
+        };
+        let key = |key| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }];
+        for _ in 0..3 {
+            pass(vec![]);
+        }
+        let combo = ids.borrow()[0];
+        let focused = || ctx.memory(|m| m.focused());
+        // Tab: combo (2), radio a (3, the checked one); ↑ from it.
+        pass(key(egui::Key::Tab));
+        pass(vec![]);
+        assert!(focused().is_some_and(|f| f != combo), "the checked radio holds the focus");
+        pass(key(egui::Key::ArrowUp));
+        pass(vec![]);
+        assert_eq!(focused(), Some(combo), "↑ from the first radio reaches the combo box");
+        assert_eq!(choice.get(), 0, "it is focused, not stepped");
+        pass(key(egui::Key::ArrowDown));
+        pass(vec![]);
+        assert_eq!((focused(), choice.get()), (Some(combo), 1), "the combo box keeps its arrows");
+    }
+
+    /// A disabled control stays in its span and the arrows step over it (the
+    /// dialog manager's way); with nothing else enabled in the span they stay.
+    #[test]
+    fn a_disabled_control_is_skipped_by_the_arrows() {
+        let id = |n: u32| egui::Id::new(("g", n));
+        let items = [(id(0), GroupKind::Push, true, true), (id(1), GroupKind::Push, false, false), (id(2), GroupKind::Push, false, true), (id(3), GroupKind::Push, true, false), (id(4), GroupKind::Push, false, true)];
+        assert_eq!(group_step(&items, 0, false), 2, "↓ past the disabled one");
+        assert_eq!(group_step(&items, 2, true), 0, "↑ past it");
+        assert_eq!(group_step(&items, 2, false), 0, "round to the first");
+        assert_eq!(group_step(&items, 4, false), 4, "alone in its span: stays");
+        assert_eq!(group_step(&items, 4, true), 4);
     }
 
     /// ↓ on a focused radio focuses and clicks the next one of its frame

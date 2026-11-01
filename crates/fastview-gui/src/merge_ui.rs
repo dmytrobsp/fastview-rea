@@ -889,8 +889,19 @@ impl App {
         if on {
             self.focus_other.extend([at(350.0, 10.0, 90.0, 21.0), at(510.0, 10.0, 90.0, 21.0)]);
         }
-        sync = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false).clicked() || sync;
-        join = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false).clicked() || join;
+        // A bar is no dialog (clone: Tab goes nowhere, a push button takes no
+        // arrow): a button holding the focus keeps egui from walking it away.
+        let lock = |ui: &egui::Ui, b: &egui::Response| {
+            if b.has_focus() {
+                ui.memory_mut(|m| m.set_focus_lock_filter(b.id, egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true }));
+            }
+        };
+        let b = win_button(ui, at(w - 220.0, 9.0, 100.0, 23.0), "Синхронизация", false);
+        lock(ui, &b);
+        sync = b.clicked() || sync;
+        let b = win_button(ui, at(w - 110.0, 9.0, 100.0, 23.0), "Объединить", false);
+        lock(ui, &b);
+        join = b.clicked() || join;
         let text = r.shrink2(egui::vec2(15.0, 14.0));
         // Each static cut at the control after it (VM, 150 %: «Синхрониза»
         // under the larger font).
