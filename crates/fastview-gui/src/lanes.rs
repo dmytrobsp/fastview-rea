@@ -2284,7 +2284,7 @@ impl App {
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
             .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
-            .constrain(true)
+            .constrain_to(crate::popmenu::bounds(ctx))
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
                     crate::popmenu::cut_to_screen(ui, menu_id, |ui| {

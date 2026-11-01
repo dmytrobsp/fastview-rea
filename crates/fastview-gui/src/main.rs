@@ -844,7 +844,7 @@ impl App {
                 if list_keys.2 {
                     activate = hot.and_then(|h| order.get(h).copied());
                 }
-                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain(true).show(ui.ctx(), |ui| {
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain_to(crate::popmenu::bounds(ui.ctx())).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
                         crate::popmenu::cut_to_screen(ui, list_id.with(serial), |ui| {
                             for (k, i) in order.iter().copied().enumerate() {
@@ -1036,7 +1036,7 @@ impl App {
         let id = egui::Id::new("fv_status_menu");
         let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
-        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
+        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain_to(crate::popmenu::bounds(ctx)).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
                 crate::popmenu::cut_to_screen(ui, id, |ui| {
