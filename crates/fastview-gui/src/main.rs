@@ -5343,6 +5343,65 @@ mod window_tests {
         assert!(up.is_some() && (up == list || list.is_none()), "the list: {up:?} {list:?}");
     }
 
+    /// The arrows' spans of the template's WS_GROUPs that mix kinds (the
+    /// original's dialog manager walks a span over every control in it; clone:
+    /// 537, 477). Each dialog family: print (347), the quick-analysis pages
+    /// (340, 536, 538, 539, 543), the finder (558), the pair dialog (554) and
+    /// the program settings (510) (#25).
+    #[test]
+    fn the_templates_mixed_spans_are_one_span_for_the_arrows() {
+        use crate::dialogs::{arrow_spans, GroupKind::{Check, Other, Push, Radio}};
+        let has = |w: &Win, title: &str, span: &[crate::dialogs::GroupKind]| {
+            let spans = arrow_spans(&w.ctx, title);
+            assert!(spans.iter().any(|s| s == span), "{title}: no span {span:?} in {spans:?}");
+        };
+        // 347 «Печать»: [Предв. просмотр] [OK, Отмена, five check boxes].
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Print);
+        w.idle(4);
+        has(&w, "Печать", &[Push, Push, Check, Check, Check, Check, Check]);
+        // The quick-analysis pages.
+        let page = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        let w = page(app::AnalysisTab::Formula);
+        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push]);
+        let w = page(app::AnalysisTab::Symmetric);
+        has(&w, "fv_quick_sheet", &[Other, Check]);
+        let w = page(app::AnalysisTab::PhasePhase);
+        has(&w, "fv_quick_sheet", &[Other, Check]);
+        has(&w, "fv_quick_sheet", &[Radio, Radio, Other, Other, Other, Other]);
+        let w = page(app::AnalysisTab::Phase);
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
+        let w = page(app::AnalysisTab::Differential);
+        // «<<» is disabled on the first arm.
+        has(&w, "fv_quick_sheet", &[Other, Radio, Radio, Radio, Radio, Push]);
+        // 558 the finder.
+        let mut w = Win::new();
+        w.app.open_finder();
+        w.idle(4);
+        has(&w, "Поиск файлов", &[Push, Push, Push, Other, Other, Other, Other]);
+        has(&w, "Поиск файлов", &[Push, Other, Check]);
+        // 554 the pair dialog.
+        let mut w = Win::new();
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        w.app.diag.pair_dlg = Some(crate::diagram_ui::PairDialog { diff: true, pairs: Vec::new(), a: Some(names[0].clone()), b: Some(names[1].clone()), sel: None, list_focus: false });
+        w.idle(4);
+        has(&w, "Задать соответствие между дифференциальным током и током торможения", &[Push, Push, Other, Other, Push, Other]);
+        // («Удалить» is disabled with no row selected.)
+        // 510 the program's settings: the folder link and «...».
+        let mut w = Win::new();
+        w.app.show_settings = true;
+        w.idle(4);
+        // (No folder set: no link, «...» alone; with a folder the link joins it.)
+        has(&w, "Установка настроек программы", &[Push, Push]);
+        has(&w, "Установка настроек программы", &[Push]);
+    }
+
     /// A slid-out auto-hidden pane is a child of the frame, which a modal
     /// dialog disables, and the dialog lies above it: the pane takes no
     /// input under the dialog (its caption «×», its pin, the divider) and

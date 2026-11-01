@@ -483,6 +483,8 @@ impl App {
                     let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                     ok_now = ok;
                     let (bw, bh, by) = (dx(75.0), dy(23.0), page_h + dy(6.0));
+                    // The sheet's own buttons are another dialog's span than the page's.
+                    crate::dialogs::group_start(ui);
                     calc = crate::dialogs::win_button_en(ui, at(client.width() - dx(161.0), by, bw, bh), "Рассчитать", true, ok).clicked();
                     cancel = crate::dialogs::win_button(ui, at(client.width() - dx(80.0), by, bw, bh), "Отмена", false).clicked();
                 });
@@ -654,9 +656,12 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
             crate::dialogs::tab_index(ui, k as u32);
             pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, k != 1 || !f.calc_ib);
         }
+        // No WS_GROUP: the check box is in the span of «Ic» (538 template).
+        crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 3);
         pg.check(ui, (204, 42, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, true, false);
         pg.label(ui, (12, 86, 24, 8), "Iтр, А:", true, true);
+        crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 8);
         pg.edit(ui, (42, 84, 150, 14), "q_itr", &mut f.itr, true);
         pg.label(ui, (204, 88, 102, 8), "- ток точной работы", false, true);
@@ -673,6 +678,8 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
         for (k, (ly, cy)) in [(170, 168), (190, 188), (210, 208)].into_iter().enumerate() {
             pg.label(ui, (12, ly, 18, 8), ["Ua:", "Ub:", "Uc:"][k], true, true);
             let v = match k { 0 => &mut f.ua, 1 => &mut f.ub, _ => &mut f.uc };
+            // The voltage radios, these combo boxes and «Iтр» are one span (538 template).
+            crate::dialogs::group_continue(ui);
             crate::dialogs::tab_index(ui, 5 + k as u32);
             pg.combo(ui, (36, cy, 120, 54), ["q_u0", "q_u1", "q_u2"][k], v, names, !line);
         }
@@ -695,6 +702,8 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
         crate::dialogs::tab_index(ui, k as u32);
         pg.combo(ui, (42, cy, 150, 54), ["q_ia", "q_ib", "q_ic"][k], v, names, !i_off && (k != 1 || !f.calc_ib));
     }
+    // No WS_GROUP: the check box is in the span of «Ic» (536 template).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 3);
     pg.check(ui, (204, 54, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, !i_off, false);
     pg.label(ui, (27, 102, 162, 8), "* - только в сетях с изолированной нейтралью", false, !i_off);
@@ -904,6 +913,9 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.group(ui, (6, 31, 305, 40), "Приведение плеч");
     let checked = f.dif_methods();
     for (m, r, text) in [(2u8, (18, 45, 60, 10), "По мощности"), (3, (18, 58, 93, 10), "По номинальному току"), (0, (150, 45, 119, 10), "По коэффициенту приведения"), (1, (150, 58, 141, 10), "По коэффициенту трансформации ТТ")] {
+        // The radios have no WS_GROUP, nor has the box drawn before them: they join
+        // the span of «Ic» (539 template).
+        crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 6 + m as u32);
         if pg.radio(ui, r, text, checked.contains(&m), true) {
             f.dif_reduction = m;
@@ -919,6 +931,7 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     }
     let (r, grp) = (f.dif_edit_method(), f.dif_group);
     pg.label(ui, (48, 133, 66, 8), "Текущее плечо:", true, true);
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 10);
     if crate::dialogs::win_button_en(ui, pg.r(120, 133, 24, 14), "<<", false, cur > 0).clicked() {
         f.cur_arm -= 1;

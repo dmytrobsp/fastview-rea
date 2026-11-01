@@ -329,6 +329,8 @@ impl App {
         if self.formula_page.edit.is_some() && (pressed_outside || ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape))) {
             self.fp_commit_edit();
         }
+        // The buttons follow the list in its span (340 template, no WS_GROUP).
+        crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 1);
         if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
             if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {

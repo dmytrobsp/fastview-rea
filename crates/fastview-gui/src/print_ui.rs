@@ -271,10 +271,16 @@ impl App {
             setup = win_button(ui, dlu(client, 7, 107, 120, 14), "Параметры страницы", false).clicked();
             // The template's order is the tab order: the buttons, then the
             // five check boxes.
+            // «Предварительный просмотр» (after the «Диаграмма» box, WS_GROUP) and
+            // OK begin spans of their own (347 template).
+            crate::dialogs::group_start(ui);
             preview = win_button(ui, dlu(client, 7, 238, 120, 14), "Предварительный просмотр", false).clicked();
+            crate::dialogs::group_start(ui);
             ok = win_button(ui, dlu(client, 189, 238, 67, 14), "OK", true).clicked();
             cancel = win_button(ui, dlu(client, 262, 238, 67, 14), "Отмена", false).clicked();
             win_group(ui, dlu(client, 8, 125, 322, 108), "Диаграмма");
+            // The check boxes continue the span of OK and Отмена (347 template).
+            crate::dialogs::group_continue(ui);
             for ((t, l), (y, w)) in dlg.ticks.iter_mut().zip(TICK_LABELS).zip([(144, 68), (161, 90), (178, 90), (195, 86), (212, 122)]) {
                 if win_check(ui, dlu(client, 16, y, w, 10), l, *t) {
                     *t = !*t;

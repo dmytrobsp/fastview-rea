@@ -1006,6 +1006,21 @@ fn group_item(ui: &egui::Ui, id: egui::Id, kind: GroupKind) {
     });
 }
 
+/// The arrows' spans of the dialog `title` as of the last frame, each a run
+/// of kinds in the template's order (tests).
+#[cfg(test)]
+pub fn arrow_spans(ctx: &egui::Context, title: &str) -> Vec<Vec<GroupKind>> {
+    let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
+    let mut out: Vec<Vec<GroupKind>> = Vec::new();
+    for (_, kind, start) in ring.prev_items {
+        if start || out.is_empty() {
+            out.push(Vec::new());
+        }
+        out.last_mut().unwrap().push(kind);
+    }
+    out
+}
+
 /// A control drawn for the arrows' groups, before the groups are made.
 #[derive(Clone, Copy)]
 struct RawItem {
@@ -1031,6 +1046,12 @@ fn group_list(mut raw: Vec<RawItem>) -> Vec<(egui::Id, GroupKind, bool)> {
         out.push((i.id, i.kind, start));
     }
     out
+}
+
+/// The next control has a WS_GROUP of its own: it starts a span (a push
+/// button after a group box that the drawing order puts elsewhere, 347).
+pub fn group_start(ui: &egui::Ui) {
+    group_break(ui);
 }
 
 /// The next control has no WS_GROUP: it joins the span before it, a combo

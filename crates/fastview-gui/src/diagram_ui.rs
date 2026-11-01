@@ -1817,11 +1817,14 @@ impl App {
             }
             for (k, (cr, slot)) in [(1, (r(204, 36, 167, 30), &mut dlg.b)), (0, (r(18, 36, 168, 30), &mut dlg.a))] {
                 let cur = slot.as_ref().and_then(|v| names.iter().position(|n| n == v)).unwrap_or(0);
+                // One span from OK to «Удалить» (554 template).
+                crate::dialogs::group_continue(ui);
                 if let Some(pick) = win_combo_list(ui, cr, egui::Id::new(("pair_combo", k)), &names, cur, !names.is_empty()) {
                     *slot = Some(names[pick].clone());
                 }
             }
             // «Добавить» needs both channels; the new row is selected.
+            crate::dialogs::group_continue(ui);
             if win_button_en(ui, r(324, 60, 49, 14), "Добавить", false, dlg.a.is_some() && dlg.b.is_some()).clicked() {
                 dlg.pairs.push(ChanPair::new(dlg.a.clone().unwrap_or_default(), dlg.b.clone().unwrap_or_default()));
                 dlg.sel = Some(dlg.pairs.len() - 1);
@@ -1868,6 +1871,7 @@ impl App {
             // The list is a tab stop; a press on it gives it the focus.
             let list_id = egui::Id::new("pair_list");
             ui.interact(Rect::from_min_max(Pos2::new(inner.left(), hdr.bottom()), inner.max), list_id, egui::Sense::click());
+            crate::dialogs::group_continue(ui);
             dlg.list_focus = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
             for (i, pair) in dlg.pairs.iter().enumerate() {
                 let top = hdr.bottom() + row_h * i as f32;
@@ -1889,6 +1893,7 @@ impl App {
                 }
             }
             // «Удалить» removes the selected row and selects the next (or last).
+            crate::dialogs::group_continue(ui);
             if win_button_en(ui, r(324, 318, 50, 14), "Удалить", false, dlg.sel.is_some()).clicked() {
                 if let Some(s) = dlg.sel {
                     dlg.pairs.remove(s);
