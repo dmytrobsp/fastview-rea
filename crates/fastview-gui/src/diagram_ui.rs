@@ -2156,7 +2156,7 @@ fn header_texts([u, i]: [f64; 2]) -> (String, String) {
 /// `max(0, W − L − Wv − m − 10)`.
 fn vector_header_off(painter: &egui::Painter, full: Rect, scales: [f64; 2]) -> f32 {
     let s = print_s().unwrap_or(1.0);
-    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_look()), Color32::BLACK).size().x;
+    let measure = |t: &str| painter.layout_no_wrap(t.to_string(), header_font(print_s()), Color32::BLACK).size().x;
     let (ut, it) = header_texts(scales);
     let m = 6.0;
     let l = measure("U max") + 2.0 * m;
@@ -2198,12 +2198,12 @@ fn header_cy(print: Option<f32>, measured: f32) -> f32 {
 /// fits "U max" only, the value column the wider of "0.0000" and both texts.
 fn vector_header(painter: &egui::Painter, full: Rect, [u, i]: [f64; 2]) {
     let s = print_s().unwrap_or(1.0);
-    let hf = header_font(print_look());
+    let hf = header_font(print_s());
     let ink = Color32::from_rgb(20, 20, 20);
     let measure = |t: &str| painter.layout_no_wrap(t.to_string(), hf.clone(), ink).size();
     let (ut, it) = header_texts([u, i]);
     let (m, ten) = (6.0, 10.0 / s);
-    let cy = header_cy(print_look(), measure("Ay").y);
+    let cy = header_cy(print_s(), measure("Ay").y);
     let h = (3.0 * cy * s / 2.0).floor() / s;
     let l = measure("U max").x + 2.0 * m;
     let w = measure("0.0000").x.max(measure(&ut).x).max(measure(&it).x) + 2.0 * m;
@@ -2239,6 +2239,30 @@ mod tests {
         assert!((f.size - 62.0 / 1.1172 / 6.0).abs() < 1e-3, "{}", f.size);
         assert_eq!(header_font(None).size, font().size);
         assert!(header_font(Some(6.0)).size > FontId::proportional(8.8).size, "larger than the 0.8 screen font it had");
+    }
+
+    /// The page painter hands the vector header Arial's cell ⌊52·s/5⌋ for
+    /// every s, also s = 1 (a printer under twice the system dpi), where the
+    /// pens and layout keep the screen look (L9.66, L9.429).
+    #[test]
+    fn the_header_at_s_one_uses_the_page_font() {
+        assert!((header_font(Some(1.0)).size - 10.0 / 1.1172).abs() < 1e-3);
+        assert_eq!(header_cy(Some(1.0), 99.0), 9.0);
+        let ctx = egui::Context::default();
+        let _ = ctx.run(Default::default(), |_| {});
+        let out = ctx.run(Default::default(), |ctx| {
+            let painter = ctx.layer_painter(egui::LayerId::background());
+            let full = Rect::from_min_size(Pos2::ZERO, egui::vec2(600.0, 400.0));
+            with_print_scale(Some(1.0), None, || vector_header(&painter, full, [1234.5, 6.7]));
+        });
+        let mut sizes = Vec::new();
+        for c in &out.shapes {
+            if let egui::epaint::Shape::Text(t) = &c.shape {
+                sizes.extend(t.galley.job.sections.iter().map(|s| s.format.font_id.size));
+            }
+        }
+        assert_eq!(sizes.len(), 4, "the four header texts");
+        assert!(sizes.iter().all(|&z| (z - 10.0 / 1.1172).abs() < 1e-3), "{sizes:?}");
     }
 
     #[test]
