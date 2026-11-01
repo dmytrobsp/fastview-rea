@@ -5075,6 +5075,36 @@ mod window_tests {
         assert!(w.app.doc_list_open, "its list is open");
     }
 
+    /// «Коэффициенты» (DIALOG 477): the buttons have no WS_GROUP, so with the
+    /// list before them they make one span: ↑ from ОК focuses the list (clone),
+    /// not Отмена (#25).
+    #[test]
+    fn the_buttons_of_a_dialog_share_a_span_with_the_control_before_them() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Coefficients);
+        w.idle(4);
+        let focused = |w: &Win| w.ctx.memory(|m| m.focused());
+        let list = focused(&w);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        let ok = focused(&w);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        let cancel = focused(&w);
+        assert!(ok.is_some() && cancel.is_some() && ok != cancel);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        w.key(egui::Key::Tab);
+        w.idle(2);
+        assert_eq!(focused(&w), ok, "round the ring to ОК");
+        w.key(egui::Key::ArrowUp);
+        w.idle(2);
+        let up = focused(&w);
+        assert_ne!(up, cancel, "not round to Отмена");
+        assert_ne!(up, ok);
+        assert!(up.is_some() && (up == list || list.is_none()), "the list: {up:?} {list:?}");
+    }
+
     /// A slid-out auto-hidden pane is a child of the frame, which a modal
     /// dialog disables, and the dialog lies above it: the pane takes no
     /// input under the dialog (its caption «×», its pin, the divider) and

@@ -781,6 +781,8 @@ pub fn comment_dialog_body(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -
     let (client, _) = ui.allocate_exact_size(dlu_size(379, 307), egui::Sense::hover());
     let focus = ui.memory(|m| m.focused().is_none());
     win_edit_multiline(ui, dlu(client, 6, 6, 366, 276), id, text, focus);
+    // The buttons follow the edit in its span (template, no WS_GROUP).
+    group_continue(ui);
     if win_button(ui, dlu(client, 244, 288, 62, 14), "OK", true).clicked() {
         return Some(true);
     }

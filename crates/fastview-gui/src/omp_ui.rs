@@ -1241,6 +1241,8 @@ impl ParamsDialog {
                 let mut clip = ui.clip_rect();
                 clip.min.y = clip.min.y.max(grid.bottom());
                 ui.set_clip_rect(clip);
+                // The buttons follow the tree in its span (template, no WS_GROUP).
+                crate::dialogs::group_continue(ui);
                 let ok = win_button(ui, crate::dialogs::dlu(rect, 310, 254, 76, 14), "OK", true).clicked();
                 (ok, win_button(ui, crate::dialogs::dlu(rect, 392, 254, 76, 14), "Отмена", false).clicked())
             })

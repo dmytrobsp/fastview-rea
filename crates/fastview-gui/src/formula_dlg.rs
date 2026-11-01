@@ -212,6 +212,8 @@ impl App {
                     }
                     let ok_r = dlu(client, 293, 290, 50, 14);
                     st.ok_rect = Some(ok_r);
+                    // The buttons follow the name edit in its span (template, no WS_GROUP).
+                    crate::dialogs::group_continue(ui);
                     if win_button_en(ui, ok_r, "OK", true, st.form.is_some()).clicked() {
                         done = Some(true);
                     }

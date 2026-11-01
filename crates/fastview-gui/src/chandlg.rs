@@ -1023,6 +1023,8 @@ impl App {
                 });
                 });
                 let btn = |x: f32| crate::dialogs::dp(client, x, 380.0, 110.0, 23.0);
+                // No WS_GROUP on the buttons: with the control before them they make one span for the arrows (clone, 477: ↑ from ОК focuses the list).
+                crate::dialogs::group_continue(ui);
                 if crate::dialogs::win_button(ui, btn(272.0), "ОК", true).clicked() {
                     result = Some(true);
                 }
