@@ -2479,6 +2479,60 @@ mod tests {
         assert!(told_apart, "the correction changes the bars somewhere");
     }
 
+    /// The frequency painter draws a pasted lane's bars from `pending_bins` (the record's correction at the
+    /// lane's own rate), not from the uncorrected spectrum: the value labels (`freq_percent = false`) read the
+    /// corrected bins, at a cursor where a corrected label differs from the uncorrected one.
+    #[test]
+    fn the_frequency_painter_labels_a_pasted_lane_with_the_corrected_bins() {
+        let mut app = App::new();
+        app.dispatch(crate::app::Command::Demo);
+        let d = app.active_doc_mut().unwrap();
+        d.chans.iter_mut().for_each(|c| c.on_freq = false);
+        let last = d.osc.analog.len() - 1;
+        let len = d.osc.sample_count();
+        d.osc.analog[last].phase = "system".into();
+        d.osc.analog[last].samples = (0..len).map(|k| 49.3 + 0.0007 * k as f64).collect();
+        d.osc.freq_sel = 1;
+        d.selection.insert(crate::app::ChanKey::Analog(0));
+        app.copy_channels_for_merge();
+        app.paste_channels_for_merge();
+        app.freq_percent = false;
+        let periods = app.freq_periods.max(1);
+        let d = app.active_doc_mut().unwrap();
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).expect("the pasted lane");
+        d.pending_of_mut(j).unwrap().pasted.rate = 1234.0;
+        d.computed[j].on_freq = true;
+        d.recompute(false);
+        let d = app.active_doc().unwrap();
+        let rate = d.pending_of(j).unwrap().pasted.rate;
+        let n = d.osc.period_of(rate).max(2);
+        let k_max = app.freq_harmonics.min(n * periods / 2).max(periods);
+        let x = &d.computed[j].pending_own;
+        let label = |v: f64| fvb_core::views::freq_label(v).trim().to_string();
+        let mut found = None;
+        for pos in (3 * n..len).step_by(5) {
+            let corrected: Vec<String> = super::pending_bins(d, j, pos, periods, k_max).into_iter().map(label).collect();
+            let plain: Vec<String> = fvb_core::signal::spectrum(x, pos, n, periods, k_max, d.osc.harmonic1_gain).into_iter().map(label).collect();
+            if let Some(k) = (0..=k_max).find(|&k| corrected[k] != plain[k] && !corrected.contains(&plain[k]) && plain[k] != "0") {
+                found = Some((pos, corrected[k].clone(), plain[k].clone()));
+                break;
+            }
+        }
+        let (pos, want, not) = found.expect("a cursor where the correction changes a label");
+        app.active_doc_mut().unwrap().main_cursor = pos;
+        let ctx = egui::Context::default();
+        let raw = || egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1300.0, 500.0))), ..Default::default() };
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let out = ctx.run(raw(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| app.frequency_ui(ui));
+            });
+            texts = out.shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+        }
+        assert!(texts.contains(&want), "the corrected label {want:?}: {texts:?}");
+        assert!(!texts.contains(&not), "not the uncorrected {not:?}: {texts:?}");
+    }
+
     #[test]
     fn the_vector_grid_lies_on_gdis_pixels() {
         // VM: the 227 px ring about pixel (2297, 802) spans 2070…2523 and
