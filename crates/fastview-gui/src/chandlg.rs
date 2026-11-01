@@ -141,7 +141,7 @@ pub fn row_name(doc: &Doc, key: ChanKey) -> String {
 fn unit_of(doc: &Doc, key: ChanKey) -> Option<String> {
     match key {
         ChanKey::Analog(i) => Some(if doc.chans[i].adc_counts { String::new() } else { doc.osc.analog[i].unit.clone() }),
-        ChanKey::Computed(j) => Some(doc.computed[j].unit.clone()),
+        ChanKey::Computed(j) => Some(doc.computed[j].canon_unit().to_string()),
         ChanKey::Digital(_) => None,
     }
 }

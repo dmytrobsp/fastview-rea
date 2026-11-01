@@ -393,14 +393,22 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
 /// out in UTF-8 is written all in UTF-8, with the BOM it came with, so it
 /// reads back as it was.
 pub fn write(osc: &Oscillogram, names: Encoding) -> (Vec<u8>, Vec<u8>) {
-    write_numbered(osc, names, &[])
+    write_numbered(osc, names, &Numbers::default())
 }
 
-/// [`write`] with the digital channels' numbers given (`dig_no[i]` for
-/// channel i; empty = their places): channels left out of the record
-/// (the ОМП's flags) still count in the original's numbering (VM).
-pub fn write_numbered(osc: &Oscillogram, names: Encoding, dig_no: &[usize]) -> (Vec<u8>, Vec<u8>) {
-    let (cfg, dat) = write_rows(osc, names, dig_no, osc.format != "ASCII");
+/// The numbers the channel lines carry when records left out of the file
+/// (the ОМП's flags, pasted lanes) still count in them: `analog[i]` /
+/// `digital[i]` for channel i, empty = its place among those written.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Numbers {
+    pub analog: Vec<usize>,
+    pub digital: Vec<usize>,
+}
+
+/// [`write`] with the channels' numbers given: channels left out of the
+/// record still count in the original's numbering (VM).
+pub fn write_numbered(osc: &Oscillogram, names: Encoding, nums: &Numbers) -> (Vec<u8>, Vec<u8>) {
+    let (cfg, dat) = write_rows(osc, names, nums, osc.format != "ASCII");
     let bom = if utf8_file(osc, names) && needs_bom(osc, &cfg, false) { UTF8_BOM } else { b"" };
     ([bom, cfg.as_slice()].concat(), dat)
 }
@@ -422,7 +430,7 @@ fn utf8_file(osc: &Oscillogram, names: Encoding) -> bool {
 }
 
 /// The writer with the data's kind chosen: `binary` rows, or ASCII text.
-fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool) -> (Vec<u8>, Vec<u8>) {
+fn write_rows(osc: &Oscillogram, names: Encoding, nums: &Numbers, binary: bool) -> (Vec<u8>, Vec<u8>) {
     use crate::views::fmt_g;
     // Names are wrapped in \u{1} … \u{2} and encoded on their own below.
     let nm = |s: &str| format!("\u{1}{s}\u{2}");
@@ -448,7 +456,7 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
         let ext = |v: f64| if ch.samples.is_empty() { 0.0 } else { round_fv((v - ch.b) / ch.a) };
         cfg.push_str(&format!(
             "{},{},{},{},{},{},{},{},{},{}",
-            i + 1, nm(&ch.id), ch.phase, ch.ccbm, ch.file_unit(), fmt_g(ch.a), fmt_g(ch.b), fmt_g(ch.skew), ext(lo), ext(hi),
+            nums.analog.get(i).copied().unwrap_or(i + 1), nm(&ch.id), ch.phase, ch.ccbm, ch.file_unit(), fmt_g(ch.a), fmt_g(ch.b), fmt_g(ch.skew), ext(lo), ext(hi),
         ));
         if rev {
             let tok = |t: &str, v: f64| if t.is_empty() { format!("{v:.6}") } else { t.to_string() };
@@ -457,7 +465,7 @@ fn write_rows(osc: &Oscillogram, names: Encoding, dig_no: &[usize], binary: bool
         cfg.push_str("\r\n");
     }
     for (i, ch) in osc.digital.iter().enumerate() {
-        let no = dig_no.get(i).copied().unwrap_or(i + 1);
+        let no = nums.digital.get(i).copied().unwrap_or(i + 1);
         if rev {
             cfg.push_str(&format!("{},{},,,{}\r\n", no, nm(&ch.id), ch.normal));
         } else {
@@ -591,8 +599,10 @@ fn cff_section(text: &str, kind: &str) -> Option<String> {
 /// first NUL byte; the DAT payload located on the raw bytes — the byte count
 /// is the first run of digits on the first line containing
 /// `--- file type: DAT`, and the payload starts **one byte after** that
-/// line's terminator (the LF of a CRLF pair: a one-byte shift, harmless for
-/// ASCII data and reproduced as is). Missing CFG or DAT → error 330.
+/// line's terminator: the line reader consumes the terminator (CR or LF) and
+/// the caller steps over one more byte — so a CRLF file's payload is exact and
+/// an LF-only file loses its first byte (`0x476f30`, `0x4771f0`, `0x450284`;
+/// a clone run reading a binary `.cff` aligned). Missing CFG or DAT → error 330.
 pub fn parse_cff(bytes: &[u8], enc: Encoding) -> Result<(Oscillogram, CffSections), ComtradeError> {
     parse_cff_progress(bytes, enc, None)
 }
@@ -633,7 +643,7 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
                 .copied()
                 .collect();
             let n: usize = std::str::from_utf8(&digits).ok().and_then(|d| d.parse().ok()).unwrap_or(0);
-            let from = (pos + 1).min(bytes.len());
+            let from = (pos + 2).min(bytes.len());
             dat = Some(&bytes[from..(from + n).min(bytes.len())]);
             break;
         }
@@ -697,18 +707,18 @@ pub struct CffRevisionError;
 /// and the data bytes. Text in CP1251 (all UTF-8, BOM as read, for a
 /// record read as UTF-8 whose names still are: see [`write`]).
 pub fn write_cff(osc: &Oscillogram, sections: &CffSections, names: Encoding) -> Result<Vec<u8>, CffRevisionError> {
-    write_cff_numbered(osc, sections, names, &[])
+    write_cff_numbered(osc, sections, names, &Numbers::default())
 }
 
 /// [`write_cff`] with the digital channels' numbers (see [`write_numbered`]).
-pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Encoding, dig_no: &[usize]) -> Result<Vec<u8>, CffRevisionError> {
+pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Encoding, nums: &Numbers) -> Result<Vec<u8>, CffRevisionError> {
     if osc.rev_year < 2013 {
         return Err(CffRevisionError);
     }
     // The `.cfg` writer's bytes (cp1251, CR LF, the revision and format
     // line as read); the data binary whatever that line says (VM: an
     // «ASCII» record saved as `.cff` has int32 rows).
-    let (cfg, dat) = write_rows(osc, names, dig_no, true);
+    let (cfg, dat) = write_rows(osc, names, nums, true);
     let utf8 = utf8_file(osc, names);
     let text = |t: &str| if utf8 { t.as_bytes().to_vec() } else { to_cp1251(t) };
     let mut out = text("--- file type: CFG ---\r\n");
@@ -1911,8 +1921,10 @@ impl AsciiScan<'_> {
 }
 
 /// C's `atof` over bytes: blanks, then the longest sign / digits / point /
-/// exponent prefix (up to a NUL or anything else); none gives 0.
-fn c_atof(f: &[u8]) -> f64 {
+/// exponent prefix (up to a NUL or anything else); none gives 0. MSVCR120's
+/// reads «d» / «D» as an exponent letter like «e» («1d5» is 100000; a clone
+/// run, #42); «inf» / «nan» and the hexadecimal forms give 0 (the same run).
+pub(crate) fn c_atof(f: &[u8]) -> f64 {
     let mut i = f.iter().take_while(|c| matches!(c, 9..=13 | 32)).count();
     let start = i;
     if matches!(f.get(i), Some(b'+' | b'-')) {
@@ -1934,7 +1946,7 @@ fn c_atof(f: &[u8]) -> f64 {
         return 0.0;
     }
     let mantissa = i;
-    if matches!(f.get(i), Some(b'e' | b'E')) {
+    if matches!(f.get(i), Some(b'e' | b'E' | b'd' | b'D')) {
         let mut j = i + 1;
         if matches!(f.get(j), Some(b'+' | b'-')) {
             j += 1;
@@ -1943,7 +1955,7 @@ fn c_atof(f: &[u8]) -> f64 {
             i = j;
         }
     }
-    let text = std::str::from_utf8(&f[start..i]).unwrap_or("0");
+    let text = std::str::from_utf8(&f[start..i]).unwrap_or("0").replace(['d', 'D'], "e");
     text.parse().or_else(|_| std::str::from_utf8(&f[start..mantissa]).unwrap_or("0").parse()).unwrap_or(0.0)
 }
 
@@ -2008,13 +2020,52 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
             rec.time = stamps_us.iter().map(|t| round_fv(t * rec.time_mult) / 1e6).collect();
         }
         DataFormat::Int16 | DataFormat::Int32 => {
-            let (abytes, dwords) = match fmt {
-                DataFormat::Int16 => (2usize, nd.div_ceil(16)),
-                DataFormat::Int32 => (4usize, nd.div_ceil(16)),
+            let abytes = match fmt {
+                DataFormat::Int16 => 2usize,
+                DataFormat::Int32 => 4usize,
                 DataFormat::Ascii => unreachable!(),
             };
-            // record = 4 (sample#) + 4 (timestamp) + na*abytes + dwords*2
-            let rec_len = 8 + na * abytes + dwords * 2;
+            // record = 4 (sample#) + 4 (timestamp) + na*abytes + the digital words.
+            let words = nd.div_ceil(16);
+            let mut rec_len = 8 + na * abytes + words * 2;
+            let sample_no = |at: usize| -> Option<i32> { dat.get(at..at + 4).map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]])) };
+            // The readers test the record size against the data (BINARY
+            // `0x451c32`–`0x451cea`, binary32 `0x4521bd`–`0x4521dc`): the
+            // sample numbers of the first three records, `size` apart, are
+            // read unconditionally and must be 1, 2, 3; the fourth is read
+            // (and must be 4) only then. A record that does not fit is a
+            // null pointer in the original — it faults when fewer than three
+            // records exist, or when 1, 2, 3 have no fourth after them
+            // (NOT DETERMINED what the user sees; ours takes the computed
+            // size, as before). Some(true) = numbered, Some(false) = not,
+            // None = the fault zone.
+            let numbered = |size: usize| -> Option<bool> {
+                let at = |k: usize| sample_no(k * size).filter(|_| (k + 1) * size <= dat.len());
+                let (a, b, c) = (at(0)?, at(1)?, at(2)?);
+                if (a, b, c) != (1, 2, 3) {
+                    return Some(false);
+                }
+                at(3).map(|d| d == 4)
+            };
+            match fmt {
+                DataFormat::Int16 => {
+                    // BINARY: the size the reader computes first has a slip
+                    // — a digital part of `nd/8 + 2` bytes when nd is not a
+                    // multiple of 16, one too many for nd = 8..15 mod 16 —;
+                    // when the numbers do not read 1, 2, 3, 4 at that size it
+                    // takes the digital part as `nd/8 + 1` bytes.
+                    let first = nd / 8 + if nd.is_multiple_of(16) { 0 } else { 2 } + (na + 4) * 2;
+                    let packed = nd / 8 + usize::from(!nd.is_multiple_of(16)) + 8 + na * 2;
+                    rec_len = if numbered(first) == Some(false) { packed } else { first };
+                }
+                DataFormat::Int32 => {
+                    // binary32 has no fallback: the check failing is error 330.
+                    if numbered(rec_len) == Some(false) {
+                        return Err(ComtradeError::Format);
+                    }
+                }
+                DataFormat::Ascii => unreachable!(),
+            }
             if rec_len == 0 {
                 return Err(ComtradeError::Dat("zero record length".into()));
             }
@@ -2056,15 +2107,11 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
                     ch.samples.push(ch.unit_mult * ch.a * raw + ch.b);
                     off += abytes;
                 }
-                for w in 0..dwords {
-                    let word = u16::from_le_bytes([dat[off], dat[off + 1]]);
-                    off += 2;
-                    for bit in 0..16 {
-                        let di = w * 16 + bit;
-                        if di < nd {
-                            rec.digital[di].samples.push((word >> bit) & 1 == 1);
-                        }
-                    }
+                // The digital bits, byte by byte (`0x451ea3`: byte b / 8,
+                // bit b mod 8 — the words' own order).
+                for di in 0..nd {
+                    let byte = dat.get(off + di / 8).copied().unwrap_or(0);
+                    rec.digital[di].samples.push(byte >> (di % 8) & 1 == 1);
                 }
                 if let Some(p) = prog {
                     p.set_remaining(dat.len() - (base + rec_len));
@@ -2202,5 +2249,28 @@ mod freq_track_tests {
         assert_eq!(one("1234", "50"), 25);
         assert_eq!(one("1000", "60"), 17);
         assert_eq!(rec.time, vec![0.0, 0.000625, 0.00125, 0.001875], "k·1e6/1600 µs");
+    }
+}
+
+#[cfg(test)]
+mod atof_tests {
+    use super::c_atof;
+
+    /// MSVCR120's `atof` (a clone run of its DLL under the application's
+    /// locale): «d» / «D» is an exponent letter; inf / nan, hexadecimal
+    /// forms and a bare exponent give 0; a dangling exponent is dropped.
+    #[test]
+    fn atof_takes_d_as_an_exponent_letter_and_no_inf_nan() {
+        assert_eq!(c_atof(b"1d5"), 1e5);
+        assert_eq!(c_atof(b"2.5D2"), 250.0);
+        assert_eq!(c_atof(b"1d-5"), 1e-5);
+        assert_eq!(c_atof(b"1d"), 1.0);
+        assert_eq!(c_atof(b"1d+"), 1.0);
+        assert_eq!(c_atof(b"d5"), 0.0);
+        for s in [&b"inf"[..], b"-inf", b"Infinity", b"nan", b"0x10", b"1_0e"] {
+            let v = c_atof(s);
+            assert!(v == 0.0 || s == b"1_0e", "{s:?}");
+        }
+        assert_eq!(c_atof(b"1.#INF"), 1.0);
     }
 }
