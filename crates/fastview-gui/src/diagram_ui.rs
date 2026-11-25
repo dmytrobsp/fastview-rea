@@ -1769,7 +1769,8 @@ impl App {
                     if bottom_dev - top_dev <= 0 {
                         if let Some(w) = dg::flat_bar_pen(si, bottom_dev - top_dev) {
                             let y = pt(0, bottom_dev - w / 2).y;
-                            painter.rect_filled(Rect::from_min_max(Pos2::new(bar.left(), y), Pos2::new(bar.right(), y + w as f32 / s)), 0.0, color);
+                            // A stroke, so the preview's one-pixel minimum applies (the line is under a preview pixel).
+                            painter.hline(bar.left()..=bar.right(), y + w as f32 / s / 2.0, stroke(w as f32 / s, color));
                         }
                     } else {
                     // GradientFill (channel colour at the top to white), then

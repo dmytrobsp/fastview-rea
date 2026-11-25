@@ -775,11 +775,10 @@ mod tests {
         }
     }
 
-    /// #158 (clone): a frequency bar with no height (a bin of 1e-11 of the largest) prints as one line of
-    /// the pen's width centred on its edge (the original: GDI's `Rectangle` at `0x470488`), not as the
-    /// outline's edges inside the box (all of it above the baseline).
-    #[test]
-    fn a_frequency_bar_with_no_height_prints_one_pen_wide_line() {
+    /// The Demo record's first channel alone on the frequency page, its harmonics tiny but not zero (1e-9 of
+    /// the fundamental's 123: bars with no height, none exactly 0), rendered at `dpi`; the canvas and the
+    /// channel's colour and the scale.
+    fn tiny_harmonics_page(dpi: f32) -> (Canvas, [u8; 3], usize) {
         let mut app = App::new();
         app.dispatch(Command::Demo);
         {
@@ -797,11 +796,18 @@ mod tests {
         let colour = app.docs[0].chans[0].color;
         app.docs[0].print_ticks = [false, true, false, false, false];
         let setup = PageSetup::default();
-        let job = app.print_job(0, Device::sheet(&setup, 600.0), setup);
+        let job = app.print_job(0, Device::sheet(&setup, dpi), setup);
         let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
-        let s = diagram_scale(job.attrib_dpi) as usize;
+        (c, [colour.r(), colour.g(), colour.b()], diagram_scale(job.attrib_dpi) as usize)
+    }
+
+    /// #158 (clone): a frequency bar with no height (a bin of 1e-11 of the largest) prints as one line of
+    /// the pen's width centred on its edge (the original: GDI's `Rectangle` at `0x470488`), not as the
+    /// outline's edges inside the box (all of it above the baseline).
+    #[test]
+    fn a_frequency_bar_with_no_height_prints_one_pen_wide_line() {
+        let (c, want, s) = tiny_harmonics_page(600.0);
         assert_eq!(s, 6);
-        let want = [colour.r(), colour.g(), colour.b()];
         // The longest vertical run of the channel's own colour in each column.
         let mut runs = vec![0usize; c.w];
         for (x, run) in runs.iter_mut().enumerate() {
@@ -819,6 +825,44 @@ mod tests {
         // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
         // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
         assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
+    /// #158 on the screen (s = 1: a printer under 192 dpi, the 1-pixel pen): a bar with no height draws
+    /// nothing in the original; the channel's colour is only in the tall bar and the legend's swatch.
+    #[test]
+    fn a_frequency_bar_with_no_height_draws_nothing_at_scale_one() {
+        let (c, want, s) = tiny_harmonics_page(150.0);
+        assert_eq!(s, 1);
+        // The channel's colour in 8-connected blobs, as bounding boxes (x0, y0, x1, y1).
+        let mut seen = vec![false; c.w * c.h];
+        let mut blobs = Vec::new();
+        for y0 in 0..c.h {
+            for x0 in 0..c.w {
+                if seen[y0 * c.w + x0] || c.get(x0, y0) != want {
+                    continue;
+                }
+                let (mut bb, mut stack) = ((x0, y0, x0, y0), vec![(x0, y0)]);
+                seen[y0 * c.w + x0] = true;
+                while let Some((x, y)) = stack.pop() {
+                    bb = (bb.0.min(x), bb.1.min(y), bb.2.max(x), bb.3.max(y));
+                    for (nx, ny) in (y.saturating_sub(1)..=(y + 1).min(c.h - 1)).flat_map(|ny| (x.saturating_sub(1)..=(x + 1).min(c.w - 1)).map(move |nx| (nx, ny))) {
+                        if !seen[ny * c.w + nx] && c.get(nx, ny) == want {
+                            seen[ny * c.w + nx] = true;
+                            stack.push((nx, ny));
+                        }
+                    }
+                }
+                blobs.push(bb);
+            }
+        }
+        // The fundamental's bar is the tall blob; whatever else carries the colour is the legend's swatch, one
+        // small box. A flat bar's tick would be a blob of its own beside the bar, far from the swatch.
+        let tall = *blobs.iter().max_by_key(|b| b.3 - b.1).expect("the fundamental's bar");
+        assert!(tall.3 - tall.1 > 100, "the fundamental's bar is tall: {tall:?}");
+        let rest: Vec<_> = blobs.iter().filter(|&&b| b != tall).collect();
+        let (x0, y0) = (rest.iter().map(|b| b.0).min().unwrap_or(0), rest.iter().map(|b| b.1).min().unwrap_or(0));
+        let (x1, y1) = (rest.iter().map(|b| b.2).max().unwrap_or(0), rest.iter().map(|b| b.3).max().unwrap_or(0));
+        assert!(!rest.is_empty() && x1 - x0 <= 12 && y1 - y0 <= 12, "the channel's colour outside the tall bar is the swatch alone: {blobs:?}");
     }
 
     /// #191 (clone): on a real print a vector legend that does not fit starts at the page's `6·s`, left of R
