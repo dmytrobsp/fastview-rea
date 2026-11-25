@@ -1,7 +1,8 @@
 //! #72: each site of the signal maths that calls the original's runtime sin / cos does so through
 //! `fvb_core::trig`. Each test builds its reference from `trig` and a second one from std, asserts the
 //! site equals the first bit for bit, and asserts that the two references differ somewhere in the
-//! scanned range (so a site reverted to std fails).
+//! scanned range (`must_differ`; so a site reverted to std fails). CI's three platforms all satisfy
+//! these; the sites are also checked against the port-built reference at every candidate (#220).
 
 use fvb_core::expr::{eval_str, Context};
 use fvb_core::freqcorr::FreqCorr;
@@ -12,6 +13,12 @@ use num_complex::Complex64;
 type Fns = (fn(f64) -> f64, fn(f64) -> f64);
 const TRIG: Fns = (trig::sin, trig::cos);
 const STD: Fns = (f64::sin, f64::cos);
+
+/// Guard: std differs from the port at `n` places of the scanned range; zero would mean a site reverted
+/// to std could not be told from the port here, and the test would prove nothing.
+fn must_differ(what: &str, n: usize) {
+    assert!(n > 0, "{what}: std equals the port over the whole scanned range, so a site reverted to std would not be caught");
+}
 
 /// Synthetic, non-flat samples.
 fn samples(len: usize, seed: u64) -> Vec<f64> {
@@ -65,8 +72,9 @@ fn phasors_use_the_runtime_sin_cos() {
             gc += usize::from(trig::cos(th).to_bits() != th.cos().to_bits());
         }
     }
-    assert!(gs > 0 && gc > 0, "std differs from the runtime's sin and cos on the DFT's angle grid ({gs}, {gc}); phasor sums ({dre}, {dim})");
-    assert!(dre + dim > 0, "the std-built reference differs in at least one part at some n ({dre}, {dim})");
+    must_differ("phasors, sin on the angle grid", gs);
+    must_differ("phasors, cos on the angle grid", gc);
+    must_differ("phasors, the sums", dre + dim);
 }
 
 #[test]
@@ -109,7 +117,8 @@ fn the_corrected_harmonic_uses_the_runtime_sin_cos() {
             assert_eq!(c.harmonic(&x, idx, 1.0, false, 1.0), a, "fs={fs} f={f} idx={idx}");
         }
     }
-    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts ({dre}, {dim})");
+    must_differ("corrected harmonic, re part", dre);
+    must_differ("corrected harmonic, im part", dim);
 }
 
 #[test]
@@ -137,7 +146,8 @@ fn the_omp_phasor_uses_the_runtime_sin_cos() {
             assert_eq!(got[k], reference(k, TRIG), "p={p} k={k}");
         }
     }
-    assert!(dre > 0 && dim > 0, "the std-built reference differs in both parts ({dre}, {dim})");
+    must_differ("omp phasor, re part", dre);
+    must_differ("omp phasor, im part", dim);
 }
 
 #[test]
@@ -153,7 +163,8 @@ fn formula_sin_cos_use_the_runtime_sin_cos() {
         ds += usize::from(trig::sin(rad(d)).to_bits() != rad(d).sin().to_bits());
         dc += usize::from(trig::cos(rad(d)).to_bits() != rad(d).cos().to_bits());
     }
-    assert!(ds > 0 && dc > 0, "std differs from the runtime's at some angle ({ds}, {dc})");
+    must_differ("formula sin", ds);
+    must_differ("formula cos", dc);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -161,11 +172,11 @@ fn formula_sin_cos_use_the_runtime_sin_cos() {
 //
 // The scans above ask std to differ from the port somewhere in a range, which depends on the
 // libm (mingw's cos agrees with the port on much of what glibc's does not). These tests instead
-// search, per site, for a parameter where a reference with ONLY the sin (or ONLY the cos) put
-// back to std already differs from the port-built reference, take impulse samples so a single
-// term carries the angle, and assert the site equals the port-built reference there. A site
-// reverted to std in either half, or both, then fails on every platform; a libm that never
-// differs in a half over the whole candidate range fails the search, loudly.
+// take, per site, a range of parameters and impulse samples so a single term carries the angle,
+// and assert the site equals the port-built reference at EVERY candidate. A site reverted to std in
+// either half, or both, fails on every platform, because the search for a candidate where std
+// differs in that half stays a hard requirement (a libm that never differs in a half over the whole
+// range fails the search, loudly; CI's Linux, macOS and Windows runners all pass it).
 
 use fvb_core::expr::{Channels, Expr};
 
@@ -173,11 +184,11 @@ const SIN_STD: Fns = (f64::sin, trig::cos);
 const COS_STD: Fns = (trig::sin, f64::cos);
 
 fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
-    let find = |mixed: Fns| cands.clone().find(|&p| reference(p, mixed) != reference(p, TRIG));
-    let s = find(SIN_STD).unwrap_or_else(|| panic!("{what}: no candidate tells the sin half from std's"));
-    let c = find(COS_STD).unwrap_or_else(|| panic!("{what}: no candidate tells the cos half from std's"));
-    for p in [s, c] {
+    for p in cands.clone() {
         assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
+    }
+    for (half, mixed) in [("sin", SIN_STD), ("cos", COS_STD)] {
+        assert!(cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG)), "{what}: no candidate tells the {half} half from std's");
     }
 }
 
@@ -225,10 +236,10 @@ fn phasor_at_and_sliding_phasors_use_both_halves() {
 #[test]
 fn the_omp_phasor_uses_both_halves() {
     let tau = 2.0 * std::f64::consts::PI;
-    // Window [k−p, k−1] at k = p, the impulse at j.
+    // Window [k−p, k−1] at k = p, the impulse at j (0..p: j = p lies outside the window).
     halves(
         "omp_phasors",
-        grid(8..160),
+        (8..160usize).flat_map(|p| (0..p).map(move |j| (p, j))),
         |(p, j), f| {
             let th = j as f64 * tau / p as f64;
             let (re, im) = ((f.0)(th) * 1.3, (f.1)(th) * 1.3);
@@ -331,10 +342,14 @@ fn cosui_uses_the_runtime_cos() {
         let (x, y) = (Rot::z(0, idx), Rot::z(1, idx));
         (f.1)(y.im.atan2(y.re) - x.im.atan2(x.re))
     };
-    let site = |idx: usize| Expr::parse_channels("cosui:(ia, ib)", &Rot).unwrap().eval_at(&Context::new(), &Rot, idx).unwrap();
-    let find = |mixed: Fns| (0..40_000usize).find(|&k| reference(k, mixed).to_bits() != reference(k, TRIG).to_bits());
-    let k = find(STD).expect("a cos differing from std's among the angle differences");
-    assert_eq!(site(k).to_bits(), reference(k, TRIG).to_bits(), "cosui at {k}");
+    let e = Expr::parse_channels("cosui:(ia, ib)", &Rot).unwrap();
+    let ctx = Context::new();
+    let mut differs = 0;
+    for k in 0..40_000usize {
+        assert_eq!(e.eval_at(&ctx, &Rot, k).unwrap().to_bits(), reference(k, TRIG).to_bits(), "cosui at {k}");
+        differs += usize::from(reference(k, STD).to_bits() != reference(k, TRIG).to_bits());
+    }
+    must_differ("cosui, cos", differs);
 }
 
 /// The polar pair of the loop impedance `zk:` (`0x41a110`): `r·cos(deg)`, `r·sin(deg)` for each of the
@@ -407,12 +422,15 @@ fn the_corrected_harmonic_uses_both_halves() {
 fn formula_sin_and_cos_use_both_halves() {
     let rad = |d: f64| d * std::f64::consts::PI / 180.0;
     let ctx = Context::new();
-    let find = |mixed: Fns| (1..20_000).map(|d| d as f64 * 0.037).find(|&d| (mixed.0)(rad(d)).to_bits() != trig::sin(rad(d)).to_bits() || (mixed.1)(rad(d)).to_bits() != trig::cos(rad(d)).to_bits());
-    let (s, c) = (find(SIN_STD).expect("sin differs"), find(COS_STD).expect("cos differs"));
-    for d in [s, c] {
+    let mut differs = (0, 0);
+    for d in (1..20_000).map(|d| d as f64 * 0.037) {
         assert_eq!(eval_str(&format!("sin:{d}"), &ctx).unwrap().to_bits(), trig::sin(rad(d)).to_bits(), "sin:{d}");
         assert_eq!(eval_str(&format!("cos:{d}"), &ctx).unwrap().to_bits(), trig::cos(rad(d)).to_bits(), "cos:{d}");
+        differs.0 += usize::from(f64::sin(rad(d)).to_bits() != trig::sin(rad(d)).to_bits());
+        differs.1 += usize::from(f64::cos(rad(d)).to_bits() != trig::cos(rad(d)).to_bits());
     }
+    must_differ("sin:", differs.0);
+    must_differ("cos:", differs.1);
 }
 
 /// `tg:` and `ctg:` (#107) call the runtime's tan: `tan(v·π/180)` and `1 / tan(v·π/180)`.
@@ -429,5 +447,6 @@ fn formula_tg_and_ctg_use_the_runtime_tan() {
         dt += usize::from(trig::tan(rad(d)).to_bits() != rad(d).tan().to_bits());
         dc += usize::from((1.0 / trig::tan(rad(d))).to_bits() != (1.0 / rad(d).tan()).to_bits());
     }
-    assert!(dt > 0 && dc > 0, "std's tan differs from the runtime's at some angle ({dt}, {dc})");
+    must_differ("formula tg", dt);
+    must_differ("formula ctg", dc);
 }
