@@ -1200,9 +1200,12 @@ mod tracked_tests {
 }
 
 /// #106: the grounded-distance rotation (`0x49a670`) and the θ re-estimation (`0x49adc0`) call the
-/// original's runtime sin / cos (`crate::trig`). Each half is pinned on its own: a candidate is
-/// found where reverting only the sin (or only the cos) to std changes the result, and the site must
-/// equal the port-built reference there.
+/// original's runtime sin / cos (`crate::trig`). The site must equal the port-built reference at every
+/// candidate, and each half is pinned: a candidate must tell it from std's, so a site reverted to std
+/// fails. The one exception (#220) is refine_theta's cos half: on the Linux runner's glibc (image of
+/// 2026-11-11) no candidate told it from std's. That half is instead pinned libm-independently: some
+/// candidate must tell it from a cos one ulp off the port's, so the construction can see the half, and the
+/// site is still held to the port-built reference at every candidate.
 #[cfg(test)]
 mod trig_site_tests {
     use super::*;
@@ -1211,13 +1214,19 @@ mod trig_site_tests {
     const TRIG: Fns = (crate::trig::sin, crate::trig::cos);
     const SIN_STD: Fns = (f64::sin, crate::trig::cos);
     const COS_STD: Fns = (crate::trig::sin, f64::cos);
+    const SIN_ULP: Fns = (|x| f64::from_bits(crate::trig::sin(x).to_bits() ^ 1), crate::trig::cos);
+    const COS_ULP: Fns = (crate::trig::sin, |x| f64::from_bits(crate::trig::cos(x).to_bits() ^ 1));
 
-    fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
-        let find = |mixed: Fns| cands.clone().find(|&p| reference(p, mixed) != reference(p, TRIG));
-        let (s, c) = (find(SIN_STD), find(COS_STD));
-        let (s, c) = (s.unwrap_or_else(|| panic!("{what}: no candidate tells the sin half from std's")), c.unwrap_or_else(|| panic!("{what}: no candidate tells the cos half from std's")));
-        for p in [s, c] {
+    /// `std_cos`: whether a candidate must tell the cos half from std's (false only for refine_theta, see above).
+    fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, std_cos: bool, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
+        for p in cands.clone() {
             assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
+        }
+        let tells = |mixed: Fns| cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG));
+        assert!(tells(SIN_STD), "{what}: no candidate tells the sin half from std's");
+        assert!(tells(COS_ULP) && tells(SIN_ULP), "{what}: no candidate tells a half from one ulp off the port's");
+        if std_cos {
+            assert!(tells(COS_STD), "{what}: no candidate tells the cos half from std's");
         }
     }
 
@@ -1240,7 +1249,7 @@ mod trig_site_tests {
         let site = |theta: f64| grounded_distance(&t, 0, Complex64::default(), Complex64::default(), std::slice::from_ref(&sec), theta);
         // The site clamps a negative distance to 0: only angles with a positive one tell anything.
         let positive = |theta: &f64| reference(*theta, TRIG) > 0.0 && reference(*theta, SIN_STD) > 0.0 && reference(*theta, COS_STD) > 0.0;
-        halves("grounded_distance", (1..6000).map(|j| j as f64 * 0.00137).filter(positive), |p, f| reference(p, f).to_bits(), |p| site(p).to_bits());
+        halves("grounded_distance", true, (1..6000).map(|j| j as f64 * 0.00137).filter(positive), |p, f| reference(p, f).to_bits(), |p| site(p).to_bits());
     }
 
     /// One section without taps or parallel lines: the medians are of the constant `A = I0` and
@@ -1268,7 +1277,7 @@ mod trig_site_tests {
             ((-b.norm() * (f.0)(da)).atan2(a.norm() - b.norm() * (f.1)(da))).to_bits()
         };
         let site = |phase: f64| refine_theta(&build(phase), secs, (0, 2), d).unwrap().to_bits();
-        halves("refine_theta", (1..6000).map(|j| j as f64 * 0.00113), reference, site);
+        halves("refine_theta", false, (1..6000).map(|j| j as f64 * 0.00113), reference, site);
     }
 }
 
