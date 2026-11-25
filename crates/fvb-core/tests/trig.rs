@@ -123,7 +123,11 @@ fn tan_matches_msvcr120() {
             bad.push(format!("{:016x}: {:016x} vs {:016x}", x.to_bits(), tan(x).to_bits(), t.to_bits()));
         }
     }
-    assert!(std_differs > 100, "the fixture tells the port from std ({std_differs})");
+    // Whether std's tan differs from msvcr120's here depends on the platform's libm (#220): the fixture
+    // is the check against msvcr120; a std that equals it everywhere is only said, not failed.
+    if std_differs == 0 {
+        eprintln!("tan_matches_msvcr120: this platform's tan equals msvcr120's on the whole fixture");
+    }
     assert!(bad.is_empty(), "{} differ from msvcr120, first: {:?}", bad.len(), &bad[..bad.len().min(3)]);
 }
 

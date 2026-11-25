@@ -1200,9 +1200,12 @@ mod tracked_tests {
 }
 
 /// #106: the grounded-distance rotation (`0x49a670`) and the θ re-estimation (`0x49adc0`) call the
-/// original's runtime sin / cos (`crate::trig`). Each half is pinned on its own: a candidate is
-/// found where reverting only the sin (or only the cos) to std changes the result, and the site must
-/// equal the port-built reference there.
+/// original's runtime sin / cos (`crate::trig`). The site must equal the port-built reference at every
+/// candidate. Where the platform's libm differs from the port in a half (Windows, macOS), a candidate
+/// tells that half from std's, so a site reverted to std fails there; where it does not (the Linux
+/// runner's glibc may return the port's results everywhere in the range), the std-vs-port half cannot
+/// be observed and the test reports that on stderr instead of failing: the site is right, the platform
+/// just cannot tell (#220).
 #[cfg(test)]
 mod trig_site_tests {
     use super::*;
@@ -1213,11 +1216,13 @@ mod trig_site_tests {
     const COS_STD: Fns = (crate::trig::sin, f64::cos);
 
     fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str, cands: impl Iterator<Item = P> + Clone, reference: impl Fn(P, Fns) -> R, site: impl Fn(P) -> R) {
-        let find = |mixed: Fns| cands.clone().find(|&p| reference(p, mixed) != reference(p, TRIG));
-        let (s, c) = (find(SIN_STD), find(COS_STD));
-        let (s, c) = (s.unwrap_or_else(|| panic!("{what}: no candidate tells the sin half from std's")), c.unwrap_or_else(|| panic!("{what}: no candidate tells the cos half from std's")));
-        for p in [s, c] {
+        for p in cands.clone() {
             assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
+        }
+        for (half, mixed) in [("sin", SIN_STD), ("cos", COS_STD)] {
+            if !cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG)) {
+                eprintln!("{what}: this platform's {half} equals the port's at every candidate, so the {half} half is not observable here");
+            }
         }
     }
 
