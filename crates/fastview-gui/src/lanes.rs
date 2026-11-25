@@ -1421,12 +1421,12 @@ impl App {
         // neither is shown); each takes room from the other's test.
         // Without the H bar: if the record fits, that layout stands.
         let hbar_on = {
-            let vbar = content_h + band + 2.0 > full.height();
+            let vbar = content_h + band + 2.0 > full.height() && full.height() >= g::VBAR_FLOOR;
             let plot_w = full.width() - if vbar { scroll_w() } else { 0.0 };
             g::max_first(n, g::visible_count(plot_w, left_w, f)) > 0
         };
         let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { scroll_h() } else { 0.0 }));
-        let vbar = content_h + band + 2.0 > client.height();
+        let vbar = content_h + band + 2.0 > client.height() && client.height() >= g::VBAR_FLOOR;
         let plot_right = client.right() - if vbar { scroll_w() } else { 0.0 };
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;
@@ -2996,6 +2996,40 @@ mod menu_tests {
         fn doc(&self) -> &crate::app::Doc {
             self.app.active_doc().unwrap()
         }
+    }
+
+    /// #175: the running view shows its vertical scroll bar only while the view (after the horizontal bar) is at
+    /// least `VBAR_FLOOR` (74) px high, however tall the lanes are. Frames of every height around the floor are
+    /// drawn with lanes far taller than the view: the bar is there exactly from client height 74 up.
+    #[test]
+    fn the_running_view_shows_no_vertical_bar_under_the_floor() {
+        crate::dpi::set(96);
+        let mut seen = std::collections::BTreeMap::new();
+        for screen_h in 90..=130 {
+            let mut app = App::new();
+            app.dispatch(Command::Demo);
+            app.y_analog = 400.0;
+            let ctx = egui::Context::default();
+            for k in 0..3 {
+                let raw = egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(SCREEN.x, screen_h as f32))),
+                    time: Some(0.05 * (k + 1) as f64),
+                    ..Default::default()
+                };
+                let app = &mut app;
+                let _ = ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                });
+            }
+            let (full, client) = app.view_rects.expect("the view was drawn");
+            let lanes: f32 = lane_layout(app.active_doc().unwrap(), app.y_analog).iter().map(|r| r.h).sum();
+            assert!(lanes > full.height() + 200.0, "the lanes are far taller than the view");
+            let bar = client.right() < full.right();
+            seen.insert(client.height().round() as i32, bar);
+            assert_eq!(bar, client.height() >= g::VBAR_FLOOR, "screen {screen_h}: client {} px high, bar {bar}", client.height());
+        }
+        assert_eq!(seen.get(&73), Some(&false), "a 73 px view was drawn without a bar: {seen:?}");
+        assert_eq!(seen.get(&74), Some(&true), "a 74 px view was drawn with a bar: {seen:?}");
     }
 
     /// The view's bars are the system metric MulDiv(17, dpi, 96), also past 150 % where the first-zoom rule

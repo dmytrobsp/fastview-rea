@@ -62,6 +62,12 @@ impl WinMetrics {
     }
 }
 
+/// The shortest view (its client after the horizontal bar) that shows a vertical scroll bar: 74 px at 100 %
+/// (clone, #175: resizing the original's frame step by step, the bar appears when the view goes from 73 to 74
+/// px high, with lanes far taller than the view; none below), the smallest lane 70 px plus the view's 4 px
+/// edge. Not scaled: the view paints in device pixels at every scale (L9.406).
+pub const VBAR_FLOOR: f32 = 74.0;
+
 /// The width the view measures for its first zoom (`0x45c430`, `GetClientRect` of the view, in its
 /// `OnInitialUpdate` `0x45ab70`), from the MDI client `area_w` × `area_h`, the lanes' total height
 /// `lanes_h`, the ruler band's `band` (30, 75 with the difference band) and the system DPI's
@@ -75,8 +81,8 @@ impl WinMetrics {
 /// there when the zoom is measured if it has something to scroll: measured with a window-event
 /// log of the original, the view's client went 442 → 442 × 195 (the horizontal bar) → 425 (the
 /// vertical one) on a maximised start at 100 %, and 184 → 184 × 54 (the horizontal bar only) on a
-/// first run's small frame. Its height there, 54 px, is under the 70 px of the smallest lane; the
-/// bar's rule below is that, INFERRED from those two cases (147). Above the floor it is the
+/// first run's small frame. Its height there, 54 px, is under the floor ([`VBAR_FLOOR`], pinned on a clone
+/// by resizing the frame, #175). Above the floor it is the
 /// original's own scroll-bar rule (`0x45d4a0`): the lanes taller than the view (after its
 /// horizontal bar) less the ruler band plus 2 — a clone at 125 %: one lane (93 px) in a view 166
 /// high, the band 75 (the difference band shown), is exactly at the limit and shows no bar; at 150 % in 148 it does. On a first
@@ -95,7 +101,7 @@ pub fn view_width_at_creation(area_w: f32, area_h: f32, lanes_h: f32, band: f32,
     // The view: the child's frame (the borders and the caption) and its own edge (4), then the
     // horizontal bar.
     let view_h = child_h - m.caption - 2.0 * m.border() - 4.0 - m.scroll;
-    let vbar = view_h >= 70.0 && lanes_h > view_h - band + 2.0;
+    let vbar = view_h >= VBAR_FLOOR && lanes_h > view_h - band + 2.0;
     (area_w - step * k - 2.0 * m.border() - 4.0 - if vbar { m.scroll } else { 0.0 }).max(1.0)
 }
 
@@ -425,6 +431,21 @@ mod tests {
         let w = view_width_at_creation(230.0, 140.0, 670.0, 30.0, WinMetrics::at(96));
         assert_eq!(w, 184.0, "a 54 px view shows no vertical bar");
         assert_eq!((initial_scale(None, w, 235), initial_scale(None, w, 236)), (0.0625, 0.03125));
+    }
+
+    /// #175 (clone, 100 %): stepping the original's frame height one pixel at a time, the view's vertical bar
+    /// appears when the view (after its horizontal bar) goes from 73 to 74 px high — with lanes far taller than
+    /// the view — and is never there below; the same floor decides the first zoom's width.
+    #[test]
+    fn the_vertical_bar_needs_a_view_74_px_high() {
+        let m = WinMetrics::at(96);
+        // Two cascade steps down (a default child is placed at the MDI client less one step per three of its height).
+        let area_h = |view_h: f32| view_h + m.caption + 2.0 * m.border() + 4.0 + m.scroll + 2.0 * m.step();
+        let w = |view_h: f32| view_width_at_creation(300.0, area_h(view_h), 670.0, 30.0, m);
+        assert_eq!(w(74.0) + m.scroll, w(73.0), "a bar from 74 px, none at 73");
+        assert_eq!(w(54.0), w(73.0));
+        assert_eq!(w(100.0), w(74.0), "the bar stays above the floor");
+        assert_eq!(VBAR_FLOOR, 74.0);
     }
 
     /// #69, a frame restored maximised on 1280 × 800 (the MDI area 566 × 359, VM, the record
