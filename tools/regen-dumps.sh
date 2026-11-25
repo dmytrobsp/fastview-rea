@@ -13,8 +13,12 @@ out="${2:-dumps}"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$out"
 objdump -d -M intel "$exe" > "$out/fv.asm"
-python3 -I "$here/peimports.py" "$exe" > "$out/imports.txt"
-python3 -I "$here/pestr.py" "$exe" > "$out/strings.txt"
-python3 -I "$here/msgmaps.py" "$exe" "$out/msgmaps.json"
-python3 -I "$here/vt.py" "$exe" > "$out/vtables.txt"
+# -X utf8: the dumps are UTF-8 everywhere. Without it Python on Windows writes the
+# redirected output in the ANSI code page (cp1251), which stops at the first
+# character it lacks (an «Ω» in the string table); -I ignores PYTHONUTF8.
+py=(python3 -I -X utf8)
+"${py[@]}" "$here/peimports.py" "$exe" > "$out/imports.txt"
+"${py[@]}" "$here/pestr.py" "$exe" > "$out/strings.txt"
+"${py[@]}" "$here/msgmaps.py" "$exe" "$out/msgmaps.json"
+"${py[@]}" "$here/vt.py" "$exe" > "$out/vtables.txt"
 echo "dumps written to $out/"
