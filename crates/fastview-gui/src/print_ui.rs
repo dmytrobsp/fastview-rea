@@ -220,12 +220,16 @@ impl App {
                 Err(_) => self.dlg.push_alert(MSG_PRINT_FAILED),
             },
             None => {
-                if let Some(path) = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf")).save_file() {
-                    self.status = match std::fs::write(&path, spool::pdf_bytes(&imgs, &dev)) {
-                        Ok(()) => format!("Сохранено: {}", path.display()),
-                        Err(e) => format!("Ошибка записи: {e}"),
-                    };
-                }
+                // The PDF's file dialog runs outside the frame (#190); the file is written once it answers.
+                let dlg = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf"));
+                self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+                    if let Some((path, _)) = picked {
+                        app.status = match std::fs::write(&path, spool::pdf_bytes(&imgs, &dev)) {
+                            Ok(()) => format!("Сохранено: {}", path.display()),
+                            Err(e) => format!("Ошибка записи: {e}"),
+                        };
+                    }
+                });
             }
         }
     }

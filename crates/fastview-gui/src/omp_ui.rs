@@ -476,19 +476,16 @@ impl App {
     /// default extension txt, no overwrite prompt; UTF-16LE with BOM, CRLF.
     pub fn omp_save_report(&mut self) {
         let Some(text) = self.omp_report() else { return };
-        let Some(mut path) = crate::dialogs::file_dialog()
-            .add_filter("Результаты ОМП (*.txt)", &["txt"])
-            .add_filter("Все файлы (*.*)", &["*"])
-            .save_file()
-        else {
-            return;
-        };
-        if path.extension().is_none() {
-            path.set_extension("txt");
-        }
-        if let Err(e) = std::fs::write(&path, params::utf16le_crlf(&text)) {
-            self.omp_ui.message = Some(e.to_string());
-        }
+        let dlg = crate::dialogs::file_dialog().add_filter("Результаты ОМП (*.txt)", &["txt"]).add_filter("Все файлы (*.*)", &["*"]);
+        self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+            let Some((mut path, _)) = picked else { return };
+            if path.extension().is_none() {
+                path.set_extension("txt");
+            }
+            if let Err(e) = std::fs::write(&path, params::utf16le_crlf(&text)) {
+                app.omp_ui.message = Some(e.to_string());
+            }
+        });
     }
 
     /// The dialog's OK: validate station 1's sections (first failure → its
@@ -552,26 +549,30 @@ impl App {
                     // the dialog as it was (`0x4a9010`); one that is no XML
                     // goes through the legacy reader (`0x4a8f10` →
                     // `0x4a45f0`, text in the display encoding).
-                    if let Some(path) = omp_file_dialog().pick_file() {
+                    self.omp_ui.dialog = Some(dlg);
+                    self.pick(crate::sysdlg::Job::Open(omp_file_dialog()), |app, _, picked| {
+                        let Some((path, _)) = picked else { return };
                         if let Ok(b) = std::fs::read(&path) {
-                            let legacy = || fvb_core::omp_params::apply_legacy(&fvb_core::comtrade::decode_bytes(&b, self.encoding), &dlg.work);
+                            let Some(dlg) = app.omp_ui.dialog.as_mut() else { return };
+                            let legacy = || fvb_core::omp_params::apply_legacy(&fvb_core::comtrade::decode_bytes(&b, app.encoding), &dlg.work);
                             if let Some(p) = fvb_core::recset::omp_from_file_bytes(&b).or_else(legacy) {
                                 dlg.load(p);
                             }
                         }
-                    }
-                    self.omp_ui.dialog = Some(dlg);
+                    });
                 }
                 Some(DialogAction::Save) => {
-                    if let Some(mut path) = omp_file_dialog().save_file() {
+                    let work = fvb_core::recset::omp_file_bytes(&dlg.work);
+                    self.omp_ui.dialog = Some(dlg);
+                    self.pick(crate::sysdlg::Job::Save(omp_file_dialog()), move |app, _, picked| {
+                        let Some((mut path, _)) = picked else { return };
                         if path.extension().is_none() {
                             path.set_extension("omp");
                         }
-                        if let Err(e) = std::fs::write(&path, fvb_core::recset::omp_file_bytes(&dlg.work)) {
-                            self.omp_ui.message = Some(e.to_string());
+                        if let Err(e) = std::fs::write(&path, work) {
+                            app.omp_ui.message = Some(e.to_string());
                         }
-                    }
-                    self.omp_ui.dialog = Some(dlg);
+                    });
                 }
                 None => self.omp_ui.dialog = Some(dlg),
             }

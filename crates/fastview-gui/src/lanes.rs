@@ -2326,15 +2326,17 @@ impl App {
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
             .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
-            .constrain(true)
+            .constrain_to(crate::popmenu::bounds(ctx, menu.pos))
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
-                    let mut pick = |c: MenuCmd| chosen = Some(c);
-                    match menu.kind {
-                        LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
-                        LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
-                        LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
-                    }
+                    crate::popmenu::cut_to_screen(ui, menu_id, menu.pos, |ui| {
+                        let mut pick = |c: MenuCmd| chosen = Some(c);
+                        match menu.kind {
+                            LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
+                            LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
+                            LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
+                        }
+                    });
                 });
             });
         let rect = area.response.rect;

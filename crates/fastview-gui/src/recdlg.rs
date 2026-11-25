@@ -911,6 +911,7 @@ impl App {
         });
         let mut open = true;
         let mut result: Option<bool> = None;
+        let mut browse: Option<rfd::FileDialog> = None;
         crate::dialogs::dlg(ctx, "Установка настроек программы")
             .margin(0.0)
             .collapsible(false)
@@ -963,9 +964,7 @@ impl App {
                     if !st.dst_folder.is_empty() {
                         fd = fd.set_directory(&st.dst_folder);
                     }
-                    if let Some(p) = fd.pick_folder() {
-                        st.dst_folder = p.display().to_string();
-                    }
+                    browse = Some(fd);
                 }
                 win_group(ui, dlu(client, 7, 86, 405, 51), "Настройки отображения времени для Comtrade 2013");
                 if win_radio(ui, dlu(client, 23, 104, 80, 10), "Отображать в UTC", st.utc) {
@@ -982,6 +981,14 @@ impl App {
                 }
                 win_label(ui, dlu(client, 135, 176, 211, 22), "Внимание! При смене кодировки изменения вступают в силу после переоткрытия файла осциллограммы!", false, true);
             });
+        // The folder browser runs outside the frame (#190); its choice lands in the dialog's copy.
+        if let Some(fd) = browse {
+            self.pick(crate::sysdlg::Job::Folder(fd), |app, _, picked| {
+                if let (Some((p, _)), Some(st)) = (picked, app.dlg.settings.as_mut()) {
+                    st.dst_folder = p.display().to_string();
+                }
+            });
+        }
         let result = result.or_else(|| self.dialog_keys(ctx));
         match result {
             Some(true) => {
