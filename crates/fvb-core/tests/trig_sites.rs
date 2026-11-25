@@ -1,9 +1,8 @@
 //! #72: each site of the signal maths that calls the original's runtime sin / cos does so through
 //! `fvb_core::trig`. Each test builds its reference from `trig` and a second one from std, asserts the
 //! site equals the first bit for bit, and asserts that the two references differ somewhere in the
-//! scanned range (so a site reverted to std fails). Whether std differs from the port depends on the
-//! platform's libm (the Linux runner's may not at all, #220): where it does not, a test says so on stderr
-//! (`unobservable`) and still checks the site against the port-built reference.
+//! scanned range (`must_differ`; so a site reverted to std fails). CI's three platforms all satisfy
+//! these; the sites are also checked against the port-built reference at every candidate (#220).
 
 use fvb_core::expr::{eval_str, Context};
 use fvb_core::freqcorr::FreqCorr;
@@ -15,13 +14,10 @@ type Fns = (fn(f64) -> f64, fn(f64) -> f64);
 const TRIG: Fns = (trig::sin, trig::cos);
 const STD: Fns = (f64::sin, f64::cos);
 
-/// A count of places where std differs from the port: zero means this platform's libm cannot tell the
-/// two apart over the scanned range. That is no failure (the site is checked against the port-built
-/// reference regardless), but it is said, so the test does not pass silently proving less.
-fn unobservable(what: &str, n: usize) {
-    if n == 0 {
-        eprintln!("{what}: this platform's libm equals the port's over the scanned range, so a site reverted to std is not observable here");
-    }
+/// Guard: std differs from the port at `n` places of the scanned range; zero would mean a site reverted
+/// to std could not be told from the port here, and the test would prove nothing.
+fn must_differ(what: &str, n: usize) {
+    assert!(n > 0, "{what}: std equals the port over the whole scanned range, so a site reverted to std would not be caught");
 }
 
 /// Synthetic, non-flat samples.
@@ -76,9 +72,9 @@ fn phasors_use_the_runtime_sin_cos() {
             gc += usize::from(trig::cos(th).to_bits() != th.cos().to_bits());
         }
     }
-    unobservable("phasors, sin on the angle grid", gs);
-    unobservable("phasors, cos on the angle grid", gc);
-    unobservable("phasors, the sums", dre + dim);
+    must_differ("phasors, sin on the angle grid", gs);
+    must_differ("phasors, cos on the angle grid", gc);
+    must_differ("phasors, the sums", dre + dim);
 }
 
 #[test]
@@ -121,8 +117,8 @@ fn the_corrected_harmonic_uses_the_runtime_sin_cos() {
             assert_eq!(c.harmonic(&x, idx, 1.0, false, 1.0), a, "fs={fs} f={f} idx={idx}");
         }
     }
-    unobservable("re part", dre);
-    unobservable("im part", dim);
+    must_differ("corrected harmonic, re part", dre);
+    must_differ("corrected harmonic, im part", dim);
 }
 
 #[test]
@@ -150,8 +146,8 @@ fn the_omp_phasor_uses_the_runtime_sin_cos() {
             assert_eq!(got[k], reference(k, TRIG), "p={p} k={k}");
         }
     }
-    unobservable("re part", dre);
-    unobservable("im part", dim);
+    must_differ("omp phasor, re part", dre);
+    must_differ("omp phasor, im part", dim);
 }
 
 #[test]
@@ -167,8 +163,8 @@ fn formula_sin_cos_use_the_runtime_sin_cos() {
         ds += usize::from(trig::sin(rad(d)).to_bits() != rad(d).sin().to_bits());
         dc += usize::from(trig::cos(rad(d)).to_bits() != rad(d).cos().to_bits());
     }
-    unobservable("formula sin", ds);
-    unobservable("formula cos", dc);
+    must_differ("formula sin", ds);
+    must_differ("formula cos", dc);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -178,9 +174,9 @@ fn formula_sin_cos_use_the_runtime_sin_cos() {
 // libm (mingw's cos agrees with the port on much of what glibc's does not). These tests instead
 // take, per site, a range of parameters and impulse samples so a single term carries the angle,
 // and assert the site equals the port-built reference at EVERY candidate. A site reverted to std in
-// either half, or both, fails wherever the platform's libm differs from the port in that half. A
-// libm that never differs in a half over the whole range (#220: the Linux runner's) cannot tell that
-// half apart: the test then says so on stderr and still holds the site to the reference everywhere.
+// either half, or both, fails on every platform, because the search for a candidate where std
+// differs in that half stays a hard requirement (a libm that never differs in a half over the whole
+// range fails the search, loudly; CI's Linux, macOS and Windows runners all pass it).
 
 use fvb_core::expr::{Channels, Expr};
 
@@ -192,7 +188,7 @@ fn halves<P: Copy + std::fmt::Debug, R: PartialEq + std::fmt::Debug>(what: &str,
         assert_eq!(site(p), reference(p, TRIG), "{what} at {p:?}");
     }
     for (half, mixed) in [("sin", SIN_STD), ("cos", COS_STD)] {
-        unobservable(&format!("{what}, {half} half"), usize::from(cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG))));
+        assert!(cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG)), "{what}: no candidate tells the {half} half from std's");
     }
 }
 
@@ -353,7 +349,7 @@ fn cosui_uses_the_runtime_cos() {
         assert_eq!(e.eval_at(&ctx, &Rot, k).unwrap().to_bits(), reference(k, TRIG).to_bits(), "cosui at {k}");
         differs += usize::from(reference(k, STD).to_bits() != reference(k, TRIG).to_bits());
     }
-    unobservable("cosui, cos", differs);
+    must_differ("cosui, cos", differs);
 }
 
 /// The polar pair of the loop impedance `zk:` (`0x41a110`): `r·cos(deg)`, `r·sin(deg)` for each of the
@@ -433,8 +429,8 @@ fn formula_sin_and_cos_use_both_halves() {
         differs.0 += usize::from(f64::sin(rad(d)).to_bits() != trig::sin(rad(d)).to_bits());
         differs.1 += usize::from(f64::cos(rad(d)).to_bits() != trig::cos(rad(d)).to_bits());
     }
-    unobservable("sin:", differs.0);
-    unobservable("cos:", differs.1);
+    must_differ("sin:", differs.0);
+    must_differ("cos:", differs.1);
 }
 
 /// `tg:` and `ctg:` (#107) call the runtime's tan: `tan(v·π/180)` and `1 / tan(v·π/180)`.
@@ -451,6 +447,6 @@ fn formula_tg_and_ctg_use_the_runtime_tan() {
         dt += usize::from(trig::tan(rad(d)).to_bits() != rad(d).tan().to_bits());
         dc += usize::from((1.0 / trig::tan(rad(d))).to_bits() != (1.0 / rad(d).tan()).to_bits());
     }
-    unobservable("formula tg", dt);
-    unobservable("formula ctg", dc);
+    must_differ("formula tg", dt);
+    must_differ("formula ctg", dc);
 }
