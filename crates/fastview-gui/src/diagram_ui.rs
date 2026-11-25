@@ -192,10 +192,12 @@ thread_local! {
     /// On a real print (`m_bPrinting`; not the preview's memory DC): the
     /// page origin relative to the diagram rect, in points.
     static PRINT_PAGE: std::cell::Cell<Option<Vec2>> = const { std::cell::Cell::new(None) };
+    /// R's place on the whole-sheet canvas on a real print of the vector /
+    /// frequency page (`None` otherwise).
+    static PRINT_R: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
     /// One pixel of the device drawn on, in points, while a page renders:
     /// GDI draws a pen thinner than a device pixel one pixel wide in its
     /// full colour (the preview's pens of a few printer pixels).
-    static PRINT_R: std::cell::Cell<Option<Rect>> = const { std::cell::Cell::new(None) };
     static PIXEL: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
 

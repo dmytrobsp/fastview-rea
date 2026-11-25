@@ -287,7 +287,7 @@ fn unit_rect(x: f64, y: f64) -> IShapes {
 /// from the path's scan conversion, its top row and left column
 /// (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
 /// 8 Ом cell, not 65 / 9); an ellipse is the axis-aligned one of
-/// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋…⌈b/2⌉−1 (the same rule, INFERRED: `GetPath`
+/// ⌊−a/2⌋+1…⌈a/2⌉−1 × ⌊−b/2⌋+1…⌈b/2⌉−1 (the circle's rule, INFERRED: `GetPath`
 /// reads the drawn path back) turned, rounded and moved to (R(cx),
 /// R(−cy)) (`0x40a5d0`). A figure whose region is empty — or whose box
 /// has no width or no height — is a 1 × 1 rectangle instead: a polygon's

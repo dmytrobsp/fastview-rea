@@ -82,8 +82,12 @@ fn characteristic_extent_in_whole_units() {
     assert_eq!(ext(&square(0.6, 0.2, 3.2, 0.4, "")), 2.0);
     // The fold: a big square cut by a bigger `not` leaves nothing → 0.
     assert_eq!(ext(&format!("{}{}", square(0.0, 0.0, 2.0, 2.0, ""), square(-5.0, -5.0, 5.0, 5.0, r#"type="not""#))), 0.0);
-    // An ellipse 5 × 3 at (1, 0): x ⌊−2.5⌋…⌈2.5⌉ − 1, + 1 → −2…3 → 3.
+    // An ellipse 5 × 3 at (1, 0): x ⌊−2.5⌋ + 1 = −2 … ⌈2.5⌉ − 1 = 2, moved by
+    // 1 → −1…3 → 3 (the old rule, −3…2 moved, gave 3 too).
     assert_eq!(ext(r#"<ellipse mode="on" xcenter="1" ycenter="0" width="5" height="3" angle="0"/>"#), 3.0);
+    // At (−1, 0) the rules part: the left edge −2 − 1 = −3 → 3 now; without
+    // the lost left column −3 − 1 = −4 → 4 (INFERRED from the circle's rule).
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="-1" ycenter="0" width="5" height="3" angle="0"/>"#), 3.0);
 }
 
 /// Figures fold in document order: A, then `not` B, then `or` C gives
