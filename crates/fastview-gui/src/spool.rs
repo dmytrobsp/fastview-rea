@@ -38,6 +38,16 @@ impl Paper {
         Paper { name: self.name, mm: (self.mm.1, self.mm.0), margins: [o1, o2, o3, o0] }
     }
 
+    /// The paper a DC reports: `[PHYSICALWIDTH, PHYSICALHEIGHT, LOGPIXELSX, LOGPIXELSY, PHYSICALOFFSETX,
+    /// PHYSICALOFFSETY, HORZRES, VERTRES]`, measured through a DC the driver had turned to landscape when
+    /// `landscape`, and given back as a portrait sheet.
+    #[cfg(any(windows, test))]
+    pub fn from_caps(name: String, [w, h, dx, dy, ox, oy, hr, vr]: [i32; 8], landscape: bool) -> Option<Paper> {
+        let (mx, my) = (|v: i32| v as f32 / dx as f32 * 25.4, |v: i32| v as f32 / dy as f32 * 25.4);
+        let margins = [mx(ox), my(oy), mx(w - ox - hr).max(0.0), my(h - oy - vr).max(0.0)];
+        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins }.unturned(landscape))
+    }
+
     /// A sheet with no hardware margins.
     pub fn whole(name: &str, mm: (f32, f32)) -> Paper {
         Paper { name: name.into(), mm, margins: [0.0; 4] }
@@ -668,9 +678,7 @@ mod imp {
             DeleteDC(hdc);
             caps
         };
-        let (mx, my) = (|v: i32| v as f32 / dx as f32 * 25.4, |v: i32| v as f32 / dy as f32 * 25.4);
-        let margins = [mx(ox), my(oy), mx(w - ox - hr).max(0.0), my(h - oy - vr).max(0.0)];
-        (w > 0 && h > 0 && dx > 0 && dy > 0).then(|| Paper { name, mm: (mx(w), my(h)), margins }.unturned(landscape))
+        Paper::from_caps(name, [w, h, dx, dy, ox, oy, hr, vr], landscape)
     }
 
     pub fn device(printer: &str, setup: &PageSetup) -> Option<Device> {
@@ -810,6 +818,18 @@ mod tests {
     fn the_driver_dialog_opens_beside_the_print_dialogs_corner() {
         assert_eq!(driver_dialog_pos((384, 152), 96.0), (404, 170));
         assert_eq!(driver_dialog_pos((100, 50), 192.0), (140, 86));
+    }
+
+    #[test]
+    fn a_landscape_dc_reads_back_as_a_portrait_paper() {
+        // Letter at 600 dpi: portrait caps, then the same paper through a DC the driver turned to landscape.
+        let portrait = [5100, 6600, 600, 600, 50, 60, 5000, 6480];
+        let landscape = [6600, 5100, 600, 600, 60, 50, 6480, 5000];
+        let p = Paper::from_caps("Letter".into(), portrait, false).unwrap();
+        assert!(p.mm.0 < p.mm.1);
+        assert_eq!(Paper::from_caps("Letter".into(), landscape, true).unwrap(), p, "landscape caps are turned back");
+        let wide = Paper::from_caps("Letter".into(), landscape, false).unwrap();
+        assert!(wide.mm.0 > wide.mm.1, "left as measured it stays wide: the case the turn-back is for");
     }
 
     #[test]

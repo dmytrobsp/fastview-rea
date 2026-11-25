@@ -178,10 +178,17 @@ impl App {
     /// the pages on the application printer's paper (MFC's preview DC).
     pub fn print_preview_open(&mut self) {
         let Some(di) = self.active else { return };
+        let chosen = self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait);
+        let paper = self.app_paper();
+        self.preview_open_with(di, chosen, paper);
+    }
+
+    /// The preview of document `di` on `paper` (portrait), the driver's `chosen` orientation (`Some(portrait)`)
+    /// ruling over the page setup's.
+    fn preview_open_with(&mut self, di: usize, chosen: Option<bool>, paper: spool::Paper) {
         // «Свойства...»'s orientation, once chosen, rules the sheet over the
         // page setup's (VM: Landscape there shows a landscape sheet).
-        let setup = self.preview_setup();
-        let paper = self.app_paper();
+        let setup = self.print.setup.with_driver_orientation(chosen);
         let mut job = self.print_job(di, Device::printable(setup.oriented(paper.mm), setup.oriented_margins(paper.margins), PREVIEW_DPI), setup);
         // The diagram pages at the application printer's scale.
         let printer = self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).map(|p| spool::device(p, &setup));
@@ -715,6 +722,56 @@ mod tests {
         }
         let shift = egui::Event::Key { key: egui::Key::Z, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND } };
         assert_eq!(preview_accel(&[shift]), None);
+    }
+
+    /// Ctrl+V / Ctrl+Z / Ctrl+Y over the open preview change the document and
+    /// the pages are laid out again at once (VM: a pasted lane shows on the
+    /// pages, undo takes it off, redo puts it back).
+    #[test]
+    fn a_paste_over_the_preview_is_laid_out_again_and_undo_redo_follow() {
+        let ctrl = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.active_doc_mut().unwrap().selection.extend([crate::app::ChanKey::Analog(0), crate::app::ChanKey::Analog(1)]);
+        app.dispatch(Command::Copy);
+        assert!(app.clip.available());
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        let page = |app: &App| app.print.preview.as_ref().unwrap().sheets[0].as_ref().expect("page 0 is rendered").px.clone();
+        let (before, lanes) = (page(&app), app.docs[0].computed.len());
+        frame(&ctx, &mut app, vec![ctrl(egui::Key::V)]);
+        assert!(app.docs[0].computed.len() > lanes, "the paste reached the document");
+        assert!(page(&app) != before, "the pasted lane shows on the laid-out page");
+        frame(&ctx, &mut app, vec![ctrl(egui::Key::Z)]);
+        assert_eq!(app.docs[0].computed.len(), lanes);
+        assert!(page(&app) == before, "undo takes it off the page");
+        frame(&ctx, &mut app, vec![ctrl(egui::Key::Y)]);
+        assert!(page(&app) != before, "redo puts it back");
+    }
+
+    /// Page setup Landscape and «Свойства...» OKed on Landscape: the preview's sheet is landscape (VM: two
+    /// landscape sheets; it was one portrait sheet, the chosen landscape paper being turned twice).
+    #[test]
+    fn the_preview_follows_the_drivers_orientation_over_the_page_setup() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        let portrait_paper = spool::Paper::whole("Letter", (215.9, 279.4));
+        let sheet = |app: &App| {
+            let d = &app.print.preview.as_ref().unwrap().job.dev;
+            (d.sheet_mm.0 > d.sheet_mm.1, app.print.preview.as_ref().unwrap().job.setup.portrait)
+        };
+        app.print.setup.portrait = false;
+        // The driver measured through a landscape DEVMODE: wide paper, turned back by `spool::Paper::from_caps`.
+        let measured = spool::Paper::from_caps("Letter".into(), [6600, 5100, 600, 600, 60, 50, 6480, 5000], true).unwrap();
+        assert!(measured.mm.0 < measured.mm.1);
+        app.preview_open_with(0, Some(false), measured);
+        assert_eq!(sheet(&app), (true, false), "Landscape in both: one landscape sheet, not turned twice");
+        // Driver Portrait over a Landscape page setup; and no choice: the page setup stands.
+        app.preview_open_with(0, Some(true), portrait_paper.clone());
+        assert_eq!(sheet(&app), (false, true));
+        app.preview_open_with(0, None, portrait_paper);
+        assert_eq!(sheet(&app), (true, false));
     }
 
     #[test]
