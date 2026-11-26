@@ -287,9 +287,10 @@ fn unit_rect(x: f64, y: f64) -> IShapes {
 /// from the path's scan conversion, its top row and left column
 /// (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
 /// 8 Ом cell, not 65 / 9); an ellipse is the axis-aligned one of
-/// ⌊−a/2⌋+1…⌈a/2⌉−1 × ⌊−b/2⌋+1…⌈b/2⌉−1 (the circle's rule, INFERRED: `GetPath`
-/// reads the drawn path back) turned, rounded and moved to (R(cx),
-/// R(−cy)) (`0x40a5d0`). A figure whose region is empty — or whose box
+/// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋+1…⌈b/2⌉−1 (its top row lost like the circle's, but
+/// its left column kept: a clone's ellipse 82 wide at x −10 scales to 51, a
+/// 20 Ом cell, where the circle's rule gave 50) turned, rounded and moved to
+/// (R(cx), R(−cy)) (`0x40a5d0`). A figure whose region is empty — or whose box
 /// has no width or no height — is a 1 × 1 rectangle instead: a polygon's
 /// at its first point (⌈x⌉, −⌈y⌉), (0, 0) without one; a circle's at
 /// (⌈cx⌉, ⌈cy⌉) and an ellipse's at (R(cx), R(cy)), neither flipped.
@@ -335,9 +336,9 @@ fn device_region(v: &FigureValues) -> IShapes {
         }
         FigureValues::Ellipse { center: [cx, cy], width, height, angle } => {
             let (a, b) = (width.abs(), height.abs());
-            // The same rule as the circle's (INFERRED): no tip row or column, no
-            // right or bottom edge.
-            let (l, t, r, bt) = ((-a / 2.0).floor() + 1.0, (-b / 2.0).floor() + 1.0, (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
+            // No top row and no right or bottom edge, as the circle's, but the left
+            // column stays (clone, #194).
+            let (l, t, r, bt) = ((-a / 2.0).floor(), (-b / 2.0).floor() + 1.0, (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
             let (ox, oy) = (rnd(*cx), rnd(-cy));
             // Device y points down: the turn is mirrored (the box is the
             // same either way).

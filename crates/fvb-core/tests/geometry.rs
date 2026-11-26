@@ -82,12 +82,19 @@ fn characteristic_extent_in_whole_units() {
     assert_eq!(ext(&square(0.6, 0.2, 3.2, 0.4, "")), 2.0);
     // The fold: a big square cut by a bigger `not` leaves nothing → 0.
     assert_eq!(ext(&format!("{}{}", square(0.0, 0.0, 2.0, 2.0, ""), square(-5.0, -5.0, 5.0, 5.0, r#"type="not""#))), 0.0);
-    // An ellipse 5 × 3 at (1, 0): x ⌊−2.5⌋ + 1 = −2 … ⌈2.5⌉ − 1 = 2, moved by
-    // 1 → −1…3 → 3 (the old rule, −3…2 moved, gave 3 too).
+    // An ellipse 5 × 3 at (1, 0): x ⌊−2.5⌋ = −3 … ⌈2.5⌉ − 1 = 2, moved by 1 →
+    // −2…3 → 3 (the right edge is the extreme).
     assert_eq!(ext(r#"<ellipse mode="on" xcenter="1" ycenter="0" width="5" height="3" angle="0"/>"#), 3.0);
-    // At (−1, 0) the rules part: the left edge −2 − 1 = −3 → 3 now; without
-    // the lost left column −3 − 1 = −4 → 4 (INFERRED from the circle's rule).
-    assert_eq!(ext(r#"<ellipse mode="on" xcenter="-1" ycenter="0" width="5" height="3" angle="0"/>"#), 3.0);
+    // At (−1, 0) the left edge is the extreme: ⌊−2.5⌋ = −3, moved by −1 → −4
+    // → 4. The ellipse keeps its left column (clone, #194: 82 wide at x −10
+    // scales to 51); the circle's rule would lose it and give 3.
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="-1" ycenter="0" width="5" height="3" angle="0"/>"#), 4.0);
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="-10" ycenter="0" width="82" height="20" angle="0"/>"#), 51.0);
+    // The top row is lost: 82 high at y 10 up reaches ⌊−41⌋ + 1 − 10 = −50 →
+    // 50 (the circle's top case, radius 41 at y 10, gives 50 too); the right
+    // edge ⌈41⌉ − 1 = 40 and the bottom 40 − 10 = 30 stay inside.
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="0" ycenter="10" width="20" height="82" angle="0"/>"#), 50.0);
+    assert_eq!(ext(r#"<ellipse mode="on" xcenter="0" ycenter="11" width="20" height="82" angle="0"/>"#), 51.0);
 }
 
 /// Figures fold in document order: A, then `not` B, then `or` C gives
