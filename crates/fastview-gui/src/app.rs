@@ -3410,8 +3410,9 @@ mod tests {
         assert_eq!(crate::lanes::row_range(d, &row), (f64::NEG_INFINITY, f64::INFINITY));
         assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, lo, hi), 88.0);
         assert_eq!(crate::oscgeom::value_y(f64::NEG_INFINITY, 0.0, 93.0, lo, hi), 88.0);
-        assert!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, lo, hi).is_nan(), "a NaN sample is not drawn");
-        assert!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, 0.0, 0.0).is_nan(), "not even on a flat lane");
+        // A NaN sample (0 × inf) is placed as an infinite one: the lowest row on a range, the middle on a flat lane.
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, 0.0, 0.0), 46.0);
         // A lane of one infinity alone is flat, as the original's is: its middle.
         assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, f64::INFINITY, f64::INFINITY), 46.0);
         assert_eq!(fvb_core::views::readout_text(val, ""), " 1.#INF   ");

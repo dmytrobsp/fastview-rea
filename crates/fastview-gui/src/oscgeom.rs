@@ -222,10 +222,10 @@ pub fn digital_window(raw: &[bool]) -> (f64, f64) {
 }
 
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
-    if v.is_nan() {
-        // A NaN sample is not drawn (clone, #170: a lane of 0 / 0 shows nothing), whatever range the lane has.
-        return f32::NAN;
-    }
+    // A NaN sample is placed as an infinite one: the lane painter converts the scaled offset with a truncation
+    // (`0x429a43`, `0x429ade`, `0x429810`, `0x4298b0`) that gives the same indefinite integer for NaN and for
+    // infinity, and no test of NaN lies between it and the Polyline / Ellipse calls (`0x429b4c`, `0x429b91`).
+    // (A lane of nothing but NaN draws nothing at all: a lane-level rule, see `lanes::draw_series`'s callers.)
     if max <= min {
         // The lane's middle in whole pixels (VM: a flat channel of a 93 px
         // lane on its row 46, not 46.5).

@@ -378,7 +378,11 @@ impl OscView<'_> {
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
-                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
+                            // read at `0x42955a` does not say why).
+                            if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
+                                draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
@@ -1005,9 +1009,9 @@ fn draw_series(
     if last < first {
         return;
     }
-    // A NaN sample is not drawn; an infinite one is a point on the baseline, drawn with its mark but no line (the
-    // original's polyline through such a point leaves nothing between them, clone, #170).
-    let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).filter(|(p, _)| !p.y.is_nan()).collect();
+    // A NaN or infinite sample is a point on the baseline, drawn with its mark but no line (the original's polyline
+    // through such a point leaves nothing between them, clone, #170).
+    let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).collect();
     let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
