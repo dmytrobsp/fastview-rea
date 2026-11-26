@@ -40,6 +40,87 @@ FV_CLONE=… FV_PURPOSE=… tools/vm/clone.sh rm          # always, when done �
   keeps it; other paths are never deleted); OneDrive is stopped at the clone's start and before each run. Print only
   the pages a check needs. Windows Update and Defender are not touched: they are the box's, not ours.
 
+## On a Windows host: Hyper-V
+
+Where there is no claim tool (a Windows PC), `tools/vm/hyperv.ps1` does what `clone.sh` does, on the host's own
+Hyper-V: a clone is a Gen 2 VM on a differencing disk of a read-only base, ready in about a minute. It needs Windows
+Pro / Enterprise with the Hyper-V feature, and your user in the **Hyper-V Administrators** group (no elevation).
+
+**Setup, once** (about 25 minutes, mostly Windows Setup): build the base from a Windows 11 Enterprise Evaluation ISO
+and your own copy of the original. The ISO, the original and the records are parameters and never enter the repository.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\vm\hyperv-base.ps1 -Iso <Windows ISO> `
+    -Orig <main checkout>\extracted\stage1 [-Records <folder with WIN_1999.cfg / .dat ...>] [-Ours <fastview.exe>]
+```
+
+It installs unattended (`autounattend.template.xml`: 1280 x 800, no network adapter, en-US display language, ru-RU
+system locale and Format, user `tbuser` signed in automatically, a random password), activates the evaluation through
+a temporary adapter on the `Default Switch` (a few seconds of network, then removed; needs the host's internet),
+provisions the guest as `clone.sh` does (original with `eng\` moved aside, VC++ 2013 x86, records, harness, ours) and
+makes the disk read-only. Files in `$env:USERPROFILE\fastview-vm` (`FV_VMROOT`): `fv-base.vhdx` and
+`fv-base.cred.xml` (the guest credential, encrypted with your Windows user's DPAPI key: only you on this PC read it).
+Never start or change the base after that. To test the script itself, build under another `-Name` and `-Root`.
+
+**The commands** are `clone.sh`'s, with the same environment (`FV_CLONE` = a state file naming the clone, one per
+clone, so several run at once; `FV_PURPOSE`, `FV_SHOTS`, `FV_FRESH`, `FV_NOMAX`, `FV_KEEP`, `FV_FORCE`):
+
+```powershell
+$h = 'tools\vm\hyperv.ps1'; $env:FV_CLONE = "$env:LOCALAPPDATA\fastview-rea\clone-<unit>"
+powershell -NoProfile -ExecutionPolicy Bypass -File $h new
+powershell -NoProfile -ExecutionPolicy Bypass -File $h run o "SHOT a.png" WIN_1999.cfg    # the original, maximised
+powershell -NoProfile -ExecutionPolicy Bypass -File $h run u "SHOT b.png" none           # ours; record `none` (a lone `-` is eaten by powershell.exe)
+powershell -NoProfile -ExecutionPolicy Bypass -File $h push SRC DST   # also pull, exec, desk, shot OUT.png, ours
+powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, when done
+```
+
+- `new` also refreshes the harness scripts from your checkout and pushes ours
+  (`target\x86_64-pc-windows-gnu\release\fastview.exe`; not again when its SHA-256 is unchanged).
+- `exec CMD` is a `cmd.exe` command (stdout and exit code come back); `desk CMD` runs in the desktop session, with no
+  stdout. `shot OUT.png` is the console thumbnail through Hyper-V's WMI at 1280 x 800: no window opens on the host. It is RGB565
+  (5-bit red and blue), so colours read from it are approximate; for exact colours use a `SHOT` in the keys of `run` (the
+  guest's own full-colour capture).
+  `rm` removes the VM, its disk and folder and the state file.
+- A step prints the clone's disk size on stderr (a clone costs about 2 GB of the host's disk after a run or two and 4 GB
+  of RAM while it runs; `FV_MEM_GB` changes the RAM). Several clones fit as far as the host's RAM does.
+- Never run the commands of one clone from two shells at once; a different clone is independent.
+- `desk` and `run` exit 0 once the step was started (a failing `drive.ps1` inside is not reflected); read their output and
+  the shots. `exec` returns the guest command's exit code. Non-ASCII output of `exec` can come back mangled from Git Bash.
+- The clone's OneDrive is not stopped (clone.sh does): the disk is the host's and there is no network, so it syncs nothing.
+
+**Calling it** - the two shells each break arguments in their own way, so pass a command with quotes or `/options` as
+**one** argument:
+
+- From **Git Bash** (what an agent's Bash tool is on a Windows PC), single quotes around the whole command, `FV_*` paths
+  as `C:/...` or `/c/...` (do not set `MSYS_NO_PATHCONV`: it stops that conversion). Separate arguments that start with `/`
+  are rewritten by MSYS (`/fi` becomes `C:/Program Files/Git/fi`), so this fails and the one-string form works:
+  ```sh
+  H="powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/vm/hyperv.ps1"
+  FV_CLONE=C:/tmp/c1.state $H exec 'tasklist /fi "imagename eq explorer.exe" /nh'      # works
+  FV_CLONE=C:/tmp/c1.state $H exec tasklist /fi "imagename eq explorer.exe" /nh         # MSYS rewrites /fi: fails
+  ```
+- From **PowerShell**, `powershell.exe -File` strips embedded double quotes (`exec 'tasklist /fi "imagename eq x"'`
+  arrives as three arguments, and `run o 'TYPE "a b";SHOT x.png'` takes `b;SHOT x.png` for the record). Call the script
+  in-process instead, which passes every argument unchanged:
+  ```powershell
+  Set-ExecutionPolicy -Scope Process Bypass -Force; $env:FV_CLONE = "$env:LOCALAPPDATA\fastview-rea\clone-<unit>"
+  .\tools\vm\hyperv.ps1 exec 'tasklist /fi "imagename eq explorer.exe" /nh'
+  ```
+  The `powershell -File` lines above are fine for keys and commands without a double quote.
+- "No record" is `none` (or `--`), never `-`: powershell.exe refuses a lone `-` before the script runs (a clone.sh brief's
+  `-` becomes `none`).
+
+**Limits.** A clone has no network adapter (nothing leaves it, nothing comes in except through PowerShell Direct, which
+the commands use). Like the Windows clones `clone.sh` makes on a Linux host it is 1280 x 800 on the basic display adapter: no OpenGL 2, so ours runs
+through its software runner (`run u` passes `-Soft`). There are no shared-box claims: it is your machine's VMs; remove
+every clone you made.
+
+**The 90-day evaluation.** The base is a Windows evaluation: it works for 90 days from its activation (clones show the
+remaining time in the watermark; in a clone `cscript //nologo %windir%\system32\slmgr.vbs /xpr` prints the expiry
+date). After that Windows warns and may shut down hourly. Renewal is a **new base**: run `hyperv-base.ps1` again (the
+same command; it refuses an existing name, so build under a new `-Name` and set `FV_BASE`, or remove the old base
+first; after a failed build it prints the commands that remove what is left), then delete the old base's disk once no clone depends on it (`Get-VHD` of a clone shows its parent).
+
 ## What a clone is
 
 Windows 11 Enterprise evaluation, 1280 × 800 on the Basic Display Adapter (no other mode), en-US display language
