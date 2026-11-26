@@ -148,7 +148,7 @@ pub fn centred_over(owner: (i32, i32, i32, i32), dialog: (i32, i32), work: (i32,
 /// A WH_CBT hook on this thread for the duration of a task that raises a dialog: the first window activated on this
 /// thread but the owner itself is centred over the owner ([`centred_over`]), by a timer a moment after its
 /// activation — a file dialog places itself while it is shown and would undo an earlier move.
-#[cfg(windows)]
+#[cfg(all(windows, not(test)))]
 mod centre {
     use std::sync::atomic::{AtomicIsize, Ordering};
     use windows_sys::Win32::Foundation::{HWND, RECT};
