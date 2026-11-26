@@ -643,11 +643,13 @@ pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_
 /// with — primary / secondary when primary values are shown of a file
 /// stored in secondary ones (`+0x89` set, `+0x88` clear), secondary /
 /// primary in the converse case (a «P» record shown «Вторичные», the
-/// default: `0x422460` clears `+0x89`), else 1.
+/// default: `0x422460` clears `+0x89`), else 1. The division is not guarded:
+/// a zero ratio field (a `.cfg` text atof reads as 0) gives an infinite or
+/// NaN factor, as in the original (clone, #170).
 pub fn display_k(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> f64 {
     match (show_primary, ch.is_primary) {
-        (true, false) if ch.secondary != 0.0 => ch.primary / ch.secondary,
-        (false, true) if ch.primary != 0.0 => ch.secondary / ch.primary,
+        (true, false) => ch.primary / ch.secondary,
+        (false, true) => ch.secondary / ch.primary,
         _ => 1.0,
     }
 }
@@ -3377,6 +3379,31 @@ mod tests {
         }
     }
 
+    /// #170: a «P» channel whose primary field atof reads as 0 (`inf`) is shown through the unguarded
+    /// secondary / primary: an infinite factor, an infinite value at the cursor, every sample infinite or NaN (a
+    /// zero sample is 0 × inf).
+    #[test]
+    fn a_zero_primary_ratio_scales_by_infinity_as_the_original_does() {
+        let dir = std::env::temp_dir().join(format!("fv_zero_ratio_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = "S,D,1999\r\n1,1A,0D\r\n1,X,,,V,0.5,0,0,-9,9,inf,5.5,P\r\n50\r\n1\r\n1250,4\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
+        std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
+        std::fs::write(dir.join("rec.dat"), "1,0,3\r\n2,800,5\r\n3,1600,7\r\n4,2400,9\r\n").unwrap();
+        let mut app = App::new();
+        app.load_comtrade_path(&dir.join("rec.cfg"));
+        while !app.loading.is_empty() {
+            app.poll_loading();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let d = app.active_doc().expect("the record opens");
+        assert!(!d.chans[0].primary, "a «P» record shows secondary values by default");
+        assert_eq!(display_k(&d.osc.analog[0], false), f64::INFINITY);
+        assert_eq!(d.shown_samples(0).get(1).copied(), Some(f64::INFINITY));
+        let (.., val) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 1);
+        assert_eq!(val, f64::INFINITY);
+        assert_eq!(fvb_core::views::readout_text(val, ""), " 1.#INF   ");
+    }
+
     /// A formula channel is an analog record like the file's: its frequency
     /// diagram bins go through the record's selected frequency channel
     /// (`0x426510` → `0x4267e0`; the test there is on the channel being
@@ -4283,6 +4310,12 @@ mod tests {
         ch.is_primary = false;
         assert_eq!(display_k(&ch, true), 2380.0);
         assert_eq!(display_k(&ch, false), 1.0);
+        // A zero divisor is not guarded (`0x428490` divides straight through): inf, and 0 / 0 is NaN.
+        (ch.primary, ch.secondary, ch.is_primary) = (0.0, 5.0, true);
+        assert_eq!(display_k(&ch, false), f64::INFINITY);
+        ch.primary = 0.0;
+        ch.secondary = 0.0;
+        assert!(display_k(&ch, false).is_nan());
         ch.samples = vec![1.0, 3.0];
         let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };
         assert_eq!(flag_series(&ch, &v, (2.0, 7.0), 4.0), [-1.0, 1.0], "the k of the raw values is applied later");
