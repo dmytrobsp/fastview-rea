@@ -56,8 +56,12 @@ $plain = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
 $cred = New-Object System.Management.Automation.PSCredential('tbuser', (ConvertTo-SecureString $plain -AsPlainText -Force))
 $cred | Export-Clixml $credFile
 
-# 2. autounattend.xml on a small ISO (Windows Setup looks for it at the root of every drive).
+# From here on a failure must not leave the answers ISO (the password in clear) behind: the finally block at the end
+# removes it and its staging folder; the catch block says how to remove the half-built VM.
 $stage = Join-Path $Root "cfg-$Name"
+$cfgIso = Join-Path $Root "autounattend-$Name.iso"
+try {
+# 2. autounattend.xml on a small ISO (Windows Setup looks for it at the root of every drive).
 New-Item -ItemType Directory -Force $stage | Out-Null
 $tpl = Get-Content -Raw -Encoding UTF8 (Join-Path $PSScriptRoot 'autounattend.template.xml')
 [IO.File]::WriteAllText((Join-Path $stage 'autounattend.xml'), $tpl.Replace('@@PASSWORD@@', $plain), (New-Object Text.UTF8Encoding($false)))
@@ -74,7 +78,6 @@ public static class IsoWriter {
 }
 '@
 }
-$cfgIso = Join-Path $Root "autounattend-$Name.iso"
 $fs = New-Object -ComObject IMAPI2FS.MsftFileSystemImage
 $fs.FileSystemsToCreate = 4   # UDF
 $fs.VolumeName = 'FVCFG'
@@ -120,7 +123,7 @@ while ($true) {
 }
 Write-Host "${Name}: installed - Windows $($r.Build), system locale $($r.Locale), format $($r.Culture)"
 Get-VMDvdDrive -VM $vm | Set-VMDvdDrive -Path $null
-Remove-Item -LiteralPath $cfgIso   # it holds the password in clear
+Remove-Item -LiteralPath $cfgIso -Force   # it holds the password in clear
 
 # 6. Activation of the evaluation through a temporary adapter (a few seconds of network).
 if (-not $NoActivate) {
@@ -181,3 +184,13 @@ Stop-VM -Name $Name
 $vhd = (Get-VMHardDiskDrive -VMName $Name).Path
 Set-ItemProperty -LiteralPath $vhd -Name IsReadOnly -Value $true
 Write-Host "${Name}: done - $vhd is read-only, the parent of clones (credential: $credFile)"
+} catch {
+    [Console]::Error.WriteLine("${Name}: build failed: $($_.Exception.Message)")
+    [Console]::Error.WriteLine("To start over, remove what is left (a rerun refuses existing names):")
+    [Console]::Error.WriteLine("  Stop-VM -Name $Name -TurnOff -Force; Remove-VM -Name $Name -Force; Remove-Item -LiteralPath '$vhd', '$credFile'")
+    throw
+} finally {
+    Get-VMDvdDrive -VMName $Name -ErrorAction SilentlyContinue | Set-VMDvdDrive -Path $null -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $cfgIso) { Remove-Item -LiteralPath $cfgIso -Force }
+    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+}

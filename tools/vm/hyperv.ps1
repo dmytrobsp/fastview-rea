@@ -6,7 +6,7 @@ hyperv.ps1 - clone.sh on a Windows host: runs of the original and ours in throwa
   hyperv.ps1 run o|u "<keys>" [record]
                                      drive.ps1 in the clone: the original (o) or ours (u, in its software runner),
                                      maximised first (not with FV_NOMAX=1), with records\<record> (WIN_1999.cfg by
-                                     default, "-" for none); FV_FRESH=1 first drops its saved state (a first run);
+                                     default, "none" for none; a lone "-" is eaten by powershell.exe -File); FV_FRESH=1 first drops its saved state (a first run);
                                      every SHOT named in the keys lands in $env:FV_SHOTS
   hyperv.ps1 push SRC DST            host file or folder into the clone
   hyperv.ps1 pull SRC DST            clone file or folder to the host (a file in out\ or harness\shots\ is deleted in
@@ -14,7 +14,8 @@ hyperv.ps1 - clone.sh on a Windows host: runs of the original and ours in throwa
   hyperv.ps1 exec CMD...             a cmd.exe command in the clone (no desktop); stdout and the exit code come back
   hyperv.ps1 desk CMD...             the same in the desktop session (no stdout: write to a file and pull it)
   hyperv.ps1 shot OUT.png            the clone's whole screen: the console thumbnail through Hyper-V's WMI at
-                                     1280 x 800 (no window on the host); falls back to the guest's shot.ps1
+                                     1280 x 800 (no window on the host; RGB565, so colours are approximate: for exact
+                                     ones use a SHOT in the keys of `run`); falls back to the guest's wakeshot.ps1
   hyperv.ps1 ours                    push a rebuilt ours (not again when the SHA-256 is the same; FV_FORCE=1 pushes)
   hyperv.ps1 rm                      remove the clone: VM, differencing disk, folder, state file
 
@@ -27,6 +28,9 @@ records are in the base, a clone inherits them. Needs membership in "Hyper-V Adm
 
 Layout in the guest as clone.sh: C:\Users\tbuser\fv-test\{FastView5,harness,records,out,ours}. A clone has no network
 adapter. Run it as: powershell -NoProfile -ExecutionPolicy Bypass -File tools\vm\hyperv.ps1 <command> ...
+Arguments: give a command with quotes or /options as ONE argument; from Git Bash in single quotes, from PowerShell
+without embedded double quotes (see docs/agents/windows-testing.md, "Calling it"). `desk` and `run` exit 0 once the
+step was started: read their output / shots to see how it went.
 #>
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -49,17 +53,21 @@ $G = 'C:\Users\tbuser\fv-test'
 function Fail([string]$Message, [int]$Code = 2) { [Console]::Error.WriteLine($Message); exit $Code }
 
 function Get-Cred {
-    foreach ($n in "$Base.cred.xml", 'tbuser.cred.xml') {
+    # tbuser.cred.xml is the live fv-base's credential file (written before files were named after the base).
+    foreach ($n in @("$Base.cred.xml") + $(if ($Base -eq 'fv-base') { @('tbuser.cred.xml') } else { @() })) {
         $p = Join-Path $Root $n
         if (Test-Path -LiteralPath $p) { return Import-Clixml $p }
     }
     Fail "no credential file for $Base in $Root (hyperv-base.ps1 writes it; FV_VMROOT, FV_BASE)"
 }
 
+# Exactly the form `new` creates: a wildcard or any other name never passes, so no command can reach another VM.
+function Test-CloneName([string]$Name) { $Name -cmatch '^fv-clone-[0-9a-f]{6}$' }
+
 function Get-CloneName {
     if (-not (Test-Path -LiteralPath $State)) { Fail 'no clone (run: hyperv.ps1 new)' }
     $n = ((Get-Content -LiteralPath $State -TotalCount 1) -split '\s+')[0]
-    if ($n -notlike 'fv-clone-*') { Fail "$State does not name a clone" }
+    if (-not (Test-CloneName $n)) { Fail "$State does not name a clone (expected fv-clone- and six hex digits)" }
     $n
 }
 
@@ -73,16 +81,20 @@ function Show-Overlay([string]$Name) {
 
 function Wait-Desktop([string]$Name, $Cred, [int]$TimeoutSec = 600) {
     $t0 = Get-Date
+    $last = ''
     while (((Get-Date) - $t0).TotalSeconds -lt $TimeoutSec) {
         try {
             $ok = Invoke-Command -VMName $Name -Credential $Cred -ErrorAction Stop -ScriptBlock {
                 [bool](Get-Process explorer -ErrorAction SilentlyContinue) -and -not (Get-Process FirstLogonAnim -ErrorAction SilentlyContinue)
             }
             if ($ok) { return [int]((Get-Date) - $t0).TotalSeconds }
-        } catch { }
+        } catch {
+            $last = $_.Exception.Message
+            if ($last -match 'credential is invalid|user name or password is incorrect|logon failure') { throw "${Name}: the guest rejected the credential ($last)" }
+        }
         Start-Sleep -Seconds 3
     }
-    throw "${Name}: no desktop after $TimeoutSec s"
+    throw "${Name}: no desktop after $TimeoutSec s (last error: $last)"
 }
 
 # A cmd.exe command in the clone: its output is written to the host's stdout, its exit code returned.
@@ -123,14 +135,31 @@ function Copy-FromGuest($Session, [string]$Src, [string]$Dst) {
     else { Copy-Item -FromSession $Session -LiteralPath $Src -Destination $Dst -Force }
 }
 
-# Only what lies inside out\ or harness\shots\ is ever deleted after a pull (never the area itself, never a `..`).
+# The decision of tools/vm/cloneutil.py pull_cleanup, ported check for check: only what lies inside out\ or
+# harness\shots\ qualifies, never an area itself; a shell metacharacter, a `..`, `*?:` or a component Windows would
+# trim to nothing (`.`, a trailing dot or space) never does. Returns the path to delete, or $null.
+function Get-PulledDeletable([string]$Src) {
+    if (-not $Src) { return $null }
+    if ($Src -match '["&|%^<>!\r\n\t]') { return $null }
+    if (@($Src.Replace('\', '/').Split('/')) -contains '..') { return $null }
+    $s = $Src.Replace('/', '\').TrimEnd('\')
+    $g = $G.ToLower() + '\'
+    if (-not $s.ToLower().StartsWith($g)) { return $null }
+    $rel = $s.ToLower().Substring($g.Length)
+    $inArea = $false
+    foreach ($a in 'harness\shots', 'out') { if ($rel.StartsWith($a + '\')) { $inArea = $true } }
+    if (-not $inArea) { return $null }
+    if ($rel -match '[*?:]') { return $null }
+    foreach ($part in $rel.Split('\')) {
+        if ($part.Trim('. ') -eq '' -or $part.EndsWith('.') -or $part.EndsWith(' ')) { return $null }
+    }
+    $s
+}
+
 function Remove-Pulled($Session, [string]$Src) {
     if ($env:FV_KEEP) { return }
-    $s = $Src.Replace('/', '\').TrimEnd('\')
-    if ($s -match '\.\.' -or $s -match '[*?]') { return }
-    $ok = $false
-    foreach ($a in 'harness\shots', 'out') { if ($s.ToLower().StartsWith(("$G\$a\").ToLower())) { $ok = $true } }
-    if (-not $ok) { return }
+    $s = Get-PulledDeletable $Src
+    if (-not $s) { return }
     Invoke-Command -Session $Session -ArgumentList $s -ScriptBlock { param($s) Remove-Item -LiteralPath $s -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
@@ -169,8 +198,9 @@ function Save-Thumbnail([string]$Name, [string]$Out, [int]$Width = 1280, [int]$H
 }
 
 function Remove-Clone([string]$Name) {
-    if ($Name -notlike 'fv-clone-*') { throw "refusing to remove ${Name}: not a clone" }
-    $vm = Get-VM -Name $Name -ErrorAction SilentlyContinue
+    if (-not (Test-CloneName $Name)) { throw "refusing to remove ${Name}: not a clone" }
+    # By exact comparison: Get-VM -Name would expand a wildcard.
+    $vm = @(Get-VM | Where-Object { $_.Name -ceq $Name }) | Select-Object -First 1
     $disks = @()
     if ($vm) {
         if ($vm.State -ne 'Off') { Stop-VM -VM $vm -TurnOff -Force }

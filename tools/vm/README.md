@@ -35,7 +35,7 @@ read-only base that `hyperv-base.ps1` builds once from a Windows evaluation ISO 
 
 | script | what |
 |---|---|
-| `hyperv.ps1 new \| run o\|u "<keys>" [record] \| push \| pull \| exec \| desk \| shot \| ours \| rm` | `clone.sh` on Hyper-V, the same environment (`FV_CLONE`, `FV_PURPOSE`, `FV_SHOTS`, `FV_FRESH`, `FV_NOMAX`, `FV_KEEP`, `FV_FORCE`; and `FV_BASE`, `FV_VMROOT`, `FV_MEM_GB`); record `none` or `-` opens none |
+| `hyperv.ps1 new \| run o\|u "<keys>" [record] \| push \| pull \| exec \| desk \| shot \| ours \| rm` | `clone.sh` on Hyper-V, the same environment (`FV_CLONE`, `FV_PURPOSE`, `FV_SHOTS`, `FV_FRESH`, `FV_NOMAX`, `FV_KEEP`, `FV_FORCE`; and `FV_BASE`, `FV_VMROOT`, `FV_MEM_GB`); record `none` (or `--`) opens none; see "Calling it" in windows-testing.md for quoting in each shell |
 | `hyperv-base.ps1 -Iso <ISO> -Orig <folder> [-Records] [-Ours] [-Root] [-Name]` | builds, activates and provisions the base VM (about 25 minutes), with `autounattend.template.xml` (the answers file; `@@PASSWORD@@` is filled in at build time) |
 | `cloneutil.py` | the logic of `clone.sh`: SHA-256 of ours' exe (reused when unchanged), the overlay's size against the cap, the delete command for a pulled output |
 | `autologon.ps1` | turns on automatic sign-in of the test user (asks for the password at a hidden prompt, checks it first; undo commands at its top) — a desktop session is needed for anything visible |
