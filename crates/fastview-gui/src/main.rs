@@ -97,6 +97,43 @@ fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f
     }
 }
 
+/// How many pixels of the layout's right and bottom edge a normal (not maximised) window of ours does not show: the
+/// clone's windows end one pixel before the egui area at 100 / 125 % and two at 150 % (the last row and column are the
+/// desktop's; the 175 / 200 % entries repeat 150 %, not measured). The older looks' grip (lines, dots) is placed
+/// against the edge that shows, as the original's is against its client's (#167); the Office 2007 looks' dots, which
+/// an earlier clone run found at the client's edge, are left as they were.
+fn status_grip_inset(grip: theme::Grip) -> f32 {
+    if cfg!(windows) && !matches!(grip, theme::Grip::Shadowed { .. }) {
+        dpi::measured5([1.0, 1.0, 2.0, 2.0, 2.0])
+    } else {
+        0.0
+    }
+}
+
+/// Where the older looks' last pane draws its right bracket line, from the layout's right edge (clone, #167: 22 px
+/// from the last pixel the window shows at 125 %, 27 at 150 %, with the window's cut of 1 / 2 px; at 100 % 19, as it
+/// was). The 175 / 200 % entries continue the step, not measured.
+fn status_pane_line_offset() -> f32 {
+    dpi::measured5([19.0, 24.0, 30.0, 35.0, 40.0])
+}
+
+/// The left bracket line the original draws at the scaled looks only, from the layout's right edge: 184 / 266 px from
+/// the last pixel the window shows at 125 / 150 % (clone, Office XP and Windows XP; none at 100 %). Not measured at
+/// 175 / 200 %, where none is drawn.
+fn status_pane_left_line_offset() -> Option<f32> {
+    match dpi::dpi() {
+        120 => Some(186.0),
+        144 => Some(269.0),
+        _ => None,
+    }
+}
+
+/// How much further right the extended pane's text starts in the older looks than `status_text_inset` puts it (clone:
+/// the original's ink 3 px further right than ours at 125 % (after the bracket fix) and, by the first run, 3 at 150 %; 100 % none, 175 / 200 % held).
+fn status_ext_text_shift() -> f32 {
+    dpi::measured5([0.0, 3.0, 3.0, 3.0, 3.0])
+}
+
 /// The dots' pitch in px at the system DPI (measured at 150 %: 4).
 fn status_grip_pitch() -> f32 {
     4.0
@@ -1071,20 +1108,26 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at every scale).
-            painter.text(egui::pos2(ext.left() + 16.0, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
+            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at 100 %, further in the older looks at
+            // 125 / 150 %).
+            let shift = if p.status_flat.is_some() { status_ext_text_shift() } else { 0.0 };
+            painter.text(egui::pos2(ext.left() + 16.0 + shift, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
-            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right(), r.bottom()) {
+            let inset = status_grip_inset(self.skin.status_grip());
+            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right() - inset, r.bottom() - inset) {
                 painter.rect_filled(rect, 0.0, c);
             }
-            // The older looks' last pane: a line before it, 19 / 23 / 28 px from the right edge, 4 px short of the
-            // bar's top and bottom.
+            // The older looks' last pane: a line at its right ([`status_pane_line_offset`]) and, at 125 / 150 %, one at
+            // its left ([`status_pane_left_line_offset`]), both 4 px short of the bar's top and bottom (clone, #167).
             if let Some(c) = self.skin.status_pane_line() {
-                let x = r.right() - (19.0 * dpi::k()).floor();
-                painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0)), 0.0, c);
+                let line = |x: f32| egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0));
+                painter.rect_filled(line(r.right() - status_pane_line_offset()), 0.0, c);
+                if let Some(off) = status_pane_left_line_offset().filter(|_| ext_shown) {
+                    painter.rect_filled(line(r.right() - off), 0.0, c);
+                }
             }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
@@ -2069,6 +2112,39 @@ mod window_tests {
             assert_eq!(skin.palette().status_text, egui::Color32::from_gray(109), "{skin:?}");
         }
         assert_eq!((Skin::OfficeXp.status_pane_line(), Skin::WinXp.status_pane_line(), Skin::Win2000.status_pane_line()), (Some(egui::Color32::from_gray(160)), Some(egui::Color32::from_gray(180)), None));
+    }
+
+    /// #167 (clone, 125 / 150 %): the older looks' extended pane: its right bracket line 24 / 29 px from the layout's
+    /// edge (the original's, against the cut of the window's edge), the text 3 px further right than the blue look's
+    /// inset puts it, and a second bracket line left of the pane at the scaled looks only.
+    #[test]
+    fn the_older_looks_extended_pane_follows_the_clone() {
+        for (d, line, shift) in [(96, 19.0, 0.0), (120, 24.0, 3.0), (144, 30.0, 3.0)] {
+            dpi::set(d);
+            assert_eq!((status_pane_line_offset(), status_ext_text_shift()), (line, shift), "{d}");
+        }
+        dpi::set(96);
+        assert_eq!(status_pane_left_line_offset(), None, "none at 100 %");
+        dpi::set(120);
+        assert_eq!(status_pane_left_line_offset(), Some(186.0));
+        dpi::set(144);
+        assert_eq!(status_pane_left_line_offset(), Some(269.0));
+        dpi::set(96);
+    }
+
+    /// #167 (clone): the grip is laid against the edge of the window that shows, one pixel in at 100 / 125 % and two at
+    /// 150 %, so the dots keep the original's three clear columns and two clear rows.
+    #[cfg(windows)]
+    #[test]
+    fn the_size_grip_keeps_to_the_edge_that_shows() {
+        for (d, want) in [(96, 1.0), (120, 1.0), (144, 2.0)] {
+            dpi::set(d);
+            for skin in [theme::Skin::Win2000, theme::Skin::OfficeXp, theme::Skin::WinXp, theme::Skin::Office2003, theme::Skin::Vs2005] {
+                assert_eq!(status_grip_inset(skin.status_grip()), want, "{d} {skin:?}");
+            }
+            assert_eq!(status_grip_inset(theme::Skin::Blue.status_grip()), 0.0, "{d}: the Office 2007 look is as it was");
+        }
+        dpi::set(96);
     }
 
     /// #138 / the final review: a press on a normal (decorated) window's size grip begins a south-east resize;
