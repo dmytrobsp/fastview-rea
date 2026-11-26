@@ -471,9 +471,11 @@ impl App {
         // The frame's accelerator table 128 stays live over the preview (VM:
         // Ctrl+P shows the print dialog over it, Ctrl+S «Сохранить как» and
         // Ctrl+O «Открыть» their dialogs, the preview staying under them).
-        // Ours takes those three here; the preview gate in `handle_keys`'
-        // caller is left alone.
-        let accel = ctx.input(|i| preview_accel(&i.events));
+        // Ours reads the same events here through `accel_commands` (Ctrl+C
+        // and Ctrl+V arrive as `Event::Copy` / `Event::Paste`, not as key
+        // presses); the preview gate in `handle_keys`' caller is left alone.
+        let edit = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
+        let accel = ctx.input(|i| self.accel_commands(&i.events, edit, !i.modifiers.shift && !i.modifiers.alt)).into_iter().next();
         if let Some(c) = accel.filter(|_| self.print.dialog.is_none() && !self.modal_up) {
             let changes = matches!(c, Command::Paste | Command::Undo | Command::Redo);
             self.run_for_preview_doc(pv.job.di, |app| app.dispatch(c));
@@ -583,27 +585,6 @@ impl App {
     }
 }
 
-/// The accelerators the frame keeps live over the preview: Ctrl+P, S, O, C,
-/// V, Z, Y (and nothing with Shift / Alt).
-fn preview_accel(events: &[egui::Event]) -> Option<Command> {
-    events.iter().find_map(|e| match e {
-        egui::Event::Key { key, pressed: true, modifiers, .. } if (modifiers.command || modifiers.ctrl) && !modifiers.shift && !modifiers.alt => match key {
-            egui::Key::P => Some(Command::Print),
-            egui::Key::S => Some(Command::SaveAs),
-            egui::Key::O => Some(Command::Open),
-            // The edit accelerators too (VM: over the preview Ctrl+C / V copy
-            // and paste a lane, Ctrl+Z / Y undo and redo the paste, the pages
-            // showing the document as it is).
-            egui::Key::C => Some(Command::Copy),
-            egui::Key::V => Some(Command::Paste),
-            egui::Key::Z => Some(Command::Undo),
-            egui::Key::Y => Some(Command::Redo),
-            _ => None,
-        },
-        _ => None,
-    })
-}
-
 /// The room kept round a preview sheet's height: 8 px above and below, as
 /// the stock MFC preview keeps it (INFERRED from MFC's source; the clone's
 /// numbers agree: the original's sheet is 314 px in a 330 px area, 16 px
@@ -690,11 +671,13 @@ mod tests {
     #[test]
     fn the_preview_keeps_ctrl_p_s_and_o_live() {
         let ev = |key, shift| vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { ctrl: true, command: true, shift, ..Default::default() } }];
-        assert!(matches!(preview_accel(&ev(egui::Key::P, false)), Some(Command::Print)));
-        assert!(matches!(preview_accel(&ev(egui::Key::S, false)), Some(Command::SaveAs)));
-        assert!(matches!(preview_accel(&ev(egui::Key::O, false)), Some(Command::Open)));
-        assert!(preview_accel(&ev(egui::Key::S, true)).is_none(), "Ctrl+Shift+S is not in the table");
-        assert!(preview_accel(&ev(egui::Key::X, false)).is_none());
+        let mut app = App::new();
+        let mut accel = |e: Vec<egui::Event>| app.accel_commands(&e, (0, 0), true).into_iter().next();
+        assert!(matches!(accel(ev(egui::Key::P, false)), Some(Command::Print)));
+        assert!(matches!(accel(ev(egui::Key::S, false)), Some(Command::SaveAs)));
+        assert!(matches!(accel(ev(egui::Key::O, false)), Some(Command::Open)));
+        assert!(accel(ev(egui::Key::S, true)).is_none(), "Ctrl+Shift+S is not in the table");
+        assert!(accel(ev(egui::Key::X, false)).is_none());
     }
 
     #[test]
@@ -714,14 +697,47 @@ mod tests {
         assert_eq!(app.active, Some(0), "the command's choice is kept");
     }
 
+    /// egui-winit turns Ctrl+C into `Event::Copy` and Ctrl+V (text on the clipboard) into `Event::Paste`, with no
+    /// key press; only Ctrl+Z / Ctrl+Y come as keys.
     #[test]
     fn the_edit_keys_stay_live_over_the_preview() {
         let key = |k| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        let mut app = App::new();
+        assert_eq!(app.accel_commands(&[egui::Event::Copy], (0, 0), true), vec![Command::Copy]);
+        assert_eq!(app.accel_commands(&[egui::Event::Paste("x".into())], (0, 0), true), vec![Command::Paste]);
+        assert!(app.paste_announced);
+        // The key-up that follows the announced paste is not another one.
+        let up = egui::Event::Key { key: egui::Key::V, physical_key: None, pressed: false, repeat: false, modifiers: egui::Modifiers::COMMAND };
+        assert!(app.accel_commands(&[up], (0, 0), true).is_empty());
+        // A copy / paste kept for a text edit is the edit's own; Shift / Alt refuse them.
+        assert!(app.accel_commands(&[egui::Event::Copy, egui::Event::Paste("x".into())], (1, 1), true).is_empty());
+        assert!(app.accel_commands(&[egui::Event::Copy, egui::Event::Paste("x".into())], (0, 0), false).is_empty());
         for (k, c) in [(egui::Key::C, Command::Copy), (egui::Key::V, Command::Paste), (egui::Key::Z, Command::Undo), (egui::Key::Y, Command::Redo)] {
-            assert_eq!(preview_accel(&[key(k)]), Some(c));
+            assert_eq!(app.accel_commands(&[key(k)], (0, 0), true), vec![c]);
         }
         let shift = egui::Event::Key { key: egui::Key::Z, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND } };
-        assert_eq!(preview_accel(&[shift]), None);
+        assert!(app.accel_commands(&[shift], (0, 0), true).is_empty());
+    }
+
+    /// The same events over the open preview: Ctrl+C copies the selection (the clipboard holds what is selected,
+    /// not a stale copy), Ctrl+V as `Event::Paste` pastes it.
+    #[test]
+    fn ctrl_c_and_ctrl_v_as_egui_sends_them_work_over_the_preview() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.active_doc_mut().unwrap().selection.extend([crate::app::ChanKey::Analog(0)]);
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        // A stale clipboard: one lane copied, then the selection changes to two.
+        app.dispatch(Command::Copy);
+        let one = app.clip.get().unwrap().len();
+        app.active_doc_mut().unwrap().selection.extend([crate::app::ChanKey::Analog(1)]);
+        frame(&ctx, &mut app, vec![egui::Event::Copy]);
+        assert!(app.clip.get().unwrap().len() > one, "Ctrl+C over the preview copied the selection");
+        let lanes = app.docs[0].computed.len();
+        frame(&ctx, &mut app, vec![egui::Event::Paste("x".into())]);
+        assert!(app.docs[0].computed.len() > lanes, "Ctrl+V as a paste event reached the document");
     }
 
     /// Ctrl+V / Ctrl+Z / Ctrl+Y over the open preview change the document and
@@ -740,7 +756,7 @@ mod tests {
         frame(&ctx, &mut app, vec![]);
         let page = |app: &App| app.print.preview.as_ref().unwrap().sheets[0].as_ref().expect("page 0 is rendered").px.clone();
         let (before, lanes) = (page(&app), app.docs[0].computed.len());
-        frame(&ctx, &mut app, vec![ctrl(egui::Key::V)]);
+        frame(&ctx, &mut app, vec![egui::Event::Paste("x".into())]);
         assert!(app.docs[0].computed.len() > lanes, "the paste reached the document");
         assert!(page(&app) != before, "the pasted lane shows on the laid-out page");
         frame(&ctx, &mut app, vec![ctrl(egui::Key::Z)]);

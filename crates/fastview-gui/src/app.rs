@@ -2495,52 +2495,57 @@ impl App {
     /// holds text —, with no key event; Ctrl+V's key-up still comes, so a
     /// paste no `Event::Paste` announced fires there.
     pub fn handle_keys(&mut self, ctx: &egui::Context) {
-        let mut cmds = Vec::new();
         // (Taken before the input's lock: the data store shares it.)
-        let (mut edit_copies, mut edit_pastes) = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
-        ctx.input(|i| {
-            let m = i.modifiers;
-            // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
-            // Ctrl+Tab, L9.130) acts through a child's system menu, which the
-            // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
-            // do nothing with two documents open (L9.294).
-            // Each key by the modifiers it came with: in a slow frame Ctrl
-            // may be up again by the frame's end (the software runner, VM).
-            // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
-            // too: refused while Shift / Alt is held).
-            let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
-            let plain = !m.shift && !m.alt;
-            // Insert's copy / paste kept for a text edit are the edit's own.
-            for e in &i.events {
-                match e {
-                    egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
-                    egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
-                    egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
-                        if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
-                            // Ctrl+V acts at the press (a key-up after it
-                            // is not another paste).
-                            if *key == egui::Key::V {
-                                self.paste_announced = true;
-                            }
-                            cmds.push(c);
-                        }
-                    }
-                    egui::Event::Copy if plain => cmds.push(Command::Copy),
-                    egui::Event::Paste(_) if plain => {
-                        self.paste_announced = true;
-                        cmds.push(Command::Paste);
-                    }
-                    // The key-up also clears the announcement.
-                    egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
-                    _ => {}
-                }
-            }
-        });
+        let edit = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
+        let cmds = ctx.input(|i| self.accel_commands(&i.events, edit, !i.modifiers.shift && !i.modifiers.alt));
         for c in cmds {
             if self.shortcut_enabled(&c) {
                 self.dispatch(c);
             }
         }
+    }
+
+    /// The commands this frame's events fire through table 128 (`handle_keys`'s scan; the print preview, which
+    /// swaps the table, reads the same events through it). `edit` is the (copies, pastes) kept for a text edit, `plain` that the frame's
+    /// Shift and Alt are up (`Event::Copy` / `Paste` carry no modifiers).
+    pub fn accel_commands(&mut self, events: &[egui::Event], edit: (u8, u8), plain: bool) -> Vec<Command> {
+        let mut cmds = Vec::new();
+        let (mut edit_copies, mut edit_pastes) = edit;
+        // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
+        // Ctrl+Tab, L9.130) acts through a child's system menu, which the
+        // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
+        // do nothing with two documents open (L9.294).
+        // Each key by the modifiers it came with: in a slow frame Ctrl
+        // may be up again by the frame's end (the software runner, VM).
+        // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
+        // too: refused while Shift / Alt is held).
+        let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
+        // Insert's copy / paste kept for a text edit are the edit's own.
+        for e in events {
+            match e {
+                egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
+                egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
+                egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
+                    if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
+                        // Ctrl+V acts at the press (a key-up after it
+                        // is not another paste).
+                        if *key == egui::Key::V {
+                            self.paste_announced = true;
+                        }
+                        cmds.push(c);
+                    }
+                }
+                egui::Event::Copy if plain => cmds.push(Command::Copy),
+                egui::Event::Paste(_) if plain => {
+                    self.paste_announced = true;
+                    cmds.push(Command::Paste);
+                }
+                // The key-up also clears the announcement.
+                egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
+                _ => {}
+            }
+        }
+        cmds
     }
 
     /// The table-128 commands' update rules (`0x45bf60`; Open is the
