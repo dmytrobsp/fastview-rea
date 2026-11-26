@@ -1202,8 +1202,8 @@ mod tracked_tests {
 /// #106: the grounded-distance rotation (`0x49a670`) and the θ re-estimation (`0x49adc0`) call the
 /// original's runtime sin / cos (`crate::trig`). The site must equal the port-built reference at every
 /// candidate, and each half is pinned: a candidate must tell it from std's, so a site reverted to std
-/// fails. The one exception (#220) is refine_theta's cos half: on the Linux runner's glibc (image of
-/// 2026-11-11) no candidate told it from std's. That half is instead pinned libm-independently: some
+/// fails. The one exception (#220) is refine_theta's cos half: on the Linux runner's glibc (the
+/// ubuntu-26.04 image 20261116) no candidate told it from std's. That half is instead pinned libm-independently: some
 /// candidate must tell it from a cos one ulp off the port's, so the construction can see the half, and the
 /// site is still held to the port-built reference at every candidate.
 #[cfg(test)]
@@ -1224,7 +1224,8 @@ mod trig_site_tests {
         }
         let tells = |mixed: Fns| cands.clone().any(|p| reference(p, mixed) != reference(p, TRIG));
         assert!(tells(SIN_STD), "{what}: no candidate tells the sin half from std's");
-        assert!(tells(COS_ULP) && tells(SIN_ULP), "{what}: no candidate tells a half from one ulp off the port's");
+        assert!(tells(SIN_ULP), "{what}: no candidate tells the sin half from one ulp off the port's");
+        assert!(tells(COS_ULP), "{what}: no candidate tells the cos half from one ulp off the port's");
         if std_cos {
             assert!(tells(COS_STD), "{what}: no candidate tells the cos half from std's");
         }
