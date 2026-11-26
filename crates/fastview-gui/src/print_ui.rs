@@ -168,17 +168,16 @@ impl App {
         self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM))
     }
 
-    /// The page setup as the preview lays out by (the driver's orientation
-    /// over it once «Свойства...» chose one).
-    fn preview_setup(&self) -> PageSetup {
-        self.print.setup.with_driver_orientation(self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait))
+    /// The orientation «Свойства...» of the application printer chose (`Some(portrait)`), if one did.
+    fn chosen_orientation(&self) -> Option<bool> {
+        self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait)
     }
 
     /// 57609 Предварительный просмотр: no dialog, the stored checkboxes;
     /// the pages on the application printer's paper (MFC's preview DC).
     pub fn print_preview_open(&mut self) {
         let Some(di) = self.active else { return };
-        let chosen = self.print.printer.as_deref().filter(|p| *p != PDF_ENTRY).and_then(spool::chosen_portrait);
+        let chosen = self.chosen_orientation();
         let paper = self.app_paper();
         self.preview_open_with(di, chosen, paper);
     }
@@ -481,7 +480,9 @@ impl App {
             self.run_for_preview_doc(pv.job.di, |app| app.dispatch(c));
             // The document changed under the pages: lay them out again.
             if changes && pv.job.di < self.docs.len() {
-                let (setup, dev, attrib) = (self.preview_setup(), pv.job.dev, pv.job.attrib_dpi);
+                // With the setup the sheet was laid out by: a driver orientation chosen over the open preview
+                // (Ctrl+P, «Свойства...») changes the next preview, not this sheet.
+                let (setup, dev, attrib) = (pv.job.setup, pv.job.dev, pv.job.attrib_dpi);
                 let mut job = self.print_job(pv.job.di, dev, setup);
                 job.attrib_dpi = attrib;
                 job.dev = dev;
@@ -764,6 +765,26 @@ mod tests {
         assert!(page(&app) == before, "undo takes it off the page");
         frame(&ctx, &mut app, vec![ctrl(egui::Key::Y)]);
         assert!(page(&app) != before, "redo puts it back");
+    }
+
+    /// The pages laid out again after a paste keep the sheet's own setup, not the page setup of the moment.
+    #[test]
+    fn the_preview_lays_out_again_by_its_own_setup() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        app.active_doc_mut().unwrap().selection.extend([crate::app::ChanKey::Analog(0)]);
+        app.dispatch(Command::Copy);
+        app.dispatch(Command::PrintPreview);
+        let ctx = egui::Context::default();
+        frame(&ctx, &mut app, vec![]);
+        let sheet = |app: &App| {
+            let pv = app.print.preview.as_ref().unwrap();
+            (pv.job.setup.portrait, pv.job.dev.sheet_mm.0 < pv.job.dev.sheet_mm.1)
+        };
+        assert_eq!(sheet(&app), (true, true));
+        app.print.setup.portrait = false;
+        frame(&ctx, &mut app, vec![egui::Event::Paste("x".into())]);
+        assert_eq!(sheet(&app), (true, true), "a portrait sheet is laid out portrait");
     }
 
     /// Page setup Landscape and «Свойства...» OKed on Landscape: the preview's sheet is landscape (VM: two

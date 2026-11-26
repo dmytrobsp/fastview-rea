@@ -3581,11 +3581,15 @@ mod menu_tests {
             (h, at)
         };
         let (mut h, at) = setup();
-        let one = h.doc().hscroll_pos.map(|k| k.0).unwrap();
+        let kept = h.doc().hscroll_pos.unwrap();
+        let one = kept.0;
         h.app.dispatch(Command::Copy);
         assert!(h.doc().hscroll_pos.is_some(), "Copy keeps it");
         h.wheel(at, 1.0, egui::Modifiers::SHIFT);
         assert_ne!(h.doc().first, one);
+        // The notch lands on the kept rule's sample, not on the page rule's from the sample shown.
+        let (_, v, n, _, _) = kept;
+        assert_eq!(h.doc().first, hscroll_page(one, n, v, true, Some(kept.3)).0, "the notch back is from the kept position");
         // The height: the same state with another view height in the memo's key.
         let (mut h, at) = setup();
         let k = h.doc().hscroll_pos.unwrap();
