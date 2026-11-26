@@ -3388,7 +3388,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let cfg = "S,D,1999\r\n1,1A,0D\r\n1,X,,,V,0.5,0,0,-9,9,inf,5.5,P\r\n50\r\n1\r\n1250,4\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
         std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
-        std::fs::write(dir.join("rec.dat"), "1,0,3\r\n2,800,5\r\n3,1600,7\r\n4,2400,9\r\n").unwrap();
+        std::fs::write(dir.join("rec.dat"), "1,0,3\r\n2,800,-5\r\n3,1600,7\r\n4,2400,9\r\n").unwrap();
         let mut app = App::new();
         app.load_comtrade_path(&dir.join("rec.cfg"));
         while !app.loading.is_empty() {
@@ -3398,9 +3398,18 @@ mod tests {
         let d = app.active_doc().expect("the record opens");
         assert!(!d.chans[0].primary, "a «P» record shows secondary values by default");
         assert_eq!(display_k(&d.osc.analog[0], false), f64::INFINITY);
-        assert_eq!(d.shown_samples(0).get(1).copied(), Some(f64::INFINITY));
-        let (.., val) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 1);
+        assert_eq!(d.shown_samples(0).get(1).copied(), Some(f64::NEG_INFINITY));
+        assert_eq!(d.shown_samples(0).get(2).copied(), Some(f64::INFINITY));
+        let (.., val) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 2);
         assert_eq!(val, f64::INFINITY);
+        // The trace sits on the lane's lowest row, on a range of both infinities.
+        let (lo, hi) = crate::lanes::chan_range(d, 0);
+        assert_eq!((lo, hi), (f64::NEG_INFINITY, f64::INFINITY));
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NEG_INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        assert!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, lo, hi).is_nan(), "a NaN sample is not drawn");
+        // A lane of one infinity alone is flat, as the original's is: its middle.
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, f64::INFINITY, f64::INFINITY), 46.0);
         assert_eq!(fvb_core::views::readout_text(val, ""), " 1.#INF   ");
     }
 

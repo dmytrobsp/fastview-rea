@@ -222,12 +222,23 @@ pub fn digital_window(raw: &[bool]) -> (f64, f64) {
 }
 
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
-    if max <= min || !v.is_finite() {
+    if max <= min {
         // The lane's middle in whole pixels (VM: a flat channel of a 93 px
         // lane on its row 46, not 46.5).
         return top + (h / 2.0).floor();
     }
-    top + h - 5.0 - round_half_up((v - min) * f64::from(h - 10.0) / (max - min)) as f32
+    let off = (v - min) * f64::from(h - 10.0) / (max - min);
+    if v.is_nan() {
+        // A NaN sample is not drawn (clone, #170: a lane of 0 / 0 shows nothing).
+        return f32::NAN;
+    }
+    if !off.is_finite() {
+        // An infinite value, or one on an infinite range (a zero ratio, #170): the original's float-to-int
+        // conversion gives its "indefinite" 0x80000000, the row it makes wraps back to the baseline in GDI's
+        // 16-bit coordinates, so the points sit on the lane's lowest row (clone).
+        return top + h - 5.0;
+    }
+    top + h - 5.0 - round_half_up(off) as f32
 }
 
 /// Inverse of [`value_y`] (`0x495b40`).

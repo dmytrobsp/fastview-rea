@@ -928,7 +928,12 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
 }
 
 pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
-    let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
+    let [mut lo, mut hi, mn, mx] = scaled_minmax(doc, i);
+    // An infinite sample (a zero ratio field, #170) is part of the range the original draws in: the trace then sits
+    // on the baseline (`value_y`), not on the middle a range of no finite value gives.
+    if mn.is_infinite() || mx.is_infinite() {
+        (lo, hi) = (mn, mx);
+    }
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -997,7 +1002,7 @@ fn draw_series(
     if last < first {
         return;
     }
-    let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).collect();
+    let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).filter(|p| !p.y.is_nan()).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
     for r in g::aliased_runs(&pts) {
