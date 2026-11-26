@@ -15,6 +15,7 @@ mod diagram_ui;
 mod dialogs;
 mod fontfix;
 mod docking;
+mod dragcursor;
 mod dpi;
 mod finder;
 mod formula_dlg;
@@ -43,6 +44,7 @@ mod setfile;
 #[cfg(windows)]
 mod softrun;
 mod spool;
+mod sysdlg;
 mod theme;
 mod tips;
 mod util;
@@ -59,7 +61,20 @@ use eframe::egui;
 /// rect with Windows 11's invisible borders; what shows of it (VM, by a
 /// drag of an edge) is 852 × 493 — ours, with no system frame, as its
 /// client. Physical pixels: the original is system-DPI aware.
+#[cfg(test)]
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
+
+/// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
+/// border a side. The border measured on clones is 7 / 9 / 11 / 12 / 13 px at 100 / 125 / 150 / 175 / 200 %:
+/// `WinMetrics::border()` at the scaled looks (a first run's client is the clamped rect less it, #176) and one less
+/// at 100 %, where the visible frame line is not part of the client.
+fn min_visible_at(dpi: u32) -> [f32; 2] {
+    let b = oscgeom::WinMetrics::at(dpi).border() - if dpi <= 96 { 1.0 } else { 0.0 };
+    [MIN_TRACK_W - 2.0 * b, MIN_TRACK_H - b]
+}
+/// The frame's minimum tracking size as a window rect (see [`MIN_VISIBLE`]).
+const MIN_TRACK_W: f32 = 866.0;
+const MIN_TRACK_H: f32 = 500.0;
 
 /// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
 /// holds it: 20 px beyond the extended pane's own width (VM: «Гор. визир 2:» shows from 988 px of client,
@@ -74,12 +89,49 @@ const STATUS_GRIP_ALONE: f32 = 28.0;
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured(STATUS_GRIP_ALONE, 32.0, 38.0)) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
     if ext_hidden {
         (ext, right - alone)
     } else {
         (ext + grip, right - ext - grip)
     }
+}
+
+/// How many pixels of the layout's right and bottom edge a normal (not maximised) window of ours does not show: the
+/// clone's windows end one pixel before the egui area at 100 / 125 % and two at 150 % (the last row and column are the
+/// desktop's; the 175 / 200 % entries repeat 150 %, not measured). The older looks' grip (lines, dots) is placed
+/// against the edge that shows, as the original's is against its client's (#167); the Office 2007 looks' dots, which
+/// an earlier clone run found at the client's edge, are left as they were.
+fn status_grip_inset(grip: theme::Grip) -> f32 {
+    if cfg!(windows) && !matches!(grip, theme::Grip::Shadowed { .. }) {
+        dpi::measured5([1.0, 1.0, 2.0, 2.0, 2.0])
+    } else {
+        0.0
+    }
+}
+
+/// Where the older looks' last pane draws its right bracket line, from the layout's right edge (clone, #167: 22 px
+/// from the last pixel the window shows at 125 %, 27 at 150 %, with the window's cut of 1 / 2 px; at 100 % 19, as it
+/// was). The 175 / 200 % entries continue the step, not measured.
+fn status_pane_line_offset() -> f32 {
+    dpi::measured5([19.0, 24.0, 30.0, 35.0, 40.0])
+}
+
+/// The left bracket line the original draws at the scaled looks only, from the layout's right edge: 184 / 266 px from
+/// the last pixel the window shows at 125 / 150 % (clone, Office XP and Windows XP; none at 100 %). Not measured at
+/// 175 / 200 %, where none is drawn.
+fn status_pane_left_line_offset() -> Option<f32> {
+    match dpi::dpi() {
+        120 => Some(186.0),
+        144 => Some(269.0),
+        _ => None,
+    }
+}
+
+/// How much further right the extended pane's text starts in the older looks than `status_text_inset` puts it (clone:
+/// the original's ink 3 px further right than ours at 125 % (after the bracket fix) and, by the first run, 3 at 150 %; 100 % none, 175 / 200 % held).
+fn status_ext_text_shift() -> f32 {
+    dpi::measured5([0.0, 3.0, 3.0, 3.0, 3.0])
 }
 
 /// The dots' pitch in px at the system DPI (measured at 150 %: 4).
@@ -91,18 +143,51 @@ fn status_grip_pitch() -> f32 {
 /// templates are measured in); ours the nearest Tahoma by width: against the original's «Верт. визир 1:»
 /// (73 / 86 / 107 px of ink on a clone at 100 / 125 / 150 %) 11 / 13 / 17 px (accepted difference #52).
 fn status_font_px() -> f32 {
-    dpi::measured(11.0, 13.0, 17.0)
+    dpi::measured5([11.0, 13.0, 17.0, 19.0, 22.0])
 }
 
-/// The size grip's dots (the visual style's gripper, the original on a clone at 150 %): a triangle of 2 × 2
-/// px dots on a 4 px pitch at the client's bottom-right corner, the lowest row and the rightmost column
-/// longest; each dot has a light shadow one pixel down and right. `right` / `bottom` are the client's edges;
-/// the dots as `(top-left x, y)`.
-fn status_grip_dots(right: f32, bottom: f32, pitch: f32) -> Vec<egui::Pos2> {
+/// The size grip's shapes, as `(rect, colour)` painted in order, at the client's right / bottom edges (clone, the
+/// original at 100 / 125 / 150 %). The Office 2007 looks draw a triangle of 2 × 2 px dots on a 4 px pitch (the
+/// lowest row and the rightmost column longest), each with a light shadow one pixel down and right, the same at
+/// every scale. The older looks scale their grip: diagonal lines (Windows 2000, Office XP) three apart by
+/// 4 / 5 / 6 px and 1 / 1 / 2 px thick, or square dots (Windows XP, Office 2003, VS.NET 2005) 2 / 3 / 3 px
+/// on a 3 / 4 / 4 px pitch.
+fn status_grip_shapes(grip: theme::Grip, right: f32, bottom: f32) -> Vec<(egui::Rect, egui::Color32)> {
+    use theme::Grip;
+    let px = |x: f32, y: f32, w: f32, h: f32| egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h));
     let mut out = Vec::new();
-    for j in 0..3 {
-        for i in 0..(3 - j) {
-            out.push(egui::pos2(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32));
+    match grip {
+        Grip::Shadowed { dark, light } => {
+            let pitch = status_grip_pitch();
+            for j in 0..3 {
+                for i in 0..(3 - j) {
+                    let d = px(right - 3.0 - pitch * i as f32, bottom - 3.0 - pitch * j as f32, 2.0, 2.0);
+                    out.push((d.translate(egui::vec2(1.0, 1.0)), light));
+                    out.push((d, dark));
+                }
+            }
+        }
+        Grip::Lines(c) => {
+            let period = dpi::measured(4.0, 5.0, 6.0) as i32;
+            let thick = dpi::measured(1.0, 1.0, 2.0) as i32;
+            let base = dpi::measured(3.0, 3.0, 5.0) as i32;
+            for n in 0..3 {
+                for t in 0..thick {
+                    let s = base + n * period + t;
+                    for dy in 0..=s {
+                        out.push((px(right - 1.0 - (s - dy) as f32, bottom - 1.0 - dy as f32, 1.0, 1.0), c));
+                    }
+                }
+            }
+        }
+        Grip::Dots(c) => {
+            let (size, pitch) = (dpi::measured(2.0, 3.0, 3.0), dpi::measured(3.0, 4.0, 4.0));
+            let dx0 = dpi::measured(3.0, 3.0, 4.0);
+            for j in 0..3 {
+                for i in 0..(3 - j) {
+                    out.push((px(right - dx0 - pitch * i as f32 - size, bottom - 2.0 - pitch * j as f32 - size, size, size), c));
+                }
+            }
         }
     }
     out
@@ -139,29 +224,33 @@ fn resize_dir_at(own_caption: bool, grip: Option<egui::Rect>, screen: egui::Rect
 /// 5 / 6 / 7 px at 100 / 125 / 150 % (clone: panes 153 / 180 / 207 and 218 / 258 / 298 px apart), the 18 not scaled.
 fn status_pane_w(i: usize) -> f32 {
     let n = if i == 2 || i == 5 { 40.0 } else { 27.0 };
-    n * dpi::measured(5.0, 6.0, 7.0) + 18.0
+    n * dpi::measured5([5.0, 6.0, 7.0, 8.0, 10.0]) + 18.0
 }
 
 /// The extended pane's width: its text's width in the UI font + 27 (clone: 135 / 157 / 189 px at 100 / 125 /
-/// 150 %); the older looks' 155 at 100 % keep their 20 more.
-fn status_ext_w(bands: bool) -> f32 {
-    dpi::measured(135.0, 157.0, 189.0) + if bands { 0.0 } else { 20.0 }
+/// 150 %), on every look: the older looks' pane is no wider (clone, #167: the fifth / fourth pane appears at the
+/// same width as on the blue look at 100 / 125 / 150 %, and the text sits at the same place).
+fn status_ext_w() -> f32 {
+    dpi::measured5([135.0, 157.0, 189.0, 213.0, 238.0])
 }
 
-/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
+/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %;
+/// the 175 % entry, 11, is interpolated, 200 % is the same).
 fn status_text_inset() -> f32 {
-    dpi::measured(9.0, 9.0, 10.0)
+    dpi::measured5([9.0, 9.0, 10.0, 11.0, 11.0])
 }
 
-/// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
-/// pane leaves no gap): `(index, x, width)` of each shown one.
+/// The status bar's six panes from `left` to `room` (a hidden pane leaves no gap, a pane that does not fit is left
+/// out but a later, narrower one that does is still placed): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
     let mut x = left;
     let mut out = Vec::new();
     for i in (0..6).filter(|&i| !hidden[i]) {
         let w = status_pane_w(i);
+        // A pane that does not fit is left out, a later narrower one that does is still placed (clone, 175 / 200 %:
+        // the wide third pane gone, the fourth in its place).
         if x + w > room {
-            break;
+            continue;
         }
         out.push((i, x, w));
         x += w;
@@ -381,7 +470,7 @@ fn main() -> eframe::Result<()> {
     let scale = system_scale();
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1320.0, 860.0])
-        .with_min_inner_size(MIN_VISIBLE)
+        .with_min_inner_size(min_visible_at(scale.map_or(96, |s| (s * 96.0).round() as u32)))
         .with_title(app::APP_TITLE)
         .with_icon(app_icon())
         .with_drag_and_drop(true);
@@ -503,6 +592,7 @@ fn start_scaling(device: bool, ctx: &egui::Context, scale: Option<f32>, system: 
 fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path::Path>, own_caption: bool, scale: Option<f32>, placement: Option<egui::Rect>) -> App {
     let fonts = app_fonts();
     ctx.set_fonts(fonts.clone());
+    views::set_float_corner(ctx, first_float_corner(window_placement(&persist::Store::load())));
     start_scaling(DEVICE_PIXELS, ctx, scale, system_dpi_scale());
     // A double-click within Windows' default GetDoubleClickTime, 500 ms
     // (egui's own is 300 ms: a hand's double-click on the coefficient list
@@ -533,6 +623,22 @@ fn make_app(ctx: &egui::Context, args: &StartupArgs, inst_dir: Option<&std::path
     app
 }
 
+/// Where Windows put the original's frame when it made its panes (the
+/// first CW_USEDEFAULT slot, clone at 100 %, 1280 × 800: the mini-frame of a
+/// first float lands there, in screen pixels, whatever placement the frame
+/// takes afterwards). Not measured at other scales or screens (#161).
+const DEFAULT_FRAME_ORIGIN: [f32; 2] = [86.0, 78.0];
+
+/// The offset from our window's corner of a first float's spot: none when
+/// the frame starts where Windows puts it (a first run), the default
+/// frame's spot seen from the saved placement's corner otherwise — never
+/// outside the window (ours keeps floats in it).
+fn first_float_corner(saved: Option<(egui::Rect, bool)>) -> egui::Vec2 {
+    let Some((r, max)) = saved else { return egui::Vec2::ZERO };
+    let origin = if max { egui::Pos2::ZERO } else { r.min };
+    (egui::Pos2::new(DEFAULT_FRAME_ORIGIN[0], DEFAULT_FRAME_ORIGIN[1]) - origin).max(egui::Vec2::ZERO)
+}
+
 /// A first run's frame on Windows (CW_USEDEFAULT) as the original's frame client
 /// (#147): the window is ¾ of the work area wide and `¾ · height` less a cut high — 21, 25, 29, 34
 /// px at 96, 120, 144, 168 dpi (clone, rects of the original's first-run frame: 960 × 543, 530, 517,
@@ -554,7 +660,12 @@ fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
         d if d < 168 => (21.0 + (d as f32 - 96.0) / 6.0).round(),
         d => (34.0 + (d as f32 - 168.0) / 6.0).round(),
     };
-    [(work[0] * 0.75).floor() - 2.0 * m.border(), (work[1] * 0.75).floor() - cut - m.border()]
+    // The frame is never smaller than its minimum tracking size, 866 × 500 (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
+    // the work area 704 gives 528 − 38 = 490, the window came out 500 high, 960 wide).
+    let rect_h = ((work[1] * 0.75).floor() - cut).max(MIN_TRACK_H);
+    // …and never narrower than 866 (a small work area: the clone's clamped frame, 866 × 500).
+    let rect_w = (work[0] * 0.75).floor().max(MIN_TRACK_W);
+    [rect_w - 2.0 * m.border(), rect_h - m.border()]
 }
 
 #[cfg(windows)]
@@ -840,16 +951,21 @@ impl App {
                         (Some(h), false) => (h + n - 1) % n,
                     });
                 }
+                if let (Some(h), true) = (hot, list_keys.0 || list_keys.1) {
+                    crate::popmenu::reveal(ui.ctx(), list_id.with(serial), lit.left_bottom(), h as f32 * crate::popmenu::row_pitch(), crate::popmenu::row_pitch());
+                }
                 if list_keys.2 {
                     activate = hot.and_then(|h| order.get(h).copied());
                 }
-                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain(true).show(ui.ctx(), |ui| {
+                let area = egui::Area::new(list_id.with(serial)).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(lit.left_bottom() - egui::vec2(0.0, 1.0)).constrain_to(crate::popmenu::bounds(ui.ctx(), lit.left_bottom())).show(ui.ctx(), |ui| {
                     crate::popmenu::mfc_frame(ui, |ui| {
-                        for (k, i) in order.iter().copied().enumerate() {
-                            if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
-                                activate = Some(i);
+                        crate::popmenu::cut_to_screen(ui, list_id.with(serial), lit.left_bottom(), |ui| {
+                            for (k, i) in order.iter().copied().enumerate() {
+                                if crate::popmenu::mark_item_icon(ui, &self.docs[i].title(), None, true, None, hot == Some(k), Some(&window)).clicked() {
+                                    activate = Some(i);
+                                }
                             }
-                        }
+                        })
                     })
                 });
                 let outside = ui.input(|inp| inp.pointer.any_pressed() && inp.pointer.interact_pos().is_some_and(|q| !area.response.rect.contains(q) && !hit.contains(q)));
@@ -915,8 +1031,7 @@ impl App {
         // with no separators — 27 / 40 × "_" templates (`0x4729b0`), each
         // `status_pane_w` wide (the "_" 5 / 6 / 7 px, + 18) with the text
         // `status_text_inset` in, left-aligned — and the extended element,
-        // `status_ext_w` wide (135 / 157 / 189 px, 20 more on the older
-        // looks) on a darker band behind a light edge, its text 16 px in.
+        // `status_ext_w` wide (135 / 157 / 189 px) on a darker band behind a light edge, its text 16 px in.
         let r = ui.max_rect();
         let painter = ui.painter();
         let band = |c0: egui::Color32, c1: egui::Color32, rr: egui::Rect| {
@@ -966,11 +1081,11 @@ impl App {
         // A normal (not maximised) window's last pane also holds the size grip
         // (see [`status_reserve`]).
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
-        let (ext_w, room) = status_reserve(r.right(), status_ext_w(p.bands.is_some()), maximised, self.status_hidden[6]);
+        let (ext_w, room) = status_reserve(r.right(), status_ext_w(), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
-        // A hidden pane leaves no gap: the rest move left (VM). A pane that
-        // does not fit before the extended one is not shown (VM, 150 % at
-        // 1280 px: «Гор. визир 2:» and on gone).
+        // A hidden pane leaves no gap: the rest move left (VM). A pane that does not fit before the extended one is
+        // not shown (VM, 150 % at 1280 px: «Гор. визир 2:» and the panes after it gone); a later pane narrow
+        // enough still is (clone, 175 / 200 %, see `status_pane_places`).
         for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
             let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
@@ -993,21 +1108,26 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at every scale).
-            painter.text(egui::pos2(ext.left() + 16.0, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
+            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at 100 %, further in the older looks at
+            // 125 / 150 %).
+            let shift = if p.status_flat.is_some() { status_ext_text_shift() } else { 0.0 };
+            painter.text(egui::pos2(ext.left() + 16.0 + shift, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
-            let (dark, light) = if p.bands.is_some() && p.status_bg == egui::Color32::from_rgb(186, 212, 247) {
-                (egui::Color32::from_rgb(69, 93, 128), egui::Color32::from_rgb(177, 201, 232))
-            } else {
-                (egui::Color32::from_gray(100), egui::Color32::WHITE)
-            };
-            for d in status_grip_dots(r.right(), r.bottom(), status_grip_pitch()) {
-                let dot = egui::Rect::from_min_size(d, egui::vec2(2.0, 2.0));
-                painter.rect_filled(dot.translate(egui::vec2(1.0, 1.0)), 0.0, light);
-                painter.rect_filled(dot, 0.0, dark);
+            let inset = status_grip_inset(self.skin.status_grip());
+            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right() - inset, r.bottom() - inset) {
+                painter.rect_filled(rect, 0.0, c);
+            }
+            // The older looks' last pane: a line at its right ([`status_pane_line_offset`]) and, at 125 / 150 %, one at
+            // its left ([`status_pane_left_line_offset`]), both 4 px short of the bar's top and bottom (clone, #167).
+            if let Some(c) = self.skin.status_pane_line() {
+                let line = |x: f32| egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0));
+                painter.rect_filled(line(r.right() - status_pane_line_offset()), 0.0, c);
+                if let Some(off) = status_pane_left_line_offset().filter(|_| ext_shown) {
+                    painter.rect_filled(line(r.right() - off), 0.0, c);
+                }
             }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
@@ -1033,17 +1153,19 @@ impl App {
         let id = egui::Id::new("fv_status_menu");
         let pos = crate::popmenu::menu_pos(ctx, id, at);
         let mut toggle = None;
-        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain(true).show(ctx, |ui| {
+        let area = egui::Area::new(id).kind(egui::UiKind::Menu).order(egui::Order::Foreground).fixed_pos(pos).constrain_to(crate::popmenu::bounds(ctx, at)).show(ctx, |ui| {
             crate::popmenu::mfc_frame_with(ui, true, false, |ui| {
                 crate::popmenu::title_band(ui, "Конфигурация строки состояния");
-                for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
-                    if i == 6 {
-                        crate::popmenu::panel_separator(ui);
+                crate::popmenu::cut_to_screen(ui, id, at, |ui| {
+                    for (i, t) in texts.iter().map(String::as_str).chain(Some("НТЦ Механотроника")).enumerate() {
+                        if i == 6 {
+                            crate::popmenu::panel_separator(ui);
+                        }
+                        if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
+                            toggle = Some(i);
+                        }
                     }
-                    if crate::popmenu::mark_item_keys(ui, "", Some(t), true, (!self.status_hidden[i]).then_some("✓"), false).clicked() {
-                        toggle = Some(i);
-                    }
-                }
+                });
             })
         });
         if let Some(i) = toggle {
@@ -1076,7 +1198,7 @@ impl App {
         }
         if self.min_size_ppp != native {
             self.min_size_ppp = native;
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(MIN_VISIBLE) / ctx.pixels_per_point()));
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(egui::Vec2::from(min_visible_at(dpi::dpi())) / ctx.pixels_per_point()));
         }
     }
 
@@ -1242,6 +1364,8 @@ impl App {
         dialogs::track_input(ctx);
         dialogs::route_combo_keys(ctx);
         self.device_pixels(ctx);
+        sysdlg::set_wake(ctx);
+        self.poll_sysdlg(ctx);
         self.run_deferred(ctx);
         // A click or a key acts after the frame that drew it (a command is
         // dispatched once its button is drawn): one more frame shows the
@@ -1277,6 +1401,10 @@ impl App {
         self.ppp = ctx.pixels_per_point();
         // Every dialog is modal: while one is up, a backdrop between the
         // panels and the windows takes the pointer, and no shortcuts run.
+        // A frame control holding the keyboard focus (the merge bar's combo box and buttons, the tab
+        // list's ▾): a press on the ribbon, the parameters bar or the status bar leaves it there (#186).
+        self.key_owner = ctx.memory(|m| m.focused()).filter(|f| ctx.read_response(*f).is_some_and(|r| self.focus_other.iter().any(|q| q.contains(r.rect.center()))));
+        self.keep_focus_rects.clear();
         self.focus_other.clear();
         let was_modal = std::mem::replace(&mut self.modal_up, dialogs::window_up(ctx));
         winframe::set_modal(self.modal_up);
@@ -1307,7 +1435,7 @@ impl App {
         // The auto-hide strips of the left, right and top edges take the
         // frame's outermost space, before the ribbon and the bars.
         self.strips_outer(ctx);
-        egui::TopBottomPanel::top("top")
+        let ribbon = egui::TopBottomPanel::top("top")
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.tab_active))
             .show(ctx, |ui| {
@@ -1319,6 +1447,7 @@ impl App {
                     ui.painter().hline(r.x_range(), r.bottom() - 0.5, egui::Stroke::new(1.0f32, b.under_ribbon[0]));
                 }
             });
+        self.keep_focus_rects.push(ribbon.response.rect);
         // The frame's client area shows the splitter brush between its bars
         // (VM, Office 2007 Blue): under the ribbon two shade rows ((174, 199,
         // 232), (185, 212, 247)) and 4 px of (191, 219, 255).
@@ -1372,7 +1501,7 @@ impl App {
         // gradient from white to (213, 228, 242) between (157, 189, 216)
         // lines —, then 4 px of the brush.
         if self.dlg.param_bar {
-            egui::TopBottomPanel::top("parambar")
+            let bar = egui::TopBottomPanel::top("parambar")
                 .exact_height(67.0)
                 .show_separator_line(false)
                 .frame(egui::Frame::none().fill(pal.info_bar.unwrap_or(pal.group_bg)))
@@ -1380,17 +1509,19 @@ impl App {
                     bar_face(ui);
                     self.param_bar_ui(ui)
                 });
+            self.keep_focus_rects.push(bar.response.rect);
             egui::TopBottomPanel::top("fv_under_parambar").exact_height(4.0).show_separator_line(false).frame(egui::Frame::none().fill(strip)).show(ctx, |_| {});
         }
 
 
         // The bottom edge's strip is the last row, under the status row.
         self.strip_bottom(ctx);
-        egui::TopBottomPanel::bottom("status")
+        let status = egui::TopBottomPanel::bottom("status")
             .exact_height(dpi::s(24.0))
             .show_separator_line(false)
             .frame(egui::Frame::none().fill(pal.status_bg))
             .show(ctx, |ui| self.status_bar(ui));
+        self.keep_focus_rects.push(status.response.rect);
 
 
         // The print preview takes the document view's place in its window
@@ -1400,6 +1531,7 @@ impl App {
         self.track_copy_focus(ctx);
         self.dialogs_ui(ctx);
         self.print_windows(ctx);
+        self.keep_key_focus(ctx);
         // The record settings follow the active document; leaving asks
         // about modified documents.
         self.track_settings();
@@ -1546,11 +1678,11 @@ mod tests {
     fn the_status_panes_follow_the_uis_underscore_at_every_scale() {
         for (d, a, b, ext) in [(96, 153.0, 218.0, 135.0), (120, 180.0, 258.0, 157.0), (144, 207.0, 298.0, 189.0)] {
             dpi::set(d);
-            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w(true)), (a, b, ext), "{d}");
+            assert_eq!((status_pane_w(0), status_pane_w(2), status_ext_w()), (a, b, ext), "{d}");
         }
         dpi::set(120);
         let count = |w: f32| {
-            let (_, room) = status_reserve(w, status_ext_w(true), false, false);
+            let (_, room) = status_reserve(w, status_ext_w(), false, false);
             status_pane_places(0.0, room, &[false; 7]).len()
         };
         assert_eq!((count(1159.0), count(1160.0)), (4, 5), "the fifth pane's bracket at 125 %");
@@ -1559,7 +1691,7 @@ mod tests {
         let alone = |w: f32| {
             let mut h = [false; 7];
             h[6] = true;
-            let (_, room) = status_reserve(w, status_ext_w(true), false, true);
+            let (_, room) = status_reserve(w, status_ext_w(), false, true);
             status_pane_places(0.0, room, &h).len()
         };
         assert_eq!((alone(1009.0), alone(1010.0)), (4, 5), "the hidden-pane bracket at 125 %");
@@ -1818,6 +1950,30 @@ mod window_tests {
         dpi::set(96);
     }
 
+    /// #179 (clone, 175 / 200 %): the status bar's text is the Tahoma 19 / 22 px (the original's ink 123 / 141 px
+    /// for «Верт. визир 1:»; the 125 → 150 slope gave 21 / 25), the panes 234 / 288 px apart ("_" 8 / 10 px), the
+    /// extended pane with its grip 248 / 278 px from the right edge, and a pane that does not fit is left out while
+    /// a later one that does is shown (the wide third gone, the fourth in its place).
+    #[test]
+    fn the_status_bar_at_175_and_200_percent() {
+        for (d, font, apart, ext_grip) in [(168, 19.0, 234.0, 248.0), (192, 22.0, 288.0, 278.0)] {
+            dpi::set(d);
+            assert_eq!(status_font_px(), font, "{d}");
+            assert_eq!(status_pane_w(0), apart, "{d}");
+            assert_eq!(status_ext_w() + dpi::s(STATUS_GRIP), ext_grip, "{d}");
+        }
+        // 175 %, the extended pane shown: the fourth pane (it ends at 702) from about 950 px of client, the wide
+        // third (ends at 806) from about 1055 (clone: absent at 940 / 1060, present at 980 / 1100 px windows, 25 px
+        // of frame).
+        dpi::set(168);
+        let shown = |w: f32| status_pane_places(0.0, status_reserve(w, status_ext_w(), false, false).1, &[false; 7]).iter().map(|p| p.0).collect::<Vec<_>>();
+        assert_eq!(shown(940.0), vec![0, 1], "no room for the third or the fourth");
+        assert_eq!(shown(960.0), vec![0, 1, 3], "the fourth moves up into the third's place");
+        assert_eq!(shown(1050.0), vec![0, 1, 3]);
+        assert_eq!(shown(1060.0), vec![0, 1, 2], "the third fits, the fourth after it does not");
+        dpi::set(96);
+    }
+
     /// #139 (clone, 100 / 125 / 150 %): the status bar's text is the Tahoma size nearest the original's width,
     /// 11 / 13 / 17 px («Верт. визир 1:» 73 / 86 / 107 px of ink in the original; at 150 % 16 px is 5 px short
     /// and the ribbon's 18 px 10 over).
@@ -1872,9 +2028,10 @@ mod window_tests {
     /// maximised window draws none. Drawn at 125 / 150 % through the whole frame.
     #[test]
     fn a_normal_window_draws_the_size_grip_and_a_maximised_one_does_not() {
-        let dots = status_grip_dots(100.0, 50.0, 4.0);
-        assert_eq!(dots.len(), 6);
-        assert_eq!((dots[0], dots[2], dots[3], dots[5]), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
+        let shapes = status_grip_shapes(theme::Skin::Blue.status_grip(), 100.0, 50.0);
+        assert_eq!(shapes.len(), 12);
+        // (shadow, dot) pairs: the lowest row's rightmost dot, the second row's, the top one.
+        assert_eq!((shapes[1].0.min, shapes[5].0.min, shapes[7].0.min, shapes[11].0.min), (egui::pos2(97.0, 47.0), egui::pos2(89.0, 47.0), egui::pos2(97.0, 43.0), egui::pos2(97.0, 39.0)));
         let dark = [69, 93, 128];
         let fonts = app_fonts();
         for (native, maximised) in [(1.25, false), (1.5, false), (1.5, true), (1.0, false)] {
@@ -1895,9 +2052,97 @@ mod window_tests {
             assert_eq!(found.len(), 24, "{native}: six 2 × 2 dots");
             let (right, bottom) = (found.iter().map(|p| p.0).max().unwrap() + 2, found.iter().map(|p| p.1).max().unwrap() + 2);
             assert_eq!(right, c.w, "{native}: the dots end at the client's right edge");
-            for d in status_grip_dots(right as f32, bottom as f32, status_grip_pitch()) {
-                assert!(found.contains(&(d.x as usize, d.y as usize)), "{native}: a dot at {d:?}");
+            for (rect, _) in status_grip_shapes(theme::Skin::Blue.status_grip(), right as f32, bottom as f32).iter().skip(1).step_by(2) {
+                assert!(found.contains(&(rect.min.x as usize, rect.min.y as usize)), "{native}: a dot at {rect:?}");
             }
+        }
+        dpi::set(96);
+    }
+
+    /// #167 (clone, 100 / 125 / 150 %): the size grip of every look. The lines (Windows 2000, Office XP) and the
+    /// dots (Windows XP, Office 2003, VS.NET 2005) scale with the system; the Office 2007 looks keep their 2 px dots
+    /// and each has its own colours; the status text of the older looks is the grey (109) text colour.
+    #[test]
+    fn every_look_draws_its_own_size_grip() {
+        use theme::Skin;
+        // The offsets (from the last pixel, right / down) a grip's pixels take, by row from the bottom.
+        let rows = |skin: Skin| {
+            let (right, bottom) = (200.0, 100.0);
+            let mut m: std::collections::BTreeMap<i32, Vec<i32>> = Default::default();
+            for (r, _) in status_grip_shapes(skin.status_grip(), right, bottom).into_iter().filter(|(_, c)| c.r() == c.g() && c.g() == c.b() && c.r() != 204 && c.r() != 205) {
+                for y in 0..r.height() as i32 {
+                    for x in 0..r.width() as i32 {
+                        m.entry((bottom - 1.0 - (r.min.y + y as f32)) as i32).or_default().push((right - 1.0 - (r.min.x + x as f32)) as i32);
+                    }
+                }
+            }
+            m.values_mut().for_each(|v| v.sort());
+            m
+        };
+        let want = |dy: i32, dx: &[i32]| (dy, dx.to_vec());
+        for (d, lines0, lines_last, dots2, dots_top) in [
+            (96, want(0, &[3, 7, 11]), want(11, &[0]), want(2, &[3, 4, 6, 7, 9, 10]), want(9, &[3, 4])),
+            (120, want(0, &[3, 8, 13]), want(13, &[0]), want(2, &[3, 4, 5, 7, 8, 9, 11, 12, 13]), want(12, &[3, 4, 5])),
+            (144, want(0, &[5, 6, 11, 12, 17, 18]), want(18, &[0]), want(2, &[4, 5, 6, 8, 9, 10, 12, 13, 14]), want(12, &[4, 5, 6])),
+        ] {
+            dpi::set(d);
+            let l = rows(Skin::Win2000);
+            assert_eq!(l.get_key_value(&lines0.0).map(|(k, v)| (*k, v.clone())), Some(lines0), "{d}: the lines' bottom row");
+            assert_eq!(l.get_key_value(&lines_last.0).map(|(k, v)| (*k, v.clone())), Some(lines_last), "{d}: the lines' top");
+            assert_eq!(rows(Skin::OfficeXp), l, "{d}: Office XP draws the same lines");
+            let dots = rows(Skin::WinXp);
+            assert_eq!(dots.get_key_value(&dots2.0).map(|(k, v)| (*k, v.clone())), Some(dots2), "{d}: the dots' bottom row");
+            assert_eq!(dots.get_key_value(&dots_top.0).map(|(k, v)| (*k, v.clone())), Some(dots_top), "{d}: the dots' top row");
+            assert_eq!(rows(Skin::Office2003), dots, "{d}");
+            assert_eq!(rows(Skin::Vs2005), dots, "{d}");
+        }
+        dpi::set(96);
+        // The Office 2007 looks: the measured dark / light pairs, six dots each.
+        for (skin, dark, light) in [
+            (Skin::Blue, [69, 93, 128], [177, 201, 232]),
+            (Skin::Black, [37, 37, 37], [204, 204, 204]),
+            (Skin::Silver, [112, 118, 126], [205, 208, 217]),
+            (Skin::Aqua, [144, 153, 175], [213, 217, 226]),
+        ] {
+            let g = status_grip_shapes(skin.status_grip(), 100.0, 50.0);
+            let c = |i: usize| [g[i].1.r(), g[i].1.g(), g[i].1.b()];
+            assert_eq!((g.len(), c(0), c(1)), (12, light, dark), "{skin:?}");
+        }
+        for skin in [Skin::Win2000, Skin::OfficeXp, Skin::WinXp, Skin::Office2003, Skin::Vs2005] {
+            assert_eq!(skin.palette().status_text, egui::Color32::from_gray(109), "{skin:?}");
+        }
+        assert_eq!((Skin::OfficeXp.status_pane_line(), Skin::WinXp.status_pane_line(), Skin::Win2000.status_pane_line()), (Some(egui::Color32::from_gray(160)), Some(egui::Color32::from_gray(180)), None));
+    }
+
+    /// #167 (clone, 125 / 150 %): the older looks' extended pane: its right bracket line 24 / 29 px from the layout's
+    /// edge (the original's, against the cut of the window's edge), the text 3 px further right than the blue look's
+    /// inset puts it, and a second bracket line left of the pane at the scaled looks only.
+    #[test]
+    fn the_older_looks_extended_pane_follows_the_clone() {
+        for (d, line, shift) in [(96, 19.0, 0.0), (120, 24.0, 3.0), (144, 30.0, 3.0)] {
+            dpi::set(d);
+            assert_eq!((status_pane_line_offset(), status_ext_text_shift()), (line, shift), "{d}");
+        }
+        dpi::set(96);
+        assert_eq!(status_pane_left_line_offset(), None, "none at 100 %");
+        dpi::set(120);
+        assert_eq!(status_pane_left_line_offset(), Some(186.0));
+        dpi::set(144);
+        assert_eq!(status_pane_left_line_offset(), Some(269.0));
+        dpi::set(96);
+    }
+
+    /// #167 (clone): the grip is laid against the edge of the window that shows, one pixel in at 100 / 125 % and two at
+    /// 150 %, so the dots keep the original's three clear columns and two clear rows.
+    #[cfg(windows)]
+    #[test]
+    fn the_size_grip_keeps_to_the_edge_that_shows() {
+        for (d, want) in [(96, 1.0), (120, 1.0), (144, 2.0)] {
+            dpi::set(d);
+            for skin in [theme::Skin::Win2000, theme::Skin::OfficeXp, theme::Skin::WinXp, theme::Skin::Office2003, theme::Skin::Vs2005] {
+                assert_eq!(status_grip_inset(skin.status_grip()), want, "{d} {skin:?}");
+            }
+            assert_eq!(status_grip_inset(theme::Skin::Blue.status_grip()), 0.0, "{d}: the Office 2007 look is as it was");
         }
         dpi::set(96);
     }
@@ -2744,13 +2989,41 @@ mod window_tests {
         assert_eq!(first_run_client([1280.0, 740.0], 120), [942.0, 521.0]);
         assert_eq!(first_run_client([1280.0, 728.0], 144), [938.0, 506.0]);
         assert_eq!(first_run_client([1280.0, 716.0], 168), [936.0, 491.0]);
-        // 200 %: the cut 34 + 4 = 38 px, the borders 5 + 8 = 13.
-        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 477.0]);
+        // 200 % (clone: the work area 1280 × 704, the window rect 960 × 500): the table's cut would give 490, the
+        // minimum tracking height 500 holds; the borders 5 + 8 = 13.
+        assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 487.0]);
+        // A taller work area is cut as before (the rule beyond 168 dpi, 4 px per 24 dpi, is extrapolated: the cut of
+        // 38 at 192 dpi is not measured, the clone's 200 % first run was clamped to the minimum).
+        assert_eq!(first_run_client([1280.0, 800.0], 192)[1], 600.0 - 38.0 - 13.0);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
             let c = first_run_client([1280.0, 740.0], dpi)[0];
             assert_eq!((c / 4.0 - 6.0).ceil(), w, "dpi {dpi}");
         }
+    }
+
+    /// #176 (clone, 200 %): the frame is never smaller than its 866 × 500 minimum tracking rect: a first run on a
+    /// 704 px work area is 500 high (the ¾ rule gives 490), and the smallest client is the rect less the invisible
+    /// border (852 × 493 at 100 %, 840 × 487 at 200 %).
+    #[test]
+    fn the_first_run_frame_keeps_the_minimum_tracking_size() {
+        assert_eq!(min_visible_at(96), MIN_VISIBLE);
+        assert_eq!(min_visible_at(192), [840.0, 487.0]);
+        // The work area 1280 × 704 at 192 dpi: 528 − 38 = 490 would be below the minimum 500.
+        assert_eq!(first_run_client([1280.0, 704.0], 192)[1], 500.0 - 13.0);
+        // Where the rule gives more, the rule stands (168 dpi: 537 − 34 = 503).
+        assert_eq!(first_run_client([1280.0, 716.0], 168)[1], 503.0 - 12.0);
+        // A small work area: the clamped frame is 866 wide (clone, 168 dpi) …
+        assert_eq!(first_run_client([1000.0, 566.0], 168), [866.0 - 24.0, 500.0 - 12.0]);
+        // … and what the first run gives is never below what the window can be sized to, at any scale: the two
+        // rules were one pixel apart at 200 %, so the window grew the clone's first run to 488 high.
+        for dpi in [96, 120, 144, 168, 192] {
+            let (min, first) = (min_visible_at(dpi), first_run_client([1280.0, 704.0], dpi));
+            assert!(first[0] >= min[0] && first[1] >= min[1], "dpi {dpi}: {first:?} against {min:?}");
+        }
+        let small = first_run_client([1000.0, 566.0], 192);
+        assert_eq!(small, [866.0 - 26.0, 500.0 - 13.0]);
+        assert_eq!(small, min_visible_at(192), "the clamped first run is exactly the smallest window");
     }
 
     /// #147: on a first run's frame ours' MDI area is the original's at every display scale (clone,
@@ -4668,6 +4941,199 @@ mod window_tests {
         assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked);
     }
 
+    /// #161 (clone, the original): a pane floated for the first time opens with
+    /// its create rect's corner on the frame's own top-left corner, over the
+    /// ribbon — not below it, at the documents' corner — whichever pane and
+    /// however it floats (a caption or a tab double-click).
+    #[test]
+    fn a_pane_floated_for_the_first_time_opens_at_the_frames_corner() {
+        use docking::{Place, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        // A caption double-click: Частотная, and the group's front pane.
+        let mut w = Win::new();
+        w.idle(3);
+        let screen = w.ctx.screen_rect();
+        let canvas = w.app.pane_canvas.iter().find(|(p, _)| *p == app::Pane::Frequency).expect("the frequency diagram").1;
+        assert!(w.ctx.available_rect().min != screen.min, "the ribbon takes the top: the documents' corner is elsewhere");
+        double(&mut w, Pos2::new(canvas.left() + 60.0, canvas.top() - 10.0));
+        assert_eq!(w.app.docks[Unit::Frequency].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Frequency].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(200.0))), "Частотная: the mini-frame's outer size is the create size (clone)");
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect, Some(Rect::from_min_size(screen.min, Vec2::splat(500.0))), "the group");
+        // A tab's double-click floats that pane at the same corner.
+        let mut w = Win::new();
+        w.idle(2);
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        assert_eq!(w.app.docks[Unit::Circle].float_rect.map(|r| r.min), Some(w.ctx.screen_rect().min), "a tab");
+    }
+
+    /// #161: with a saved or maximised placement the frame is not where it was
+    /// made (clone: a first float lands where the default frame stood, about
+    /// 86 × 78 px in from the screen's corner, whatever the frame does after);
+    /// ours opens it at that spot seen from its window, or at the corner when
+    /// that lies outside it.
+    #[test]
+    fn a_first_float_lands_where_the_default_frame_stood() {
+        use docking::Unit;
+        let (c, corner) = (|s| first_float_corner(s), |x: f32, y: f32| Vec2::new(x, y));
+        assert_eq!(c(None), Vec2::ZERO, "a first run: the frame is where it was made");
+        let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(1280.0, 800.0));
+        assert_eq!(c(Some((screen, true))), corner(86.0, 78.0), "maximised");
+        assert_eq!(c(Some((Rect::from_min_size(Pos2::new(40.0, 30.0), Vec2::new(900.0, 600.0)), false))), corner(46.0, 48.0), "a saved rect");
+        assert_eq!(c(Some((Rect::from_min_size(Pos2::new(300.0, 200.0), Vec2::new(900.0, 600.0)), false))), Vec2::ZERO, "a window beyond the spot: its corner");
+        let mut w = Win::new();
+        views::set_float_corner(&w.ctx, c(Some((screen, true))));
+        w.idle(3);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+        w.run(vec![egui::Event::PointerMoved(at)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.run(vec![ev(at, true), ev(at, false)]);
+        w.idle(3);
+        assert_eq!(w.app.docks[Unit::Vector].float_rect.map(|r| r.min), Some(Pos2::new(86.0, 78.0)), "a maximised start");
+    }
+
+    /// #162 (clone, the original): a double-click on a tab of a floating
+    /// group docks that pane alone where the group was last docked — the
+    /// right edge in the start-up layout, the left one after the group was
+    /// docked there —, the front tab or another; the other panes stay in
+    /// the floating group, which gets a new front pane. A click does
+    /// nothing.
+    #[test]
+    fn a_double_click_on_a_floating_groups_tab_docks_that_pane_back() {
+        use docking::{Edge, Place, Spot, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let floated = |edge: Edge| {
+            let mut w = Win::new();
+            // The start-up layout (the group alone on its edge); the shared
+            // slot is the next test.
+            w.app.docks = docking::Docks::default();
+            w.app.docks[Unit::Vector].spot = Spot::Edge { edge, outer: true };
+            w.idle(3);
+            // Floated by its caption's double-click, as the UI does (the
+            // slot's neighbours see it leave); idle past egui's click window.
+            let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+            let at = Pos2::new(pane.left() + 60.0, pane.top() + 8.0);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+            w
+        };
+        let tab_of = |w: &Win, p: app::Pane| w.app.pane_tab_rects.iter().find(|(q, _)| *q == p).map(|(_, r)| r.center()).expect("the tab");
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(3);
+        };
+        for edge in [Edge::Right, Edge::Left] {
+            // Another tab than the front one.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Circle);
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+            assert_eq!(w.app.docks[Unit::Circle].place, Place::Docked, "{edge:?}: a click docks nothing");
+            let at = tab_of(&w, app::Pane::Circle);
+            double(&mut w, at);
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!((c.place, c.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the double-clicked pane docks at the group's edge");
+            assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating, "{edge:?}: the group stays floating");
+            assert!(w.app.dock_rects[Unit::Circle as usize].is_some_and(|r| (edge == Edge::Left) == (r.center().x < 600.0)), "{edge:?}: drawn on that side");
+            // The front tab: the group's own pane docks, the next tab takes the group.
+            let mut w = floated(edge);
+            let at = tab_of(&w, app::Pane::Vector);
+            double(&mut w, at);
+            let v = w.app.docks[Unit::Vector];
+            assert_eq!((v.place, v.spot), (Place::Docked, Spot::Edge { edge, outer: true }), "{edge:?}: the front pane docks");
+            let c = w.app.docks[Unit::Circle];
+            assert_eq!(c.place, Place::Floating, "{edge:?}: the next tab holds the floating group");
+        }
+    }
+
+    /// #162: the pane docks back at the group's size and in its place in the
+    /// blocks' order (clone: full height, the width the group had, outermost
+    /// on the right — outside Дифференциальная's block).
+    #[test]
+    fn a_pane_docked_back_from_a_floating_group_keeps_the_groups_size_and_order() {
+        use docking::{Place, Spot, Unit};
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+        };
+        let mut w = Win::new();
+        // The start-up layout: the group outermost on the right, Дифференциальная
+        // a block of its own inside it.
+        w.app.docks = docking::Docks::default();
+        w.app.docks[Unit::Vector].extent = Some(437.0);
+        // Circle's own order is not the group's (a tab's is never read).
+        w.app.docks[Unit::Circle].order = 5;
+        w.idle(6);
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        assert!((pane.width() - 437.0).abs() < 8.0, "the group's width: {pane:?}");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Floating);
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        let c = w.app.docks[Unit::Circle];
+        assert_eq!((c.place, c.extent), (Place::Docked, Some(437.0)), "the group's size");
+        assert!(c.order < w.app.docks[Unit::Differential].order, "its block comes before Дифференциальная's");
+        let (rc, rd) = (w.app.dock_rects[Unit::Circle as usize].expect("docked"), w.app.dock_rects[Unit::Differential as usize].expect("docked"));
+        assert!((rc.width() - 437.0).abs() < 8.0, "docked at the group's width: {rc:?}");
+        assert!(rc.left() >= rd.right() - 1.0, "outside Дифференциальная's block: {rc:?} {rd:?}");
+        assert_eq!(c.spot, Spot::Edge { edge: docking::Edge::Right, outer: true });
+        assert_eq!(w.app.copy_focus, app::CopyFocus::Pane(app::Pane::Circle), "the focus is the docked pane's window (clone)");
+        // The floating rest's caption double-click joins the docked pane as a tab (clone).
+        assert_eq!(w.app.docks[Unit::Vector].spot, Spot::Tab(Unit::Circle));
+        let win = w.app.docks[Unit::Vector].float_rect.expect("floating");
+        double(&mut w, Pos2::new(win.left() + 60.0, win.top() + 10.0));
+        assert_eq!(w.app.docks[Unit::Vector].place, Place::Docked, "redocked");
+        assert_eq!(w.app.docks.host(Unit::Vector), Unit::Circle, "as a tab of the docked pane");
+    }
+
+    /// #162 (clone): a group that shared its column with Частотная docks the
+    /// pane back into that slot, beside Частотная, at the group's share.
+    #[test]
+    fn a_pane_docked_back_from_a_group_sharing_its_column_takes_the_slot() {
+        use docking::{Place, Spot, Unit};
+        let mut w = Win::new();
+        w.idle(3);
+        let before = w.app.docks[Unit::Vector].spot;
+        assert!(matches!(before, Spot::Edge { .. }));
+        w.app.docks[Unit::Frequency].spot = Spot::Beside(Unit::Vector, docking::Edge::Top);
+        w.idle(3);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        let double = |w: &mut Win, at: Pos2| {
+            w.run(vec![egui::Event::PointerMoved(at)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.run(vec![ev(at, true), ev(at, false)]);
+            w.idle(12);
+        };
+        let pane = w.app.dock_rects[Unit::Vector as usize].expect("the docked group");
+        double(&mut w, Pos2::new(pane.left() + 60.0, pane.top() + 8.0));
+        let root_spot = w.app.docks[Unit::Vector].spot;
+        let at = w.app.pane_tab_rects.iter().find(|(q, _)| *q == app::Pane::Circle).map(|(_, r)| r.center()).expect("the tab");
+        double(&mut w, at);
+        let c = w.app.docks[Unit::Circle];
+        assert_eq!((c.place, c.spot), (Place::Docked, root_spot), "in the group's slot beside Частотная");
+        assert!(matches!(c.spot, Spot::Beside(..) | Spot::Edge { .. }));
+    }
+
     /// A tab pulled out of a tab strip follows the caption drag's distance rule
     /// (#111; `0x10068657` reads the metric once, `>=` on either axis — the
     /// caption's rule `0x10086f3a` is a strict `>` — the distance scaled with
@@ -5403,6 +5869,113 @@ mod window_tests {
         assert_eq!(method(&w), 0, "the focus stayed");
     }
 
+    /// A press on the ribbon, the parameters bar or the status bar leaves the
+    /// keyboard focus where it was (clone, #186: the merge bar's combo box
+    /// keeps it through presses on a ribbon tab and on ribbon buttons, and ↓
+    /// then changes the method): egui's focus stays on the bar's control.
+    #[test]
+    fn a_press_on_the_ribbon_leaves_the_bars_focus_where_it_was() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        let ribbon = w.app.keep_focus_rects[0];
+        let blank = Pos2::new(ribbon.center().x + 100.0, ribbon.top() + 8.0);
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 1, "↓ still reaches the combo box after a press on the ribbon");
+        // The status bar, too.
+        let status = *w.app.keep_focus_rects.last().unwrap();
+        w.press(Primary, status.center(), status.center());
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 2, "and after a press on the status bar");
+        // A press on the bar's own button takes the focus (nothing to keep).
+        let sync = w.app.focus_other[1];
+        w.press(Primary, sync.center(), sync.center() + Vec2::new(0.0, 200.0));
+        w.press(Primary, blank, blank);
+        w.key(egui::Key::Space);
+        assert!(!w.app.merge.as_ref().unwrap().status.is_empty(), "the button kept the focus through the ribbon press");
+    }
+
+    /// DIALOG 492's progress bar and «Отмена» are one span (neither has WS_GROUP): on a clone, in a native
+    /// dialog of just those two, an arrow from the button moves the focus to the bar and the next arrow back.
+    #[test]
+    fn the_loading_dialogs_arrows_pass_between_the_bar_and_cancel() {
+        let mut w = Win::new();
+        let _tx = w.app.test_hold_loading();
+        w.idle(3);
+        w.key(egui::Key::Tab);
+        let focused = |w: &Win| w.ctx.memory(|m| m.focused());
+        let cancel = focused(&w);
+        assert!(cancel.is_some(), "«Отмена» has the focus");
+        w.key(egui::Key::ArrowRight);
+        let bar = focused(&w);
+        assert!(bar.is_some() && bar != cancel, "→ moves the focus to the progress bar");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(focused(&w), cancel, "and back");
+    }
+
+    /// A pane that slides out on hover (a foreground layer, no press) does not take the merge bar's
+    /// keyboard focus (re-review of #186).
+    #[test]
+    fn a_pane_sliding_out_on_hover_leaves_the_merge_bars_focus() {
+        use app::ChanKey;
+        use docking::Unit;
+        use egui::PointerButton::Primary;
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.app.docks.0[Unit::Vector as usize].pin();
+        w.idle(3);
+        let combo = w.app.focus_other[0];
+        w.press(Primary, combo.center(), combo.center());
+        w.key(egui::Key::Escape);
+        w.run(vec![egui::Event::PointerMoved(w.app.strip_hits[Unit::Vector as usize].buttons[0].center())]);
+        w.idle(30);
+        assert!(w.app.docks[Unit::Vector].out, "the hover slid it out");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.app.merge.as_ref().unwrap().method, 1, "↓ still reaches the combo box");
+    }
+
+    /// A dialog or a menu opened by the press that would keep the bar's focus has the keys, not the
+    /// merge bar behind it (review: Ctrl+P / the QAT print button, then ↓ changed the method).
+    #[test]
+    fn a_dialog_or_menu_takes_the_keys_from_the_merge_bar() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        let setup = || {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let combo = w.app.focus_other[0];
+            w.press(Primary, combo.center(), combo.center());
+            w.key(egui::Key::Escape);
+            w
+        };
+        let method = |w: &Win| w.app.merge.as_ref().unwrap().method;
+        let mut w = setup();
+        w.app.dispatch(app::Command::Print);
+        w.idle(3);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a dialog is up: ↓ does not reach the merge bar");
+        // The application menu opened by a press on the ribbon's button.
+        let mut w = setup();
+        let button = Pos2::new(48.0, 12.0);
+        w.press(Primary, button, button);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(method(&w), 0, "a menu is up: ↓ does not reach the merge bar");
+    }
+
     /// «Синхронизация» holding the focus (a press let go outside it) is
     /// pressed by Space and by Enter (clone: the status line fills with
     /// neither a click), as the tab list's ▾ button opens its list by both
@@ -5438,6 +6011,39 @@ mod window_tests {
             w.idle(2);
             assert_eq!(open(&w), opens, "{key:?}");
         }
+    }
+
+    /// «Объединить» holding the focus (a press let go outside it) is not
+    /// pressed by Space nor by Enter, while a click merges (clone, #182: the
+    /// handler and the button's style are the same as «Синхронизация»'s, which
+    /// both keys press; the key does nothing on «Объединить»).
+    #[test]
+    fn the_merge_button_ignores_space_and_enter() {
+        use app::ChanKey;
+        use egui::PointerButton::Primary;
+        for key in [egui::Key::Space, egui::Key::Enter] {
+            let mut w = Win::new();
+            w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+            w.app.copy_channels_for_merge();
+            w.app.paste_channels_for_merge();
+            w.idle(3);
+            let join = w.app.focus_other[2];
+            w.press(Primary, join.center(), join.center() + Vec2::new(0.0, 200.0));
+            assert!(w.app.merge.is_some(), "no click: the bar stays");
+            w.key(key);
+            w.idle(2);
+            assert!(w.app.merge.is_some(), "{key:?} does not press «Объединить»");
+            assert!(!w.app.active_doc().unwrap().pending.is_empty(), "{key:?}: the pasted lane is still pending");
+        }
+        let mut w = Win::new();
+        w.app.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        let join = w.app.focus_other[2];
+        w.press(Primary, join.center(), join.center());
+        w.idle(2);
+        assert!(w.app.merge.is_none(), "a click merges and the bar hides");
     }
 
     /// A press on the ▾ of a document group that is not the active one
@@ -5598,6 +6204,102 @@ mod window_tests {
         // (No folder set: no link, «...» alone; with a folder the link joins it.)
         has(&w, "Установка настроек программы", &[Push, Push]);
         has(&w, "Установка настроек программы", &[Push]);
+    }
+
+    /// Every dialog's arrow spans are its template's WS_GROUP spans (#183): a
+    /// span runs from a control with WS_GROUP to the next, whatever the kinds
+    /// (labels and group boxes only mark where one starts; the dialog manager
+    /// walks the controls left in it, a disabled one kept in its place:
+    /// lower case below). The list per dialog is the template's spans that hold
+    /// a push button, a radio or a check box (P, R, C; O is any other control),
+    /// read from the 100 templates, so a span no heuristic of kinds can give
+    /// (536's two «Отключить», 539's «Kторм» after the radios) is checked too;
+    /// 347's «Свойства...» with «Параметры страницы» is only annotated (the kinds
+    /// already join them). 492 has its own test; 335 has no dialog of ours.
+    #[test]
+    fn every_dialogs_arrow_spans_follow_its_template() {
+        use crate::dialogs::{arrow_spans_all, GroupKind};
+        let spans = |w: &Win, t: &str| -> Vec<String> {
+            arrow_spans_all(&w.ctx, t)
+                .iter()
+                .map(|s| {
+                    s.iter()
+                        .map(|(k, on)| {
+                            let c = match k {
+                                GroupKind::Push => 'P',
+                                GroupKind::Radio => 'R',
+                                GroupKind::Check => 'C',
+                                GroupKind::Bar => 'B',
+                                GroupKind::Other => 'O',
+                            };
+                            if *on { c } else { c.to_ascii_lowercase() }
+                        })
+                        .collect::<String>()
+                })
+                .filter(|s| s.chars().any(|c| "PRCprc".contains(c)))
+                .collect()
+        };
+        let check = |w: &Win, t: &str, want: &[&str]| assert_eq!(spans(w, t), want, "{t}");
+        // 347 «Печать»: «Свойства...» with «Параметры страницы»; the preview alone;
+        // OK, Отмена and the five checks.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Print);
+        w.idle(4);
+        // «Свойства...» is enabled where a printer exists (`cfg!(windows) && a printer`: a Windows runner
+        // has one, Linux and macOS none), so its enabled bit is not part of the check: the kinds are.
+        let kinds: Vec<String> = spans(&w, "Печать").iter().map(|s| s.to_ascii_uppercase()).collect();
+        assert_eq!(kinds, ["PP", "P", "PPCCCCC"], "Печать");
+        // 477, 336, 332, 353.
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Coefficients);
+        w.idle(4);
+        check(&w, "Коэффициенты трансформации", &["OPP"]);
+        let mut w = Win::new();
+        w.app.diag_cmd(diagram_ui::Window::Freq, diagram::DiagCmd::FreqSettings, Pos2::ZERO);
+        w.idle(4);
+        check(&w, "Настройки частотной диаграммы", &["RR", "RR", "PP"]);
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::Demo);
+        w.idle(2);
+        w.app.dispatch(app::Command::OmpParams);
+        w.idle(4);
+        check(&w, "omp_params_dialog", &["OPP"]);
+        let mut w = Win::new();
+        w.app.comment_edit = Some(crate::comments::CommentEdit { idx: 0, text: "x".into() });
+        w.idle(4);
+        check(&w, "Комментарии к диаграмме", &["OPP"]);
+        // 558 the finder, 510 the settings (no folder: no link), 554 the pair dialog.
+        let mut w = Win::new();
+        w.app.open_finder();
+        w.idle(4);
+        check(&w, "Поиск файлов", &["PPPOOOO", "POC"]);
+        let mut w = Win::new();
+        w.app.show_settings = true;
+        w.idle(4);
+        check(&w, "Установка настроек программы", &["PP", "P", "RR", "RRRR"]);
+        let mut w = Win::new();
+        let names: Vec<String> = vec!["A".into(), "B".into()];
+        w.app.diag.pair_dlg = Some(crate::diagram_ui::PairDialog { diff: true, pairs: Vec::new(), a: Some(names[0].clone()), b: Some(names[1].clone()), sel: None, list_focus: false });
+        w.idle(4);
+        check(&w, "Задать соответствие между дифференциальным током и током торможения", &["PPOOPOp"]);
+        // The quick-analysis pages 536–539, 543 and the formula editor 340 (each with the sheet's own buttons) and 359.
+        let page = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CC", "PP"]);
+        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CC", "PP"]);
+        check(&page(app::AnalysisTab::PhasePhase), "fv_quick_sheet", &["OC", "RROOOO", "PP"]);
+        check(&page(app::AnalysisTab::Phase), "fv_quick_sheet", &["ORR", "PP"]);
+        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "c", "PP"]);
+        let mut w = page(app::AnalysisTab::Formula);
+        check(&w, "fv_quick_sheet", &["OPPPPPPP", "PP"]);
+        w.app.open_formula_dlg();
+        w.idle(4);
+        check(&w, "fv_add_formula", &["OOPP"]);
     }
 
     /// A bar is no dialog (clone: Tab goes nowhere in the original, a push
@@ -5884,10 +6586,17 @@ mod window_tests {
         };
         let drop = lanes::MOVE_DROP_CURSOR;
         let mid = client.center();
+        // The original's OLE move-drop picture (an arrow with a box,
+        // #157): shown exactly where the move cursor is.
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "no pass yet with the drag over a target");
         assert_eq!(at(&mut w, mid), drop, "over the view");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the view: the move-drop picture");
         assert_eq!(at(&mut w, vector.center()), drop, "over the vector diagram");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the vector diagram");
         assert_eq!(at(&mut w, freq.center()), drop, "over the frequency diagram");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move, "over the frequency diagram");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "over the window's top rows");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "no-drop has the system's cursor");
         assert_eq!(at(&mut w, Pos2::new(vector.center().x, vector.top() - 12.0)), NoDrop, "over a pane's caption");
         // The auto-scroll band: Ctrl turns the cursor to "copy", only there.
         let band = Pos2::new(mid.x, client.bottom() - 4.0);
@@ -5897,13 +6606,17 @@ mod window_tests {
         assert_eq!(at(&mut w, vector.center()), drop, "Ctrl over a diagram changes nothing");
         assert_eq!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "Ctrl elsewhere changes nothing");
         assert_eq!(at(&mut w, band), Copy, "Ctrl in the band");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Copy, "copy has the copy picture");
         w.held = egui::Modifiers::NONE;
         // Ctrl+Shift in the band: MFC answers "link", the drag allows none.
         w.held = egui::Modifiers { ctrl: true, shift: true, command: true, ..Default::default() };
         assert_eq!(at(&mut w, band), NoDrop, "Ctrl+Shift in the band");
         w.held = egui::Modifiers::NONE;
+        assert_eq!(at(&mut w, band), drop, "back in the band without Ctrl");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::Move);
         egui::DragAndDrop::clear_payload(&w.ctx);
         assert_ne!(at(&mut w, Pos2::new(60.0, 12.0)), NoDrop, "no drag, no cursor");
+        assert_eq!(lanes::drop_picture(&w.ctx), dragcursor::Drop::None, "the drag over: the picture is off");
     }
 
     /// The circle's drop target is its window (property grid and diagram), not
@@ -6725,8 +7438,39 @@ mod window_tests {
                 egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| app.plane_ui(ui));
             });
             let y = 250;
-            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [235, 235, 235] || c.px[y * c.w + x] == [190, 190, 190]).count();
+            let run = (0..c.w).rev().take_while(|&x| c.px[y * c.w + x] == [240, 240, 240] || c.px[y * c.w + x] == [133, 133, 133]).count();
             assert_eq!(run, bar, "{dpi_v}: the scroll bar's width");
+        }
+        dpi::set(96);
+    }
+
+    /// #173 (clone, 125 / 150 %): the circle diagram's property grid takes the same MFC global font as
+    /// «Параметры ОМП»'s: its rows are 17 / 23 / 27 px apart (ours had the system scale of 17: 21 / 26).
+    #[test]
+    fn the_circle_grid_rows_are_the_property_grid_rows() {
+        let fonts = app_fonts();
+        for (native, row) in [(1.0f32, 17usize), (1.25, 23), (1.5, 27)] {
+            dpi::set(96);
+            chrome_dpi(Some(native));
+            let mut app = demo(&[]);
+            app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+            let mut grid = None;
+            let mut pass = 0;
+            let c = raster::render_native(Vec2::new(1280.0, 722.0), native, |ctx| device_options(ctx, Some(native)), device_screen, Some(&fonts), vec![vec![]; 5], |ctx| {
+                if pass == 2 {
+                    app.block_idx = 1;
+                    app.ensure_block_state();
+                }
+                pass += 1;
+                app.frame_ui(ctx);
+                grid = app.pane_grid.first().copied();
+            });
+            let g = grid.expect("the circle pane's grid");
+            // The rows' rules (185, 208, 237) down a column in the name part.
+            let x = (g.left() + 12.0) as usize;
+            let rules: Vec<usize> = (g.top() as usize..g.bottom() as usize).filter(|&y| c.px[y * c.w + x] == [185, 208, 237]).collect();
+            let gaps: Vec<usize> = rules.windows(2).map(|w| w[1] - w[0]).collect();
+            assert!(gaps.len() >= 2 && gaps.iter().all(|&d| d == row), "{native}: rule gaps {gaps:?}");
         }
         dpi::set(96);
     }

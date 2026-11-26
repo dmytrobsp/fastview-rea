@@ -131,7 +131,15 @@ pub fn fmt_gp(v: f64, p: usize) -> String {
         return "0".into();
     }
     if !v.is_finite() {
-        return if v.is_nan() { "nan".into() } else if v > 0.0 { "inf".into() } else { "-inf".into() };
+        // The VS2013 CRT's spellings: the indefinite NaN (an x86 default, sign bit set) is "-1.#IND", any other
+        // NaN "1.#QNAN".
+        return if v.is_nan() {
+            if v.is_sign_negative() { "-1.#IND".into() } else { "1.#QNAN".into() }
+        } else if v > 0.0 {
+            "1.#INF".into()
+        } else {
+            "-1.#INF".into()
+        };
     }
     let e = format!("{v:.*e}", p - 1);
     let (mant, exp) = e.split_once('e').expect("exponent");
@@ -307,6 +315,10 @@ mod tests {
         assert_eq!(readout_text(0.012, "ОM"), " 12       мОM");
         assert_eq!(stats_value_text(-23.4375, "A").unwrap(), "-23.4375 А");
         assert_eq!(stats_value_text(1.5, "none").unwrap(), " 1.5    ");
+        // An infinite value (a zero ratio, #170) reads as the VS2013 CRT prints it.
+        assert_eq!(stats_value_text(f64::INFINITY, "none").unwrap(), " 1.#INF ");
+        assert_eq!(fmt_g(f64::NEG_INFINITY), "-1.#INF");
+        assert_eq!(fmt_g(f64::from_bits(0xfff8_0000_0000_0000)), "-1.#IND");
         assert_eq!(stats_value_text(2.0e5, "VA").unwrap(), " 200    кВА");
         assert!(stats_value_text(f64::NAN, "A").is_none());
     }

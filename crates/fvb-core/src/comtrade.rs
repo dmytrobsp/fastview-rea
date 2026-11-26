@@ -1725,6 +1725,13 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
         let l = next(&mut li)?;
         let f: Vec<&str> = l.split(',').collect();
         let g = |i: usize| f.get(i).map(|s| s.trim()).unwrap_or("");
+        // The numeric fields go through C's `atof` where the original calls
+        // it (`0x42277f`, `0x422796`, `0x4227ad`, `0x422880`, `0x422892`): a
+        // field that is there is read by its leading number (garbage, inf /
+        // nan, empty: 0), one that is not keeps the default. (An empty last
+        // field after a trailing comma now reads 0; the original's stream
+        // tokenizer reads the next line's token there, #204.)
+        let at = |i: usize, dflt: f64| f.get(i).map_or(dflt, |s| c_atof(s.as_bytes()));
         // The unit token is not trimmed (`0x477050` cuts at TAB, CR, LF or
         // a comma only).
         let raw_unit = f.get(4).copied().unwrap_or("").to_string();
@@ -1738,15 +1745,15 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
             raw_unit,
             unit_mult: norm.mult,
             per_second: norm.per_second,
-            a: g(5).parse().unwrap_or(1.0),
-            b: g(6).parse().unwrap_or(0.0),
-            skew: g(7).parse().unwrap_or(0.0),
+            a: at(5, 1.0),
+            b: at(6, 0.0),
+            skew: at(7, 0.0),
             primary_tok: g(10).to_string(),
             secondary_tok: g(11).to_string(),
             // An,ch_id,ph,ccbm,uu,a,b,skew,min,max,primary,secondary,PS
             // (fields 11–13 of the 1999 line; absent in 1991 → 1, 1, S).
-            primary: g(10).parse().unwrap_or(1.0),
-            secondary: g(11).parse().unwrap_or(1.0),
+            primary: at(10, 1.0),
+            secondary: at(11, 1.0),
             is_primary: g(12).eq_ignore_ascii_case("p"),
             samples: Vec::new(),
             own_freq: Vec::new(),
@@ -1773,7 +1780,8 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
 
     // line frequency
     let lf = next(&mut li)?;
-    let line_freq = lf.trim().parse::<f64>().unwrap_or(50.0);
+    // `0x45128b`: the token through `atof` (garbage reads 0).
+    let line_freq = c_atof(lf.as_bytes());
 
     // nrates then that many "samp,endsamp"
     let nrates = read_int(next(&mut li)?).max(1) as usize;
@@ -1781,7 +1789,8 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     for _ in 0..nrates {
         let l = next(&mut li)?;
         let f: Vec<&str> = l.split(',').collect();
-        let rate = f.first().and_then(|s| s.trim().parse().ok()).unwrap_or(0.0);
+        // `0x4512fd`.
+        let rate = f.first().map_or(0.0, |s| c_atof(s.as_bytes()));
         let end = read_int(f.get(1).copied().unwrap_or("")).max(0) as usize;
         rates.push(RateSection { rate, end_sample: end });
     }
@@ -1801,11 +1810,9 @@ fn parse_cfg(text: &str) -> Result<(Oscillogram, DataFormat), ComtradeError> {
     let ft = next(&mut li).map(|s| s.trim().to_string()).unwrap_or_default();
 
     // 1999+: timemult (optional)
-    let timemult = next(&mut li)
-        .ok()
-        .and_then(|s| s.trim().parse::<f64>().ok())
-        .filter(|v| *v > 0.0)
-        .unwrap_or(1.0);
+    // `0x451632` stores the token's `atof` as it is (1 only when no token is
+    // left, `0x451617`): garbage reads 0, a negative one stays negative.
+    let timemult = next(&mut li).map_or(1.0, |s| c_atof(s.as_bytes()));
     // 2013: `time_code,local_code` (only read for revision "2013").
     if rev_year == 2013 {
         (stamps.time_code, stamps.local_code) = split2(next(&mut li).ok());
@@ -2036,8 +2043,9 @@ fn parse_dat(rec: &mut Oscillogram, fmt: DataFormat, dat: &[u8], prog: Option<&P
             // (and must be 4) only then. A record that does not fit is a
             // null pointer in the original — it faults when fewer than three
             // records exist, or when 1, 2, 3 have no fourth after them
-            // (NOT DETERMINED what the user sees; ours takes the computed
-            // size, as before). Some(true) = numbered, Some(false) = not,
+            // (a clone run: the original dies with an access violation, #171;
+            // ours takes the computed size, an improvement recorded in
+            // docs/IMPROVEMENTS.md). Some(true) = numbered, Some(false) = not,
             // None = the fault zone.
             let numbered = |size: usize| -> Option<bool> {
                 let at = |k: usize| sample_no(k * size).filter(|_| (k + 1) * size <= dat.len());
@@ -2272,5 +2280,124 @@ mod atof_tests {
             assert!(v == 0.0 || s == b"1_0e", "{s:?}");
         }
         assert_eq!(c_atof(b"1.#INF"), 1.0);
+    }
+}
+
+#[cfg(test)]
+mod cfg_atof_tests {
+    /// A synthetic ASCII record whose numeric `.cfg` fields are the given
+    /// tokens (the analog line's a, b, skew, primary, secondary; the line
+    /// frequency; the rate; the time multiplier).
+    fn rec(f: [&str; 8]) -> super::Oscillogram {
+        let [a, b, skew, pri, sec, freq, rate, mult] = f;
+        let cfg = format!(
+            "Stn,Dev,1999\r\n1,1A,0D\r\n1,Ix,A,,A,{a},{b},{skew},-32767,32767,{pri},{sec},P\r\n{freq}\r\n1\r\n{rate},2\r\n\
+             01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\nASCII\r\n{mult}\r\n"
+        );
+        super::parse(&cfg, b"1,0,7\r\n2,800,9\r\n").unwrap()
+    }
+
+    #[test]
+    fn plain_numbers_read_as_before() {
+        let r = rec(["0.25", "-1.5", "3", "1234", "5.5", "60", "1250", "2"]);
+        let c = &r.analog[0];
+        assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.25, -1.5, 3.0, 1234.0, 5.5));
+        assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (60.0, 1250.0, 2.0));
+    }
+
+    #[test]
+    fn a_leading_number_is_read_whatever_follows() {
+        // atof stops at the first character that cannot continue the number.
+        let r = rec(["0.5x", " 2.5 V", "1.5.7", "12ab", "3,", "49.9Hz", "1250x", "4 s"]);
+        let c = &r.analog[0];
+        assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.5, 2.5, 1.5, 12.0, 3.0));
+        assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (49.9, 1250.0, 4.0));
+    }
+
+    #[test]
+    fn d_is_an_exponent_letter_in_every_field() {
+        let r = rec(["2.5d-1", "1D1", "3d0", "1.5d3", "2D1", "5d1", "1.25d3", "1d1"]);
+        let c = &r.analog[0];
+        assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.25, 10.0, 3.0, 1500.0, 20.0));
+        assert_eq!((r.line_freq, r.sample_rate, r.time_mult), (50.0, 1250.0, 10.0));
+    }
+
+    #[test]
+    fn garbage_inf_nan_and_empty_read_zero_not_the_default() {
+        for bad in ["junk", "inf", "-inf", "nan", "Infinity", "0x1F"] {
+            let r = rec([bad, bad, bad, bad, bad, bad, bad, bad]);
+            let c = &r.analog[0];
+            assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary), (0.0, 0.0, 0.0, 0.0, 0.0), "{bad:?}");
+            assert_eq!((r.line_freq, r.sample_rate), (0.0, 0.0), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn empty_comma_fields_read_zero() {
+        // (a wholly empty line is skipped by the tokenizer, as by ours.)
+        let r = rec(["", " ", "", "", "", "50", "", "1"]);
+        let c = &r.analog[0];
+        assert_eq!((c.a, c.b, c.skew, c.primary, c.secondary, r.sample_rate), (0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn the_time_multiplier_is_kept_as_read() {
+        // 0x451632 stores atof's result unfiltered; the default 1 is for no token.
+        assert_eq!(rec(["1", "0", "0", "1", "1", "50", "1250", "junk"]).time_mult, 0.0);
+        assert_eq!(rec(["1", "0", "0", "1", "1", "50", "1250", "-2"]).time_mult, -2.0);
+        let cfg = "Stn,Dev,1999\r\n1,1A,0D\r\n1,Ix,A,,A,1,0,0,-1,1,1,1,P\r\n50\r\n1\r\n1250,2\r\n\
+                   01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\nASCII\r\n";
+        assert_eq!(super::parse(cfg, b"1,0,7\r\n2,800,9\r\n").unwrap().time_mult, 1.0);
+    }
+
+    #[test]
+    fn short_analog_lines_keep_the_defaults() {
+        let cfg = "Stn,Dev,1991\r\n1,1A,0D\r\n1,Ix,A,,A,0.5,2,0\r\n50\r\n1\r\n1250,2\r\n\
+                   01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\nASCII\r\n";
+        let r = super::parse(cfg, b"1,0,7\r\n2,800,9\r\n").unwrap();
+        let c = &r.analog[0];
+        assert_eq!((c.a, c.b, c.primary, c.secondary), (0.5, 2.0, 1.0, 1.0));
+    }
+}
+
+#[cfg(test)]
+mod short_binary_tests {
+    /// A synthetic 2A + 1D record of `rows` rows in `fmt` (BINARY or binary32).
+    fn record(fmt: &str, rows: u32) -> super::Oscillogram {
+        let cfg = format!(
+            "Syn,Dev,1999\r\n3,2A,1D\r\n1,Ia,A,,A,0.0123,0,0,-32767,32767,1234,5,S\r\n2,Ib,B,,A,0.0456,0,0,-32767,32767,1234,5,S\r\n\
+             1,D1,,,0\r\n50\r\n1\r\n1250,{rows}\r\n01/02/2003,04:05:06.700000\r\n01/02/2003,04:05:06.900000\r\n{fmt}\r\n1\r\n"
+        );
+        let mut dat = Vec::new();
+        for i in 1..=rows {
+            dat.extend((i).to_le_bytes());
+            dat.extend(((i - 1) * 800).to_le_bytes());
+            for v in [100 * i as i32, -50 * i as i32] {
+                if fmt == "BINARY" {
+                    dat.extend((v as i16).to_le_bytes());
+                } else {
+                    dat.extend(v.to_le_bytes());
+                }
+            }
+            dat.extend(((i & 1) as u16).to_le_bytes());
+        }
+        super::parse(&cfg, &dat).unwrap()
+    }
+
+    /// The original (a clone run, #171) dies with an access violation on a
+    /// BINARY (`0x451be0`) or binary32 (`0x4521bd`) record of one, two or
+    /// three rows: its size check reads the first three sample numbers, and
+    /// the fourth after 1, 2, 3, unconditionally. Ours loads them at the
+    /// computed record size (an improvement, docs/IMPROVEMENTS.md).
+    #[test]
+    fn a_record_of_fewer_than_four_rows_loads_at_the_computed_size() {
+        for fmt in ["BINARY", "binary32"] {
+            for rows in 1..=3u32 {
+                let r = record(fmt, rows);
+                assert_eq!(r.time.len(), rows as usize, "{fmt} {rows}");
+                assert_eq!(r.analog[1].samples.len(), rows as usize, "{fmt} {rows}");
+                assert_eq!(r.digital[0].samples, (1..=rows).map(|i| i & 1 == 1).collect::<Vec<_>>(), "{fmt} {rows}");
+            }
+        }
     }
 }

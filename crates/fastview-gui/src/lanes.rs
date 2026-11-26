@@ -27,7 +27,7 @@ const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
 /// the view's window scroll bars, at the default system metric (96 dpi).
 #[cfg(test)]
-const HSCROLL_H: f32 = 17.0;
+const HSCROLL_H: f32 = 16.0;
 #[cfg(test)]
 const VSCROLL_W: f32 = 17.0;
 
@@ -39,8 +39,11 @@ pub(crate) fn scroll_w() -> f32 {
     crate::oscgeom::WinMetrics::at(crate::dpi::dpi()).scroll
 }
 
+/// The horizontal bar's band: the system metric less the row below it (clone, #175: the original's bar is 16 / 20 /
+/// 25 rows at 100 / 125 / 150 %, the metric 17 / 21 / 26, ours was one row thicker, so the vertical bar's floor was
+/// reached one frame pixel later). The planes' bars take the pixel the same way (`diagram_ui::scroll_w`).
 fn scroll_h() -> f32 {
-    scroll_w()
+    scroll_w() - 1.0
 }
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
@@ -360,7 +363,9 @@ impl OscView<'_> {
                 // A group's curves in member-set order (`0x4311e0`); the
                 // first draws the zero line.
                 let order = doc.group_paint_order(&r.members);
-                if lo <= 0.0 && 0.0 <= hi {
+                // (A lane of nothing but NaN, a 0 / 0 ratio, or on an infinite range draws none: clone, #170.)
+                let only_nan = order.iter().all(|m| matches!(m, Lane::Analog(i) if doc.shown_samples(*i).iter().all(|v| v.is_nan())));
+                if lo <= 0.0 && 0.0 <= hi && !only_nan && lo.is_finite() && hi.is_finite() {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
@@ -373,7 +378,11 @@ impl OscView<'_> {
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
-                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
+                            // read at `0x42955a` does not say why).
+                            if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
+                                draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
@@ -699,23 +708,35 @@ pub(crate) fn key_icons(doc: &crate::app::Doc, k: ChanKey) -> Vec<&'static str> 
 }
 
 /// The first sample after a page of the view's horizontal scroll bar
-/// (Shift+wheel, `0x45d990`). The bar runs 0…10000, its position read back
-/// from the first sample: a page is ⌊V·10000 / N⌋ (V the samples shown, N
-/// the record's), the first sample ⌊(N − V)·pos / 10000⌋, never past the
-/// last screen (VM: two notches from 0 land on the bar's second page, short of
-/// two visible widths).
-pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool) -> usize {
+/// (Shift+wheel, `0x45d990`) and the bar's position then. The bar runs
+/// 0…10000 (its range is 0…10000 + a page); a page is ⌊V·10000 / N⌋ (V the
+/// samples shown, N the record's), the first sample ⌊(N − V)·pos / 10000⌋,
+/// never past the last screen. The position is the bar's own
+/// (`GetScrollPos`): the scroll-bar update (`0x45d4a0`) sets it to
+/// ⌊first·10000 / (N − V)⌋ + 1, and runs from the zoom / lane-height handler
+/// (`0x45c4f0`, every Ctrl and Alt wheel step), WM_SIZE and the view's refresh
+/// after every UpdateAllViews (`0x45ac60`); the wheel sets the sum or
+/// difference it computed and leaves it (as the bar's own WM_HSCROLL handler does), so a notch back
+/// starts from where the notch before left the bar, not from a position read
+/// off the first sample again. `kept` is that position while none of those ran (ours drops it on
+/// a Ctrl / Alt wheel step, a change of the view's height or of what it shows, and on every command).
+/// The bar clamps a position to 0…10001.
+pub(crate) fn hscroll_page(first: usize, n: usize, visible: usize, up: bool, kept: Option<usize>) -> (usize, usize) {
     let range = n.saturating_sub(visible);
     if n == 0 || range == 0 {
-        return 0;
+        return (0, kept.unwrap_or(1));
     }
     let step = visible * 10000 / n;
-    let pos = first * 10000 / range;
-    if up {
-        range * pos.saturating_sub(step) / 10000
+    let pos = kept.unwrap_or_else(|| first * 10000 / range + 1);
+    let (new_pos, first) = if up {
+        let p = pos.saturating_sub(step);
+        (p, range * p / 10000)
     } else {
-        (range * (pos + step) / 10000).min(range)
-    }
+        let p = pos + step;
+        let f = range * p / 10000;
+        if f > range { (10000, range) } else { (p, f) }
+    };
+    (first, new_pos.min(10001))
 }
 
 /// The «*K» test (`0x462b22`–`0x462b8f`): the channel's shown and stored primary / secondary flags
@@ -846,8 +867,9 @@ pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, 
 /// whole record (a group: min of mins, max of maxes).
 pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    // An infinite extreme (a zero ratio, #170) is part of the range; a NaN is not.
     let mut take = |v: f64| {
-        if v.is_finite() {
+        if !v.is_nan() {
             lo = lo.min(v);
             hi = hi.max(v);
         }
@@ -913,7 +935,12 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
 }
 
 pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
-    let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
+    let [mut lo, mut hi, mn, mx] = scaled_minmax(doc, i);
+    // An infinite sample (a zero ratio field, #170) is part of the range the original draws in: the trace then sits
+    // on the baseline (`value_y`), not on the middle a range of no finite value gives.
+    if mn.is_infinite() || mx.is_infinite() {
+        (lo, hi) = (mn, mx);
+    }
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -982,11 +1009,17 @@ fn draw_series(
     if last < first {
         return;
     }
-    let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).collect();
+    // A NaN or infinite sample is a point on the baseline, drawn with its mark but no line (the original's polyline
+    // through such a point leaves nothing between them, clone, #170).
+    let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).collect();
+    let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
-    for r in g::aliased_runs(&pts) {
-        mesh.add_colored_rect(r, color);
+    for run in samples.split(|s| !s.1) {
+        let line: Vec<Pos2> = run.iter().map(|s| s.0).collect();
+        for r in g::aliased_runs(&line) {
+            mesh.add_colored_rect(r, color);
+        }
     }
     p.add(Shape::mesh(mesh));
     if f > 0.16 {
@@ -1234,6 +1267,8 @@ enum Act {
     Drag(VizDrag),
     EndDrag,
     SetFirst(usize),
+    /// The horizontal bar's position as the wheel left it: the first sample, the samples shown and the record's with it.
+    SetHPos(Option<(usize, usize, usize, usize, i64)>),
     SetVScroll(f32),
     PlaceComment(crate::comments::Comment, bool),
     CommentDrag(usize, crate::comments::Part),
@@ -1284,10 +1319,17 @@ impl ChanDrag {
 }
 
 /// What a drop target shows for a move drop. The original shows OLE's
-/// move-drop cursor (an arrow with a small box); the platform cursors have no
-/// such shape, the plain arrow is the nearest (it is also what winit gives
-/// "copy" on Windows).
+/// move-drop cursor (an arrow with a small box); egui's cursor set has
+/// no such shape, the plain arrow is the nearest here — on Windows the main
+/// window draws the original's one instead (`dragcursor`, #157).
 pub const MOVE_DROP_CURSOR: egui::CursorIcon = egui::CursorIcon::Default;
+
+/// Which OLE picture the last pass showed for a channel drag (move over a
+/// target, copy with Ctrl in the scroll band, none).
+#[cfg(test)]
+pub fn drop_picture(ctx: &egui::Context) -> crate::dragcursor::Drop {
+    ctx.data(|d| d.get_temp::<crate::dragcursor::Drop>(egui::Id::new("fv_drag_cursor").with("kind")).unwrap_or(crate::dragcursor::Drop::None))
+}
 
 impl App {
     /// The channel drag's cursor: what a target put in `drag_cursor` this
@@ -1303,10 +1345,21 @@ impl App {
             ctx.on_end_pass(
                 "fv_drag_cursor",
                 std::sync::Arc::new(move |ctx: &egui::Context| {
+                    let mut kind = crate::dragcursor::Drop::None;
                     if egui::DragAndDrop::has_payload_of_type::<ChanDrag>(ctx) {
                         let set = ctx.data(|d| d.get_temp::<Option<egui::CursorIcon>>(key.with("icon")).flatten());
                         ctx.set_cursor_icon(set.unwrap_or(egui::CursorIcon::NoDrop));
+                        kind = match set {
+                            Some(c) if c == MOVE_DROP_CURSOR => crate::dragcursor::Drop::Move,
+                            Some(egui::CursorIcon::Copy) => crate::dragcursor::Drop::Copy,
+                            _ => crate::dragcursor::Drop::None,
+                        };
                     }
+                    // The OLE pictures of move and copy where the platform
+                    // has them (#157, `dragcursor`); egui's cursor set has
+                    // none.
+                    ctx.data_mut(|d| d.insert_temp(key.with("kind"), kind));
+                    crate::dragcursor::show(kind);
                 }),
             );
         }
@@ -1389,12 +1442,12 @@ impl App {
         // neither is shown); each takes room from the other's test.
         // Without the H bar: if the record fits, that layout stands.
         let hbar_on = {
-            let vbar = content_h + band + 2.0 > full.height();
+            let vbar = content_h + band + 2.0 > full.height() && full.height() >= g::VBAR_FLOOR;
             let plot_w = full.width() - if vbar { scroll_w() } else { 0.0 };
             g::max_first(n, g::visible_count(plot_w, left_w, f)) > 0
         };
         let client = Rect::from_min_max(full.min, Pos2::new(full.right(), full.bottom() - if hbar_on { scroll_h() } else { 0.0 }));
-        let vbar = content_h + band + 2.0 > client.height();
+        let vbar = content_h + band + 2.0 > client.height() && client.height() >= g::VBAR_FLOOR;
         let plot_right = client.right() - if vbar { scroll_w() } else { 0.0 };
         self.view_rects = Some((full, Rect::from_min_max(client.min, Pos2::new(plot_right, client.bottom()))));
         let left = client.left() + left_w;
@@ -1891,6 +1944,9 @@ impl App {
         if resp.hovered() && !menu_busy {
             let (wheels, buttons) = ui.input(|i| (wheel_deltas(&i.events), i.pointer.any_down()));
             let (mut first_w, mut vscroll_w) = (first as i64, vscroll);
+            // The bar's position as the last Shift+wheel left it, while the view is as it left it.
+            let vh = full.height().round() as i64;
+            let mut hpos_w = doc.hscroll_pos.filter(|&(f, v, nn, _, h)| f == first && v == visible && nn == n && h == vh).map(|k| k.3);
             for delta in wheels {
                 let up = delta > 0.0;
                 if alt {
@@ -1898,8 +1954,14 @@ impl App {
                 } else if ctrl && !shift && !buttons {
                     actions.push(Act::Cmd(Command::ZoomX(up)));
                 } else if shift && !ctrl && !buttons {
-                    first_w = (hscroll_page(first_w.max(0) as usize, n, visible, up) as i64).clamp(0, hmax as i64);
+                    let (f, pos) = hscroll_page(first_w.max(0) as usize, n, visible, up, hpos_w);
+                    first_w = (f as i64).clamp(0, hmax as i64);
+                    hpos_w = Some(pos);
+                    // A clone run reads the bar's position from this trace (FV_SOFTLOG).
+                    #[cfg(windows)]
+                    crate::softrun::trace(&format!("hscroll up={up} first={first_w} pos={pos} visible={visible} n={n}"));
                     actions.push(Act::SetFirst(first_w as usize));
+                    actions.push(Act::SetHPos(Some((first_w as usize, visible, n, pos, vh))));
                 } else {
                     vscroll_w += delta;
                     actions.push(Act::SetVScroll(vscroll_w));
@@ -2021,6 +2083,7 @@ impl App {
                 Act::Drag(k) => self.vizir_drag = Some(k),
                 Act::EndDrag => self.vizir_drag = None,
                 Act::SetFirst(v) => d.first = v.min(hmax_c),
+                Act::SetHPos(k) => d.hscroll_pos = k,
                 Act::SetVScroll(v) => d.vscroll = v.clamp(vmin_c, 0.0),
                 Act::PlaceComment(c, drag) => {
                     // The tools are one-shot: a moment ends here, a level line or
@@ -2284,15 +2347,17 @@ impl App {
             .kind(egui::UiKind::Menu)
             .order(egui::Order::Foreground)
             .fixed_pos(crate::popmenu::menu_pos(ctx, menu_id, menu.pos))
-            .constrain(true)
+            .constrain_to(crate::popmenu::bounds(ctx, menu.pos))
             .show(ctx, |ui| {
                 crate::popmenu::mfc_frame(ui, |ui| {
-                    let mut pick = |c: MenuCmd| chosen = Some(c);
-                    match menu.kind {
-                        LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
-                        LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
-                        LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
-                    }
+                    crate::popmenu::cut_to_screen(ui, menu_id, menu.pos, |ui| {
+                        let mut pick = |c: MenuCmd| chosen = Some(c);
+                        match menu.kind {
+                            LaneMenuKind::Channels => channel_menu(ui, doc, can_paste, &mut pick),
+                            LaneMenuKind::TimeAxis => time_axis_menu(ui, time_unit, grid, band, &mut pick),
+                            LaneMenuKind::Comment(i) => comment_menu(ui, &doc.comments[i], i, &mut pick),
+                        }
+                    });
                 });
             });
         let rect = area.response.rect;
@@ -2954,13 +3019,50 @@ mod menu_tests {
         }
     }
 
+    /// #175: the running view shows its vertical scroll bar only while the view (after the horizontal bar) is at
+    /// least `VBAR_FLOOR` (74) px high, however tall the lanes are. Frames of every height around the floor are
+    /// drawn with lanes far taller than the view: the bar is there exactly from client height 74 up.
+    #[test]
+    fn the_running_view_shows_no_vertical_bar_under_the_floor() {
+        crate::dpi::set(96);
+        let mut seen = std::collections::BTreeMap::new();
+        for screen_h in 90..=130 {
+            let mut app = App::new();
+            app.dispatch(Command::Demo);
+            app.y_analog = 400.0;
+            let ctx = egui::Context::default();
+            for k in 0..3 {
+                let raw = egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(SCREEN.x, screen_h as f32))),
+                    time: Some(0.05 * (k + 1) as f64),
+                    ..Default::default()
+                };
+                let app = &mut app;
+                let _ = ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| app.lanes_ui(ui));
+                });
+            }
+            let (full, client) = app.view_rects.expect("the view was drawn");
+            let lanes: f32 = lane_layout(app.active_doc().unwrap(), app.y_analog).iter().map(|r| r.h).sum();
+            assert!(lanes > full.height() + 200.0, "the lanes are far taller than the view");
+            let bar = client.right() < full.right();
+            // The horizontal bar's band is the original's 16 rows (the demo record scrolls), so a frame's height
+            // ends in a client 74 high one frame pixel sooner than with the metric's 17.
+            assert_eq!(full.bottom() - client.bottom(), HSCROLL_H, "screen {screen_h}");
+            seen.insert(client.height().round() as i32, bar);
+            assert_eq!(bar, client.height() >= g::VBAR_FLOOR, "screen {screen_h}: client {} px high, bar {bar}", client.height());
+        }
+        assert_eq!(seen.get(&73), Some(&false), "a 73 px view was drawn without a bar: {seen:?}");
+        assert_eq!(seen.get(&74), Some(&true), "a 74 px view was drawn with a bar: {seen:?}");
+    }
+
     /// The view's bars are the system metric MulDiv(17, dpi, 96), also past 150 % where the first-zoom rule
     /// (`WinMetrics`) measured 30 / 34 px (a straight line through 17, 21, 26 gave 31 / 36).
     #[test]
     fn the_view_scroll_bars_follow_the_system_metric() {
         for (dpi, w) in [(96, 17.0), (120, 21.0), (144, 26.0), (168, 30.0), (192, 34.0)] {
             crate::dpi::set(dpi);
-            assert_eq!((scroll_w(), scroll_h()), (w, w), "{dpi}");
+            assert_eq!((scroll_w(), scroll_h()), (w, w - 1.0), "{dpi}");
         }
         crate::dpi::set(96);
     }
@@ -3387,10 +3489,10 @@ mod menu_tests {
         assert!(h.doc().vscroll < 0.0, "plain wheel scrolls the lanes");
         // The bar's page, by the rule on a synthetic record (9746 samples, 1523
         // shown: page 1562 of 10000, the bar spans 8223 samples).
-        assert_eq!(hscroll_page(0, 9746, 1523, false), 1284);
-        assert_eq!(hscroll_page(1284, 9746, 1523, false), 2568);
-        assert_eq!(hscroll_page(2568, 9746, 1523, true), 1282);
-        assert_eq!(hscroll_page(8000, 9746, 1523, false), 8223, "the last screen");
+        assert_eq!(hscroll_page(0, 9746, 1523, false, None), (1285, 1563));
+        assert_eq!(hscroll_page(1285, 9746, 1523, false, Some(1563)), (2569, 3125));
+        assert_eq!(hscroll_page(2569, 9746, 1523, true, Some(3125)), (1285, 1563), "one notch back lands on the first notch's sample");
+        assert_eq!(hscroll_page(8000, 9746, 1523, false, None).0, 8223, "the last screen");
         // Shift+wheel: a page sideways (zoomed in so there is room).
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
         h.wheel(at, 1.0, egui::Modifiers::CTRL);
@@ -3413,6 +3515,108 @@ mod menu_tests {
         let touch = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: Vec2::new(0.0, 30.0), modifiers: egui::Modifiers::NONE };
         h.frame_mod(vec![egui::Event::PointerMoved(at), touch], egui::Modifiers::NONE);
         assert_eq!(h.doc().vscroll, v + 30.0, "raw pixels");
+    }
+
+    /// Shift+wheel one notch back returns to the first notch's sample (clone,
+    /// #196: the original read the bar's own position, left where the notch before
+    /// set it, ⌊first·10000/(N−V)⌋ + 1 only after a zoom or other update; the
+    /// position read off the first sample again landed samples before it), and a
+    /// zoom in between makes the bar start again from the first sample.
+    #[test]
+    fn shift_wheel_one_notch_back_returns_to_the_first_notch() {
+        let mut h = Harness::new();
+        let at = Pos2::new(600.0, h.row(0).y);
+        h.button(at, egui::PointerButton::Primary);
+        for _ in 0..3 {
+            h.wheel(at, 1.0, egui::Modifiers::CTRL);
+        }
+        let start = h.doc().first;
+        h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+        let one = h.doc().first;
+        h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+        let two = h.doc().first;
+        assert!(start < one && one < two, "two notches right: {start} {one} {two}");
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        assert_eq!(h.doc().first, one, "one notch back lands on the first notch's sample");
+    }
+
+    /// The kept bar position is dropped where the original runs the bar update (`0x45d4a0`): an Alt
+    /// (lane height) or Ctrl wheel step, any command (the views' refresh) — the notch back then starts
+    /// from ⌊first·10000/(N−V)⌋ + 1 (review of #196).
+    #[test]
+    fn the_kept_bar_position_is_dropped_where_the_original_updates_the_bar() {
+        for how in ["alt", "ctrl", "command"] {
+            let mut h = Harness::new();
+            let at = Pos2::new(600.0, h.row(0).y);
+            h.button(at, egui::PointerButton::Primary);
+            for _ in 0..3 {
+                h.wheel(at, 1.0, egui::Modifiers::CTRL);
+            }
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            assert!(h.doc().hscroll_pos.is_some(), "kept by the wheel");
+            match how {
+                "alt" => h.wheel(at, 1.0, egui::Modifiers::ALT),
+                // A zoom step at the limit changes nothing, and still runs the update.
+                "ctrl" => {
+                    for _ in 0..12 {
+                        h.wheel(at, -1.0, egui::Modifiers::CTRL);
+                    }
+                    h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                    h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                }
+                _ => h.app.dispatch(Command::ToggleParamBar),
+            }
+            let (before, kept) = (h.doc().first, h.doc().hscroll_pos);
+            if how != "ctrl" {
+                assert!(kept.is_none(), "{how}: dropped");
+            }
+            h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+            // The notch back started from ⌊first·10000/(N−V)⌋ + 1 (the bar update's value), not from the kept one.
+            let (_, v, n, _, _) = h.doc().hscroll_pos.expect("set by the notch");
+            let derived = hscroll_page(before, n, v, true, None).0;
+            assert_eq!(h.doc().first, derived, "{how}: re-derived from the first sample");
+            if how != "ctrl" {
+                let kept_rule = hscroll_page(before, n, v, true, Some(10000)).0;
+                assert_ne!(derived, kept_rule, "{how}: (the kept rule would give another sample)");
+            }
+        }
+    }
+
+    /// Copy (and a dialog-only command) leaves the kept position; a change of the view's height alone
+    /// drops it (re-review of #196).
+    #[test]
+    fn the_kept_bar_position_survives_copy_and_drops_with_the_view_height() {
+        let setup = || {
+            let mut h = Harness::new();
+            let at = Pos2::new(600.0, h.row(0).y);
+            h.button(at, egui::PointerButton::Primary);
+            for _ in 0..3 {
+                h.wheel(at, 1.0, egui::Modifiers::CTRL);
+            }
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+            (h, at)
+        };
+        let (mut h, at) = setup();
+        let kept = h.doc().hscroll_pos.unwrap();
+        let one = kept.0;
+        h.app.dispatch(Command::Copy);
+        assert!(h.doc().hscroll_pos.is_some(), "Copy keeps it");
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        assert_ne!(h.doc().first, one);
+        // The notch lands on the kept rule's sample, not on the page rule's from the sample shown.
+        let (_, v, n, _, _) = kept;
+        assert_eq!(h.doc().first, hscroll_page(one, n, v, true, Some(kept.3)).0, "the notch back is from the kept position");
+        // The height: the same state with another view height in the memo's key.
+        let (mut h, at) = setup();
+        let k = h.doc().hscroll_pos.unwrap();
+        h.app.active_doc_mut().unwrap().hscroll_pos = Some((k.0, k.1, k.2, k.3, k.4 + 20));
+        h.wheel(at, 1.0, egui::Modifiers::SHIFT);
+        let (_, v, n, _, _) = h.doc().hscroll_pos.unwrap();
+        // The view as drawn is not the memo's height: re-derived from the first sample.
+        assert_eq!(h.doc().first, hscroll_page(k.0, n, v, true, None).0);
+        assert_ne!(hscroll_page(k.0, n, v, true, None).0, hscroll_page(k.0, n, v, true, Some(k.3)).0);
     }
 
     /// With the whole record in view there is no horizontal bar (seen on

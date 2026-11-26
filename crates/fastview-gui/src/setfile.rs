@@ -194,59 +194,6 @@ pub fn save_target(p: std::path::PathBuf, exts: &[&str], chosen: Option<usize>) 
     }
 }
 
-/// The save dialog (MFC's CFileDialog): on Windows comdlg32's, which
-/// reports the chosen file type (OPENFILENAME's nFilterIndex); elsewhere
-/// rfd's, which does not.
-fn save_dialog(filters: &[(&str, &str)], dir: Option<String>, name: &str) -> Option<(std::path::PathBuf, Option<usize>)> {
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::UI::Controls::Dialogs::{GetSaveFileNameW, OFN_EXPLORER, OFN_HIDEREADONLY, OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW};
-        let wide = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
-        let mut filter: Vec<u16> = Vec::new();
-        for (desc, ext) in filters {
-            filter.extend(wide(desc));
-            filter.push(0);
-            filter.extend(wide(&format!("*.{ext}")));
-            filter.push(0);
-        }
-        filter.push(0);
-        let mut file = vec![0u16; 1024];
-        let n = wide(name);
-        file[..n.len().min(1023)].copy_from_slice(&n[..n.len().min(1023)]);
-        let dir_w: Option<Vec<u16>> = dir.map(|d| wide(&d).into_iter().chain(Some(0)).collect());
-        // SAFETY: every pointer outlives the call; the file buffer's size is
-        // given.
-        unsafe {
-            let mut ofn: OPENFILENAMEW = std::mem::zeroed();
-            ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-            // Owned by the frame (`dialogs::file_dialog`).
-            ofn.hwndOwner = crate::dialogs::Owner::active().map_or(std::ptr::null_mut(), |o| o.hwnd());
-            ofn.lpstrFilter = filter.as_ptr();
-            ofn.nFilterIndex = 1;
-            ofn.lpstrFile = file.as_mut_ptr();
-            ofn.nMaxFile = file.len() as u32;
-            ofn.lpstrInitialDir = dir_w.as_ref().map_or(std::ptr::null(), |d| d.as_ptr());
-            ofn.Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
-            if GetSaveFileNameW(&mut ofn) == 0 {
-                return None;
-            }
-            let len = file.iter().position(|&c| c == 0).unwrap_or(file.len());
-            Some((std::path::PathBuf::from(String::from_utf16_lossy(&file[..len])), Some(ofn.nFilterIndex.max(1) as usize - 1)))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let mut dlg = crate::dialogs::file_dialog();
-        for (desc, ext) in filters {
-            dlg = dlg.add_filter(*desc, &[*ext]);
-        }
-        if let Some(d) = dir {
-            dlg = dlg.set_directory(d);
-        }
-        dlg.set_file_name(name).save_file().map(|p| (p, None))
-    }
-}
-
 impl Doc {
     /// The section key of file channel `i` (analog, then digital).
     pub(crate) fn file_key(&self, i: usize) -> String {
@@ -639,23 +586,36 @@ impl Doc {
             // A pasted lane is bit 14, not bit 13, and writes its own frequency
             // vector as `NetFreq` (a clone run, #28).
             let pending = c.formula == crate::merge_ui::PENDING;
+            // A pasted lane's section is named by its raw name's bytes read as
+            // 1251, as a file channel's (a clone run: «(вст.)» pasted in a record
+            // shown in 866 is saved as «(ўбв.)»).
+            let key = match (&c.name_raw, pending) {
+                (Some(r), true) => comtrade::decode_bytes(&r.bytes, Encoding::Cp1251),
+                _ => c.name.clone(),
+            };
             let (flags, known) = if pending {
                 ((self.computed_flags(j) & !flag::COMPUTED) | flag::PENDING | if c.adc_counts { flag::ADC } else { 0 }, (known_c & !flag::COMPUTED) | flag::PENDING | flag::ADC)
             } else {
                 (self.computed_flags(j), known_c)
             };
+            // A pasted analog lane is a copy of the channel's record: its
+            // ratios are the source's (a clone run).
+            let (primary_mul, secondary_mul) = match pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
+                Some(Ok(a)) => (a.primary, a.secondary),
+                _ => (1.0, 1.0),
+            };
             let rec = ChannelRec {
-                show_flags: Self::merged_flags(t, &c.name, flags, known) & mask,
-                primary_mul: 1.0,
-                secondary_mul: 1.0,
+                show_flags: Self::merged_flags(t, &key, flags, known) & mask,
+                primary_mul,
+                secondary_mul,
                 alias: String::new(),
                 // `ch+0x140` as it is (a VM run, L9.213): a place colour
                 // writes CustomColorSet 0, colorCustom 0.
                 custom_color: c.custom_color.then(|| colorref(c.color)),
             };
-            recset::write_channel(t.section_mut(&c.name), &rec);
+            recset::write_channel(t.section_mut(&key), &rec);
             if let Some(Ok(a)) = pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
-                recset::write_net_freq(t.section_mut(&c.name), &a.own_freq);
+                recset::write_net_freq(t.section_mut(&key), &a.own_freq);
             }
         }
         let o = t.section_mut("Oscillogram");
@@ -903,7 +863,14 @@ impl App {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
             let batch: Vec<(String, String)> = calc;
-            self.append_computed(&batch);
+            // A failing batch is its box; the rows stay in the definition list like any kept row, so the next
+            // command that runs the batch shows the box again (clone, #174).
+            if self.append_computed(&batch).is_none() {
+                if let Some(d) = self.docs.get_mut(di) {
+                    let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
+                    d.loose_defs.extend(fresh);
+                }
+            }
             self.active = active;
             self.status = status;
         }
@@ -955,14 +922,14 @@ impl App {
     /// without the comments, mark modified, refresh.
     pub fn load_settings_command(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("Настройки осциллограммы FastView (*.set)", &["set"])
-            .add_filter("Все файлы (*.*)", &["*"])
-            .pick_file()
-        else {
-            return;
-        };
-        self.load_settings_from(ai, &path);
+        let serial = self.docs[ai].serial;
+        let dlg = crate::dialogs::file_dialog().add_filter("Настройки осциллограммы FastView (*.set)", &["set"]).add_filter("Все файлы (*.*)", &["*"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), move |app, _, picked| {
+            // The document the command was given for, if it is still open.
+            if let (Some((path, _)), Some(ai)) = (picked, app.doc_by_serial(serial)) {
+                app.load_settings_from(ai, &path);
+            }
+        });
     }
 
     pub fn load_settings_from(&mut self, di: usize, path: &std::path::Path) {
@@ -1030,23 +997,59 @@ impl App {
         Ok(())
     }
 
-    /// Сохранить (57603, `DoFileSave`): onto the document's own file when it
-    /// has one the save dispatcher knows, else Save As.
+    /// The file Сохранить writes onto: the document's own when it has one the
+    /// save dispatcher knows.
+    pub fn save_path_of(&self, ai: usize) -> Option<std::path::PathBuf> {
+        self.docs.get(ai)?.path.clone().filter(|p| save_kind(p).is_some())
+    }
+
+    /// Сохранить (57603, `DoFileSave`) onto the document's own file; false
+    /// when it has none (that asks for one: [`App::save_doc_then`]).
     pub fn save_active(&mut self) -> bool {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return false };
-        match self.docs[ai].path.clone().filter(|p| save_kind(p).is_some()) {
+        match self.save_path_of(ai) {
             Some(p) => self.report_save(ai, &p),
-            None => self.save_active_as(),
+            None => {
+                self.ask_save_as(ai, |_, _, _| {});
+                false
+            }
+        }
+    }
+
+    /// Сохранить for document `ai` onto its own file (it has one: [`App::save_path_of`]).
+    pub(crate) fn save_active_at(&mut self, ai: usize) -> bool {
+        match self.save_path_of(ai) {
+            Some(p) => self.report_save(ai, &p),
+            None => false,
+        }
+    }
+
+    /// Сохранить for document `ai`: onto its own file, else Save As; `then`
+    /// runs with whether it was saved — at once, or once the file dialog
+    /// (outside the frame, [`crate::sysdlg`]) has answered.
+    pub fn save_doc_then(&mut self, ctx: &egui::Context, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
+        match self.save_path_of(ai) {
+            Some(p) => {
+                let ok = self.report_save(ai, &p);
+                then(self, ctx, ok);
+            }
+            None => self.ask_save_as(ai, then),
         }
     }
 
     /// Сохранить как (57604): the file dialog, then `OnSaveDocument`.
-    pub fn save_active_as(&mut self) -> bool {
+    pub fn save_active_as(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else {
             self.status = "Нет осциллограммы для сохранения.".into();
-            return false;
+            return;
         };
-        let d = &self.docs[ai];
+        self.ask_save_as(ai, |_, _, _| {});
+    }
+
+    /// The Save As dialog of document `ai`; `then` gets whether the record was saved.
+    pub fn ask_save_as(&mut self, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
+        let Some(d) = self.docs.get(ai) else { return };
+        let serial = d.serial;
         let filters = save_filters(d.path.as_deref());
         // Proposed: the record's folder and its title without extension.
         // `0x447e30` lowers the name in place (three MakeLower calls) before
@@ -1056,20 +1059,25 @@ impl App {
         let lower = |s: String| if cfg!(windows) { s.to_lowercase() } else { s };
         let stem = lower(d.path.as_ref().and_then(|p| p.file_stem()).map_or_else(|| d.name.clone(), |s| s.to_string_lossy().into_owned()));
         let dir = d.path.as_ref().and_then(|p| p.parent()).filter(|p| !p.as_os_str().is_empty()).map(|p| lower(p.to_string_lossy().into_owned()));
-        let Some((path, chosen)) = save_dialog(&filters, dir, &stem) else { return false };
-        let path = save_target(path, &filters.map(|f| f.1), chosen);
-        // The proposed name taken as it is: the original keeps the text it
-        // proposed (lowercase), where a shell dialog may hand back an
-        // existing file's own case — the files written anew (the `.set`)
-        // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
-        let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
-            Some(s) if cfg!(windows) && s != stem && s.to_lowercase() == stem => {
-                let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-                path.with_file_name(format!("{stem}.{ext}"))
-            }
-            _ => path,
-        };
-        self.report_save(ai, &path)
+        let job = crate::sysdlg::Job::SaveTyped { filters: filters.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(), dir, name: stem.clone(), owner: crate::sysdlg::owner() };
+        self.pick(job, move |app, ctx, picked| {
+            let Some((path, chosen)) = picked else { return then(app, ctx, false) };
+            let Some(ai) = app.doc_by_serial(serial) else { return then(app, ctx, false) };
+            let path = save_target(path, &filters.map(|f| f.1), chosen);
+            // The proposed name taken as it is: the original keeps the text it
+            // proposed (lowercase), where a shell dialog may hand back an
+            // existing file's own case — the files written anew (the `.set`)
+            // come out lowercase (VM: «win_1999.set» beside «WIN_1999.cfg»).
+            let path = match path.file_stem().map(|s| s.to_string_lossy().into_owned()) {
+                Some(s) if cfg!(windows) && s != stem && s.to_lowercase() == stem => {
+                    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+                    path.with_file_name(format!("{stem}.{ext}"))
+                }
+                _ => path,
+            };
+            let ok = app.report_save(ai, &path);
+            then(app, ctx, ok);
+        });
     }
 
     fn report_save(&mut self, di: usize, path: &std::path::Path) -> bool {
@@ -1270,25 +1278,23 @@ impl App {
     /// Отмена.
     pub fn answer_save_prompt(&mut self, ctx: &egui::Context, answer: Option<bool>) {
         let Some(p) = self.setfile.prompt.take() else { return };
-        let go_on = match answer {
-            None => false,
-            Some(false) => true,
-            Some(true) => {
-                let prev = self.active;
-                self.active = Some(p.doc);
-                let ok = self.save_active();
-                self.active = prev;
-                ok
+        // By serial: documents may close while a Save As dialog is up (an index would outlive it).
+        let serial = self.docs.get(p.doc).map(|d| d.serial);
+        // The question's document is saved first (a Save As waits for its
+        // dialog, outside the frame); the close or the exit goes on after.
+        let go_on = move |app: &mut App, ctx: &egui::Context, go_on: bool| {
+            if !go_on {
+                app.setfile.exit_queue = None;
+            } else if p.exit {
+                app.next_exit_prompt(ctx);
+            } else if let Some(i) = serial.and_then(|s| app.doc_by_serial(s)) {
+                app.close_doc_now(i);
             }
         };
-        if !go_on {
-            self.setfile.exit_queue = None;
-            return;
-        }
-        if p.exit {
-            self.next_exit_prompt(ctx);
-        } else {
-            self.close_doc_now(p.doc);
+        match answer {
+            None => go_on(self, ctx, false),
+            Some(false) => go_on(self, ctx, true),
+            Some(true) => self.save_doc_then(ctx, p.doc, go_on),
         }
     }
 
@@ -1621,6 +1627,42 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A formula channel cannot be moved in front of the file channels (#192):
+    /// the original adds it at the end of the analog block (`0x42e810`,
+    /// `0x42e940`), its copy leaves formula channels out, and only a pasted
+    /// lane lands among the file channels. With a formula channel present a
+    /// lane pasted before the third file channel numbers them 1, 2, 4, …, as
+    /// the original's `.cfg` does (a clone run, a synthetic record: the same
+    /// bytes, and the same in front of the first).
+    #[test]
+    fn a_formula_channel_and_a_lane_among_the_file_channels_number_by_place() {
+        let dir = temp_dir("formulanum");
+        let cfg = write_record(&dir);
+        let ids: Vec<String> = fvb_core::comtrade::parse(DEMO_CFG, DEMO_DAT).unwrap().analog.iter().map(|a| a.id.clone()).collect();
+        let xml = format!("<settings><category name=\"CalculatedChannels\" Channel0=\"Xs,{}+{}\"/></settings>", ids[0], ids[1]);
+        std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        let n = app.docs[di].osc.analog.len();
+        assert!(n >= 3 && app.docs[di].computed.len() == 1, "{n} channels and a formula channel");
+        // Its copy takes nothing: the formula channel is not a lane to move.
+        app.docs[di].selection = [ChanKey::Computed(0)].into();
+        assert!(!app.active_doc().unwrap().can_copy(), "the original's «Копировать» is disabled for it");
+        app.copy_channels_for_merge();
+        assert_eq!(app.status, "Не выбраны каналы для копирования.");
+        assert_eq!(app.docs[di].file_record().1.analog, Vec::<usize>::new(), "no lane, the plain numbering");
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(2)].into();
+        app.paste_channels_for_merge();
+        let (rec, no) = app.docs[di].file_record();
+        assert_eq!(rec.analog.len(), n, "neither the lane nor the formula channel is a record of the file");
+        let want: Vec<usize> = (0..n).map(|i| if i < 2 { i + 1 } else { i + 2 }).collect();
+        assert_eq!(no.analog, want);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A pasted lane's `.set` section (a clone run): ShowFlags with bit 14 (not
     /// bit 13), its own frequency vector as `NetFreq`; the paste's summary
     /// comment stores `Comments/Codepage` 1 (#28).
@@ -1645,6 +1687,60 @@ mod tests {
         assert_eq!((flags >> 13) & 3, 2, "bit 14 only: {flags}");
         assert_eq!(sec.get_str("NetFreq", "").split(',').count(), d.osc.sample_count());
         assert_eq!(t.section("Comments").unwrap().get_str("Codepage", ""), "1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section keeps the source channel's ratios and the
+    /// summary comment names both records by their file names (a clone run, a
+    /// synthetic 1234:5 channel; #192's comparison).
+    #[test]
+    fn a_pending_lane_keeps_the_ratios_and_the_summary_names_the_file() {
+        let dir = temp_dir("pendmul");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].osc.analog[1].primary = 1234.0;
+        app.docs[di].osc.analog[1].secondary = 5.0;
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let sec = t.section(&d.computed[j].name).expect("the lane's section");
+        assert_eq!((sec.get_str("PrimaryMul", ""), sec.get_str("SecondaryMul", "")), ("1234.000000".to_string(), "5.000000".to_string()));
+        let hdr = d.hdr.clone().unwrap();
+        assert_eq!(hdr.matches("Имя осциллограммы: rec.cfg\r\n").count(), 2, "{hdr}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pasted lane's `.set` section is named by its raw name's bytes read as
+    /// 1251, as a file channel's is: in a record shown in 866 «(вст.)» is its
+    /// 866 bytes, so the section reads «(ўбв.)» (a clone run, a synthetic
+    /// record without Cyrillic letters, whose reader's guess is OEM).
+    #[test]
+    fn a_pending_lane_section_is_named_by_its_raw_bytes() {
+        let dir = temp_dir("pendname");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].codepage = Encoding::Cp866;
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &app.docs[di];
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let shown = &d.computed[j].name;
+        assert!(shown.ends_with("(вст.)"), "{shown}");
+        assert!(t.section(shown).is_none(), "not under the shown name");
+        let raw = comtrade::decode_bytes(&d.computed[j].name_raw.as_ref().unwrap().bytes, Encoding::Cp1251);
+        assert!(raw.ends_with("(ўбв.)"), "{raw}");
+        assert!(t.section(&raw).is_some(), "under the bytes read as 1251");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -2018,6 +2114,28 @@ mod tests {
         let bi = open(&mut back, &cfg);
         let names: Vec<_> = back.docs[bi].computed.iter().map(|c| (c.name.as_str(), c.formula.as_str())).collect();
         assert_eq!(names, [("Y", "Ub*2"), ("Z1", "Uc*2"), ("X", "Ua*2")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #174 (clone): a `.set` whose `CalculatedChannels` holds a definition that cannot be evaluated shows its box
+    /// on load, and the definition stays in the list: the next command that runs the batch (a flag command on a
+    /// lane) shows the box again.
+    #[test]
+    fn a_failing_definition_loaded_from_a_set_file_stays_and_boxes_again() {
+        let dir = temp_dir("failload");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        app.dlg.alerts.clear();
+        app.docs[di].set.tree.section_mut("CalculatedChannels").set_str("Channel0", "Q1,NoSuchChannel+1");
+        app.apply_record_settings(di, true);
+        assert_eq!(app.dlg.alerts.len(), 1, "the box on load");
+        assert_eq!(app.docs[di].loose_defs, [("Q1".to_string(), "NoSuchChannel+1".to_string())]);
+        app.dlg.alerts.clear();
+        app.after_flag_command(crate::chansel::ChanFlag::Invert);
+        assert_eq!(app.dlg.alerts.len(), 1, "the box again after a flag command");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

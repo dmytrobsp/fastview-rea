@@ -708,6 +708,8 @@ fn symmetric_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[Strin
     pg.check(ui, (204, 54, 102, 10), "Рассчитать Ib по Ia и Iс *", &mut f.calc_ib, !i_off, false);
     pg.label(ui, (27, 102, 162, 8), "* - только в сетях с изолированной нейтралью", false, !i_off);
     pg.group(ui, (6, 126, 307, 108), "Напряжения");
+    // The second «Отключить» has no WS_GROUP either: the two are one span (536 template, as 537's).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 12);
     pg.check(ui, (200, 131, 112, 8), "Отключить", &mut f.voltages_off, !i_off, true);
     crate::dialogs::tab_index(ui, 4);
@@ -1016,6 +1018,8 @@ fn differential_page(ui: &mut egui::Ui, pg: &Pg, f: &mut QuickForms, names: &[St
     pg.label(ui, (149, 363, 24, 8), "Kторм:", true, kt);
     let kts = ["1".to_string(), "0.5".to_string()];
     let kcur = kts.iter().position(|k| *k == f.k_torm).unwrap_or(0);
+    // The «Kторм» combo box has no WS_GROUP: it ends the span of the three radios before it (539 template).
+    crate::dialogs::group_continue(ui);
     crate::dialogs::tab_index(ui, 23);
     if let Some(k) = pg.choice(ui, (185, 362, 42, 30), "q_dif_kt", &kts, kcur, kt) {
         f.k_torm = kts[k].clone();
@@ -1471,6 +1475,18 @@ mod tests {
         let all = a.channels.iter().map(|(_, t)| t.as_str()).collect::<Vec<_>>().join("\n");
         assert!(all.contains("CoeffPriv") && all.contains('3') && all.contains("11"), "{all}");
         assert!(!all.contains("GrsPosl"), "{all}");
+    }
+
+    /// The pages' per-combo test `0x48b8b0` reads the combo's text and compares it with string 191 («Канал
+    /// отсутствует») exactly (case-sensitive `CString::Compare`): only that text is unchosen; «Не учитывать» and any
+    /// other channel name count as chosen. (An empty text cannot occur: a loaded record has an analog channel,
+    /// `0x450bc1`, so no combo is empty; ours treats it as unchosen all the same.) #193
+    #[test]
+    fn only_the_no_channel_text_is_unchosen() {
+        assert!(!chosen(fvb_core::addformula::NO_CHANNEL));
+        assert!(chosen("канал отсутствует"), "the compare is case-sensitive");
+        assert!(chosen(fvb_core::addformula::NOT_COUNTED));
+        assert!(chosen("Ia"));
     }
 
     /// «Рассчитать» greying of 536 / 538 (`0x48d5a0`, `0x488550`).

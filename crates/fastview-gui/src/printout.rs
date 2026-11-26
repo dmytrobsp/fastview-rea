@@ -83,6 +83,14 @@ impl PageSetup {
         }
     }
 
+    /// This setup with the orientation the driver's «Свойства...» chose
+    /// (`Some(portrait)`), which the job and the preview follow instead of
+    /// the page setup's (the original's preview shows a landscape sheet after
+    /// Landscape there, whatever the page setup holds; VM, #187).
+    pub fn with_driver_orientation(self, chosen: Option<bool>) -> PageSetup {
+        PageSetup { portrait: chosen.unwrap_or(self.portrait), ..self }
+    }
+
     /// A portrait paper size turned by the orientation.
     pub fn oriented(&self, (w, h): (f32, f32)) -> (f32, f32) {
         if self.portrait {
@@ -501,9 +509,34 @@ impl App {
                 let page = (!preview).then(|| rdev.min.to_vec2() * to_printer / s);
                 let size = Vec2::new(rw as f32, rh as f32) * to_printer / s;
                 let kd = s / to_printer;
-                // GDI's pens: none under a device pixel, unfeathered.
-                let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
-                canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                // The vector and frequency pages paint into the page DC with no
+                // clip (nothing in `0x441fe0`, `0x490360` or `0x46f5a0` sets
+                // one): on a real print what runs past R — the vector legend
+                // that does not fit (it starts at the page's own 6s, `0x490d4b`)
+                // or the frequency separators — lands on the sheet (clone,
+                // #191). So the page image is the whole sheet with R at `o`.
+                let sheet = page.filter(|_| matches!(pane, Pane::Vector | Pane::Frequency));
+                if let Some(o) = sheet {
+                    let whole = Vec2::new(dev.w as f32, dev.h as f32) * to_printer / s;
+                    let r = Rect::from_min_size(Pos2::new(o.x, o.y), size);
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_print_rect(Some(r), || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, whole, kd)))));
+                    // The diagram is painted before the header and footer: the
+                    // decor stays over it outside R, R is the diagram's.
+                    let (x0, y0) = (rdev.min.x as usize, rdev.min.y as usize);
+                    for y in 0..canvas.h.min(img.h) {
+                        for x in 0..canvas.w.min(img.w) {
+                            let inside = x >= x0 && x < x0 + rw && y >= y0 && y < y0 + rh;
+                            if inside || canvas.px[y * canvas.w + x] == [255, 255, 255] {
+                                canvas.px[y * canvas.w + x] = img.px[y * img.w + x];
+                            }
+                        }
+                    }
+                } else {
+                    // GDI's pens: none under a device pixel, unfeathered.
+                    let img = crate::diagram_ui::with_print_scale(Some(s), page, || crate::diagram_ui::with_pixel(1.0 / kd, || raster::crisp(|| self.render_diagram(fonts, job.di, pane, size, kd))));
+                    canvas.blit(&img, rdev.min.x as i64, rdev.min.y as i64);
+                }
                 // At s = 1 the circle / differential painter's screen branch
                 // also paints its 5 px splitter strip after RestoreDC: a
                 // PatBlt at the DC's (0, 0), as wide as the live window
@@ -619,6 +652,33 @@ impl App {
         }
     }
 
+    /// A press on the ribbon, the parameters bar or the status bar takes no
+    /// focus in the original (clone, #186): a frame control that held the
+    /// keyboard (the merge bar's combo or buttons, the ▾) keeps it, so its keys
+    /// still reach it; egui drops the focus of a widget at any press elsewhere.
+    pub fn keep_key_focus(&mut self, ctx: &egui::Context) {
+        // The foreground layers (menus, popups) now and last frame: one that appeared while a frame control
+        // holds the keyboard is a menu the press opened, which has the keys.
+        let now: Vec<egui::LayerId> = ctx.memory(|m| m.areas().visible_layer_ids().into_iter().filter(|l| l.order == egui::Order::Foreground && !crate::views::is_floating_pane_layer(*l) && crate::views::slid_pane_unit(*l).is_none() && !crate::views::is_pane_chrome_layer(*l)).collect());
+        // (A pane that slides out on hover is a foreground layer too, without a press: not a menu.)
+        let appeared = now.iter().any(|l| !self.fg_prev.contains(l));
+        self.fg_prev = now;
+        let Some(owner) = self.key_owner else { return };
+        // Called after the dialogs of this frame are drawn. A modal dialog takes the keyboard (DoModal;
+        // the view gets it back on close): the frame control behind it lets go of it, whatever opened the
+        // dialog.
+        // The frame control's own list (the merge combos', the ▾'s) is not a menu of the ribbon's.
+        let own_list = self.doc_list_open || ["merge_method", "merge_ch1", "merge_ch2"].iter().any(|n| ctx.data(|d| d.get_temp::<bool>(egui::Id::new(*n).with("open"))).unwrap_or(false));
+        if self.modal_up || crate::dialogs::window_up(ctx) || (appeared && !own_list) {
+            ctx.memory_mut(|m| m.surrender_focus(owner));
+            return;
+        }
+        let Some(p) = ctx.input(|i| if i.pointer.any_pressed() { crate::lanes::press_pos(i) } else { None }) else { return };
+        if self.keep_focus_rects.iter().any(|r| r.contains(p)) && ctx.memory(|m| m.focused()) != Some(owner) {
+            ctx.memory_mut(|m| m.request_focus(owner));
+        }
+    }
+
     /// The group holding the keyboard focus, if a pane's window or one in
     /// it has it.
     pub fn focus_group(&self) -> Option<crate::docking::Unit> {
@@ -723,6 +783,178 @@ mod tests {
         }
     }
 
+    /// The Demo record's first channel alone on the frequency page, its harmonics tiny but not zero (1e-9 of
+    /// the fundamental's 123: bars with no height, none exactly 0), rendered at `dpi`; the canvas and the
+    /// channel's colour and the scale.
+    fn tiny_harmonics_page(dpi: f32) -> (Canvas, [u8; 3], usize) {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            let n = d.osc.samples_per_cycle().max(2);
+            let len = d.osc.analog[0].samples.len();
+            d.osc.analog[0].samples = (0..len).map(|i| { let a = std::f64::consts::TAU * i as f64 / n as f64; 123.0 * a.sin() + 1e-9 * (3.0 * a).sin() + 2e-9 * (5.0 * a).cos() }).collect();
+            d.recompute(false);
+            for c in &mut d.chans {
+                c.on_freq = false;
+            }
+            d.chans[0].on_freq = true;
+            d.main_cursor = len - 1;
+        }
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, true, false, false, false];
+        let setup = PageSetup::default();
+        let job = app.print_job(0, Device::sheet(&setup, dpi), setup);
+        let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
+        (c, [colour.r(), colour.g(), colour.b()], diagram_scale(job.attrib_dpi) as usize)
+    }
+
+    /// #158 (clone): a frequency bar with no height (a bin of 1e-11 of the largest) prints as one line of
+    /// the pen's width centred on its edge (the original: GDI's `Rectangle` at `0x470488`), not as the
+    /// outline's edges inside the box (all of it above the baseline).
+    #[test]
+    fn a_frequency_bar_with_no_height_prints_one_pen_wide_line() {
+        let (c, want, s) = tiny_harmonics_page(600.0);
+        assert_eq!(s, 6);
+        // The longest vertical run of the channel's own colour in each column.
+        let mut runs = vec![0usize; c.w];
+        for (x, run) in runs.iter_mut().enumerate() {
+            let mut cur = 0;
+            for y in 0..c.h {
+                cur = if c.get(x, y) == want { cur + 1 } else { 0 };
+                *run = (*run).max(cur);
+            }
+        }
+        // The tall bar's columns (its sides are runs of many rows) are left out.
+        let tall: Vec<usize> = (0..c.w).filter(|&x| runs[x] > 4 * s).collect();
+        let (lo, hi) = (*tall.first().expect("the fundamental's bar"), *tall.last().unwrap());
+        let thin: Vec<usize> = (0..c.w).filter(|&x| x < lo || x > hi).map(|x| runs[x]).filter(|&r| r > 0).collect();
+        assert!(!thin.is_empty(), "the flat bars are drawn");
+        // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
+        // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
+        assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
+    /// #158 on the screen (s = 1: a printer under 192 dpi, the 1-pixel pen): a bar with no height draws
+    /// nothing in the original; the channel's colour is only in the tall bar and the legend's swatch.
+    #[test]
+    fn a_frequency_bar_with_no_height_draws_nothing_at_scale_one() {
+        let (c, want, s) = tiny_harmonics_page(150.0);
+        assert_eq!(s, 1);
+        // The channel's colour in 8-connected blobs, as bounding boxes (x0, y0, x1, y1).
+        let mut seen = vec![false; c.w * c.h];
+        let mut blobs = Vec::new();
+        for y0 in 0..c.h {
+            for x0 in 0..c.w {
+                if seen[y0 * c.w + x0] || c.get(x0, y0) != want {
+                    continue;
+                }
+                let (mut bb, mut stack) = ((x0, y0, x0, y0), vec![(x0, y0)]);
+                seen[y0 * c.w + x0] = true;
+                while let Some((x, y)) = stack.pop() {
+                    bb = (bb.0.min(x), bb.1.min(y), bb.2.max(x), bb.3.max(y));
+                    for (nx, ny) in (y.saturating_sub(1)..=(y + 1).min(c.h - 1)).flat_map(|ny| (x.saturating_sub(1)..=(x + 1).min(c.w - 1)).map(move |nx| (nx, ny))) {
+                        if !seen[ny * c.w + nx] && c.get(nx, ny) == want {
+                            seen[ny * c.w + nx] = true;
+                            stack.push((nx, ny));
+                        }
+                    }
+                }
+                blobs.push(bb);
+            }
+        }
+        // The fundamental's bar is the tall blob; whatever else carries the colour is the legend's swatch, one
+        // small box. A flat bar's tick would be a blob of its own beside the bar, far from the swatch.
+        let tall = *blobs.iter().max_by_key(|b| b.3 - b.1).expect("the fundamental's bar");
+        assert!(tall.3 - tall.1 > 100, "the fundamental's bar is tall: {tall:?}");
+        let rest: Vec<_> = blobs.iter().filter(|&&b| b != tall).collect();
+        let (x0, y0) = (rest.iter().map(|b| b.0).min().unwrap_or(0), rest.iter().map(|b| b.1).min().unwrap_or(0));
+        let (x1, y1) = (rest.iter().map(|b| b.2).max().unwrap_or(0), rest.iter().map(|b| b.3).max().unwrap_or(0));
+        assert!(!rest.is_empty() && x1 - x0 <= 12 && y1 - y0 <= 12, "the channel's colour outside the tall bar is the swatch alone: {blobs:?}");
+    }
+
+    /// #191 (clone): on a real print a vector legend that does not fit starts at the page's `6·s`, left of R
+    /// (the painter gets R in page coordinates: `0x490d4b`); in the preview, whose bitmap starts at R, and
+    /// when it fits (centred in R) the start is R's.
+    #[test]
+    fn the_vector_legend_that_does_not_fit_starts_at_the_pages_origin_in_a_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        let colour = app.docs[0].chans[0].color;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The first swatch's column: the leftmost pixel of the first channel's colour in the legend's rows
+        // (below the circle, above the footer).
+        let first = |c: &Canvas, preview: bool| {
+            let want = [colour.r(), colour.g(), colour.b()];
+            let rows = (r.max.y as usize - 40 * s)..(r.max.y as usize);
+            let from = if preview { r.min.x as usize } else { 0 };
+            let at = (from..c.w).find(|&x| rows.clone().any(|y| c.get(x, y) == want));
+            at.expect("the legend's first swatch")
+        };
+        let real = app.render_page(&fonts, &job, 0, false);
+        let x = first(&real, false);
+        assert!(x < r.min.x as usize && (x as i64 - 6 * s as i64).abs() <= 2, "a print starts at the page's 6·s = {}: {x} (R at {})", 6 * s, r.min.x);
+        let preview = app.render_page(&fonts, &job, 0, true);
+        let x = first(&preview, true);
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= 2, "the preview starts at R + 6·s: {x}");
+    }
+
+    /// #191 (clone): the vector page's painter sets no clip, so on a real print the legend that does not fit
+    /// runs past R onto the sheet; the preview's bitmap is R, which cuts it. The table's start, when it does not
+    /// fit, is R's left + m on paper too (`0x4908d1`–`0x490a1b` add the rect's left).
+    #[test]
+    fn nothing_clips_the_vector_page_to_r_on_a_real_print() {
+        let mut app = App::new();
+        app.dispatch(Command::Demo);
+        {
+            let d = &mut app.docs[0];
+            for (i, c) in d.osc.analog.iter_mut().enumerate() {
+                c.id = format!("Channel number {i} of a long feeder name that cannot fit a page");
+            }
+            for c in &mut d.chans {
+                c.on_vector = true;
+            }
+        }
+        app.vec_show_values = false;
+        app.docs[0].print_ticks = [false, false, true, false, false];
+        let setup = PageSetup::default();
+        let dev = Device::sheet(&setup, 300.0);
+        let job = app.print_job(0, dev, setup);
+        let s = diagram_scale(job.attrib_dpi) as usize;
+        let r = dev.margin_rect(&setup);
+        let fonts = egui::FontDefinitions::default();
+        // The legend's rows: just under the circle, above the footer; right of R's right edge.
+        let past = |c: &Canvas| {
+            let (x0, y0, y1) = (r.max.x as usize + 2, r.max.y as usize - 40 * s, r.max.y as usize);
+            (y0..y1).flat_map(|y| (x0..c.w).map(move |x| (x, y))).filter(|&(x, y)| c.get(x, y) != [255, 255, 255]).count()
+        };
+        assert!(past(&app.render_page(&fonts, &job, 0, false)) > 0, "a real print lets the legend run onto the sheet");
+        assert_eq!(past(&app.render_page(&fonts, &job, 0, true)), 0, "the preview's bitmap is R");
+        // The table (values shown), wider than R: its left border is R's left + 6s.
+        app.vec_show_values = true;
+        let real = app.render_page(&fonts, &job, 0, false);
+        let rows = (r.min.y as usize + 20 * s)..(r.max.y as usize - 4 * s);
+        let leftmost = (0..real.w).find(|&x| rows.clone().filter(|&y| real.get(x, y) != [255, 255, 255]).count() > 8 * s);
+        let x = leftmost.expect("the table's first vertical line");
+        assert!((x as i64 - (r.min.x as i64 + 6 * s as i64)).abs() <= s as i64, "the table starts at R + 6s: {x} (R at {})", r.min.x);
+    }
+
     #[test]
     fn renders_an_oscillogram_page_with_frame_and_header() {
         let mut app = App::new();
@@ -749,6 +981,19 @@ mod tests {
             let c = app.render_page(&fonts, &job, i, true);
             assert_eq!((c.w, c.h), (dev.w, dev.h));
         }
+    }
+
+    #[test]
+    fn the_drivers_orientation_rules_over_the_page_setups() {
+        let portrait = PageSetup::default();
+        let landscape = PageSetup { portrait: false, ..portrait };
+        assert_eq!(portrait.with_driver_orientation(None), portrait, "no choice: the page setup stands");
+        assert_eq!(landscape.with_driver_orientation(None), landscape);
+        assert_eq!(portrait.with_driver_orientation(Some(false)), landscape, "Landscape chosen in «Свойства...» turns the sheet");
+        assert_eq!(landscape.with_driver_orientation(Some(true)), portrait);
+        // The sheet the preview lays out, Letter-like paper, Landscape in both.
+        let s = landscape.with_driver_orientation(Some(false));
+        assert_eq!(s.oriented((216.0, 279.0)), (279.0, 216.0));
     }
 }
 

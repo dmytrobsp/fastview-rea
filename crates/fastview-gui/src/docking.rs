@@ -597,6 +597,14 @@ impl Docks {
     /// unit pulled out hands the group — its place, size and the units
     /// beside it — to `next`, another of its tabs.
     pub fn float_tab(&mut self, m: Unit, root: Unit, next: Unit, rect: Rect) {
+        self.hand_group(m, root, next);
+        let d = &mut self[m];
+        (d.place, d.float_rect, d.out, d.slide) = (Place::Floating, Some(rect), false, 0.0);
+    }
+
+    /// The group's own unit `m` leaving it hands the group — its place,
+    /// size and the units beside it — to `next`, another of its tabs.
+    fn hand_group(&mut self, m: Unit, root: Unit, next: Unit) {
         if m == root && next != root {
             let r = self[root];
             for x in UNITS.into_iter().filter(|&x| x != next) {
@@ -613,8 +621,27 @@ impl Docks {
             }
             self[root].spot = Spot::Tab(next);
         }
+    }
+
+    /// A double-click on tab `m` of the floating group `root` (mfc120u's tab
+    /// double-click `0x10068d99`, the detach `0x10068657` in mode 2; clone,
+    /// #162): that pane docks alone where the group was last docked — the
+    /// same edge or slot, its size, the group's place in the blocks' order —
+    /// and the others stay floating. The group's own unit docking hands the
+    /// group to `next`, another of its tabs.
+    pub fn dock_tab_back(&mut self, m: Unit, root: Unit, next: Unit) {
+        let r = self[root];
+        self.hand_group(m, root, next);
         let d = &mut self[m];
-        (d.place, d.float_rect, d.out, d.slide) = (Place::Floating, Some(rect), false, 0.0);
+        (d.spot, d.extent, d.order, d.place, d.out, d.slide) = (r.spot, r.extent, r.order, Place::Docked, false, 0.0);
+        d.gen += 1;
+        // The floating rest remembers the docked pane as its place: its
+        // redock joins it as a tab (clone: the floating Векторная's caption
+        // double-click after Круговая docked back puts it in Круговая's tabs).
+        let rest = if m == root { next } else { root };
+        if rest != m {
+            self[rest].spot = Spot::Tab(m);
+        }
     }
 
     /// Every unit's workspace entries ([`store`]).

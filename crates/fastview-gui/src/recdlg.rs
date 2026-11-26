@@ -579,6 +579,14 @@ impl Doc {
         self.osc.period_of(self.computed.get(j).map_or(0.0, |c| c.own_rate)).max(2)
     }
 
+    /// The full recompute that ends in the definition batch (`0x42e540` → `0x415780`, «Параметры файла»; «Объединить»
+    /// `0x47e8c0`): rows without a channel become channels; returns the batch's failure, the box to show (#174).
+    pub fn recompute_with_batch(&mut self) -> Option<String> {
+        self.batch_makes_rows = true;
+        self.recompute_signals();
+        self.batch_error.take()
+    }
+
     pub fn recompute_signals(&mut self) {
         let roles = (self.analysis.u_abc, self.analysis.i_abc, self.analysis.calc_ib);
         let primary = self.primary_values();
@@ -601,6 +609,9 @@ impl App {
         RECOMPUTES.with(|c| c.set(c.get() + 1));
         let Some(d) = self.docs.get_mut(di) else { return };
         d.recompute_signals();
+        if let Some(m) = d.batch_error.take() {
+            self.dlg.push_alert(m);
+        }
         if self.docs[di].omp.shown {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
@@ -835,7 +846,9 @@ impl App {
             if st.correction as i32 != d.osc.freq_sel {
                 d.osc.freq_sel = st.correction as i32;
                 d.set.modified = true;
-                d.recompute_signals();
+                if let Some(m) = d.recompute_with_batch() {
+                    self.dlg.push_alert(m);
+                }
             }
             // «Закрыть» (`0x449f40`) ends in the refresh-all (`0x44a294`, `0x44a2ed`).
             self.refresh_blocks();
@@ -876,8 +889,11 @@ impl App {
             self.dlg.push_alert(fvb_core::comtrade::ComtradeError::Format.to_string());
             return Err(false);
         }
-        d.recompute_signals();
+        let failed = d.recompute_with_batch();
         d.set.modified = true;
+        if let Some(m) = failed {
+            self.dlg.push_alert(m);
+        }
         self.run_omp_silent(ai);
         Ok(())
     }
@@ -895,6 +911,7 @@ impl App {
         });
         let mut open = true;
         let mut result: Option<bool> = None;
+        let mut browse: Option<rfd::FileDialog> = None;
         crate::dialogs::dlg(ctx, "Установка настроек программы")
             .margin(0.0)
             .collapsible(false)
@@ -947,9 +964,7 @@ impl App {
                     if !st.dst_folder.is_empty() {
                         fd = fd.set_directory(&st.dst_folder);
                     }
-                    if let Some(p) = fd.pick_folder() {
-                        st.dst_folder = p.display().to_string();
-                    }
+                    browse = Some(fd);
                 }
                 win_group(ui, dlu(client, 7, 86, 405, 51), "Настройки отображения времени для Comtrade 2013");
                 if win_radio(ui, dlu(client, 23, 104, 80, 10), "Отображать в UTC", st.utc) {
@@ -966,6 +981,14 @@ impl App {
                 }
                 win_label(ui, dlu(client, 135, 176, 211, 22), "Внимание! При смене кодировки изменения вступают в силу после переоткрытия файла осциллограммы!", false, true);
             });
+        // The folder browser runs outside the frame (#190); its choice lands in the dialog's copy.
+        if let Some(fd) = browse {
+            self.pick(crate::sysdlg::Job::Folder(fd), |app, _, picked| {
+                if let (Some((p, _)), Some(st)) = (picked, app.dlg.settings.as_mut()) {
+                    st.dst_folder = p.display().to_string();
+                }
+            });
+        }
         let result = result.or_else(|| self.dialog_keys(ctx));
         match result {
             Some(true) => {

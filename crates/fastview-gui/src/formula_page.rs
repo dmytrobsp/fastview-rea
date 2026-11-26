@@ -333,20 +333,26 @@ impl App {
         crate::dialogs::group_continue(ui);
         crate::dialogs::tab_index(ui, 1);
         if win_button(ui, dlu(origin, 7, 218, 52, 14), "Загрузить", false).clicked() {
-            if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).pick_file() {
-                if let Ok(bytes) = std::fs::read(&path) {
-                    let text = fvb_core::comtrade::decode_bytes(&bytes, self.encoding);
-                    self.fp_load_rows(fvb_core::quick::parse_frm(&text));
+            let dlg = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]);
+            self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
+                if let Some((path, _)) = picked {
+                    if let Ok(bytes) = std::fs::read(&path) {
+                        let text = fvb_core::comtrade::decode_bytes(&bytes, app.encoding);
+                        app.fp_load_rows(fvb_core::quick::parse_frm(&text));
+                    }
                 }
-            }
+            });
         }
         crate::dialogs::tab_index(ui, 2);
         if win_button(ui, dlu(origin, 63, 218, 52, 14), "Сохранить", false).clicked() {
             self.fp_update();
-            if let Some(path) = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm").save_file() {
-                let text = fvb_core::quick::write_frm(&self.formula_page.rows);
-                let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
-            }
+            let dlg = crate::dialogs::file_dialog().add_filter(FRM_FILTER, &["frm"]).add_filter("Все файлы (*.*)", &["*"]).set_file_name("*.frm");
+            self.pick(crate::sysdlg::Job::Save(dlg), |app, _, picked| {
+                if let Some((path, _)) = picked {
+                    let text = fvb_core::quick::write_frm(&app.formula_page.rows);
+                    let _ = std::fs::write(path, fvb_core::comtrade::encode_text(&text, fvb_core::comtrade::Encoding::Cp1251));
+                }
+            });
         }
         crate::dialogs::tab_index(ui, 5);
         if tri_button(ui, dlu(origin, 120, 218, 16, 14), true).clicked() {

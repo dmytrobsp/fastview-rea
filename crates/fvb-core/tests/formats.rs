@@ -407,3 +407,16 @@ fn binary_record_size_follows_the_sample_number_check() {
     assert_eq!(first(&load("two", 1, "BINARY", &rows(2, 22)).unwrap()), want(2));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A header-only `.osc` (tables, no data block) loads with zero samples: the original's `.osc` reader has no
+/// zero-sample check (`0x4524b0`; only the `.cfg` loader `0x450bc1` has one), and a formula batch over it reads a
+/// stale evaluator position there (`0x415bd0`, undefined). Ours is defined: empty channels with the walk's unit (#193).
+#[test]
+fn a_header_only_osc_with_a_formula_gives_empty_channels() {
+    let text = ["nnA,02\r\n1,Ia,A,A\r\n2,,B,V\r\n", "nnF,4\r\n"];
+    let rec = comtrade::parse_osc(&osc_file(&text, &[]), Encoding::Cp1251).unwrap();
+    assert_eq!((rec.analog.len(), rec.analog[0].samples.len(), rec.time.len()), (2, 0, 0));
+    let out = fvb_core::quick::evaluate_batch(&rec, &[], &[("X".into(), "Ia*2".into()), ("Y".into(), "Ia[кВ]".into())], false).unwrap();
+    let got: Vec<_> = out.iter().map(|c| (c.name.as_str(), c.unit.as_str(), c.samples.len())).collect();
+    assert_eq!(got, [("X", "A", 0), ("Y", "кВ", 0)]);
+}

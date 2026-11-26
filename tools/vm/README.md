@@ -26,15 +26,25 @@ original in the main checkout's `extracted/`). `FV_FRESH=1 run …` starts
 from no saved state; record `-` opens none. `tools/gates.sh` is the gate
 (clippy both targets, tests, publish guard; GATES-OK).
 
+`clone.sh` keeps the clone's overlay small and prints its size after every step (`cloneutil.py` holds the logic,
+tested by `python3 -I -m unittest discover -s tools/vm -p 'test_*.py'`; see docs/agents/windows-testing.md).
+
+On a Windows host with Hyper-V (no testbox) the same commands are `hyperv.ps1` (clones on differencing disks of a
+read-only base that `hyperv-base.ps1` builds once from a Windows evaluation ISO and your copy of the original); see
+"On a Windows host: Hyper-V" in docs/agents/windows-testing.md.
+
 | script | what |
 |---|---|
+| `hyperv.ps1 new \| run o\|u "<keys>" [record] \| push \| pull \| exec \| desk \| shot \| ours \| rm` | `clone.sh` on Hyper-V, the same environment (`FV_CLONE`, `FV_PURPOSE`, `FV_SHOTS`, `FV_FRESH`, `FV_NOMAX`, `FV_KEEP`, `FV_FORCE`; and `FV_BASE`, `FV_VMROOT`, `FV_MEM_GB`); record `none` (or `--`) opens none; see "Calling it" in windows-testing.md for quoting in each shell |
+| `hyperv-base.ps1 -Iso <ISO> -Orig <folder> [-Records] [-Ours] [-Root] [-Name]` | builds, activates and provisions the base VM (about 25 minutes), with `autounattend.template.xml` (the answers file; `@@PASSWORD@@` is filled in at build time) |
+| `cloneutil.py` | the logic of `clone.sh`: SHA-256 of ours' exe (reused when unchanged), the overlay's size against the cap, the delete command for a pulled output |
 | `autologon.ps1` | turns on automatic sign-in of the test user (asks for the password at a hidden prompt, checks it first; undo commands at its top) — a desktop session is needed for anything visible |
 | `insession.ps1 -Exe <path> [-Args …] [-Wait]` | runs a program in that user's desktop session (an `ssh` session has none) through a one-off scheduled task |
 | `shot.ps1 -Out <png>` | captures the whole desktop (DPI-aware) |
 | `capture.ps1 -Name <png>` | `shot.ps1` through `insession.ps1`, into `shots\` next to the scripts |
 | `wakeshot.ps1 -Out <png>` | `shot.ps1` after waking the display (an idle VM turns it off and captures freeze on its last frame); run it through `insession.ps1` |
 | `cleanup.ps1` | stops every FastView (ours or the original) and stuck `keys.ps1` runs |
-| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave] [-Soft]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y[,ms]` / `DCLICK x,y[,ms]` (ms: the gap between the clicks, each press then held 40 ms), `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `MOVE x,y`, `SIZE w,h`, `CLOSE`, `SHOT name.png`, `WINS f.txt` (top-level windows), `CURSOR f.txt` (the pointer's shape), `FOCUS f.txt` (the front window's keyboard focus: class, visibility, ancestors), `CLIP f.txt` (the clipboard's formats), `TREE f.txt` (the front window's descendants), `FLOATAT x,y` (moves the first floating pane's mini-frame), `CLIPEMF f.emf` (saves the clipboard's metafile) —, capture, close; prints its log. `-ArgLine` passes a raw argument line instead of `-Open`; `-Soft` starts ours in its software runner (`FV_SOFTWARE=1`) |
+| `drive.ps1 -Exe <program> [-Open <file> \| -ArgLine "<args>"] [-Keys "<s1>;<s2>…"] [-Shot <png>] [-Leave] [-Soft]` | `keys.ps1` in the session: start the program (with a file), run the steps 1.5 s apart — SendKeys text, `CLICK x,y` / `RCLICK x,y[,ms]` / `DCLICK x,y[,ms]` (ms: the gap between the clicks, each press then held 40 ms), `DRAG x1,y1,x2,y2` (or `HOLD …` then `UP`), `WHEEL x,y,n`, `MOVE x,y`, `SIZE w,h`, `CLOSE`, `SHOT name.png`, `WINS f.txt` (top-level windows), `CURSOR f.txt` (the pointer's shape), `FOCUS f.txt` (the front window's keyboard focus: class, visibility, ancestors), `CLIP f.txt` (the clipboard's formats), `TREE f.txt` (the front window's descendants), `FLOATAT x,y` (moves the first floating pane's mini-frame), `CLIPEMF f.emf` (saves the clipboard's metafile), `SCROLL f.txt` (the scroll bars of the front window and its descendants: range, page, position) —, capture, close; prints its log. `-ArgLine` passes a raw argument line instead of `-Open`; `-Soft` starts ours in its software runner (`FV_SOFTWARE=1`) |
 
 Install of the original used here (file copy — its own setup wizard needs
 clicks): the files of `extracted/stage1/` in a folder, the English resource

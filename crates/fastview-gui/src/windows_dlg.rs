@@ -19,7 +19,7 @@ pub struct WindowsDlg {
     /// «Закрыть окна» under way: the windows still to close, in order.
     pub closing: Vec<u64>,
     /// Refill and reselect once the closing is done.
-    refresh: bool,
+    pub(crate) refresh: bool,
 }
 
 /// The enabled buttons for `n` selected windows (`0x101aa897`); every
@@ -76,6 +76,25 @@ impl App {
         dlg.sel = self.active.and_then(|a| self.docs.get(a)).map(|d| d.serial).into_iter().collect();
     }
 
+    /// `0x101aa5aa`: the documents of `serials` saved one after another; then the list is
+    /// refilled and the active one selected.
+    fn save_serials_then(&mut self, ctx: &egui::Context, mut serials: Vec<u64>) {
+        while !serials.is_empty() {
+            let s = serials.remove(0);
+            let Some(i) = self.doc_by_serial(s) else { continue };
+            if self.save_path_of(i).is_none() {
+                self.ask_save_as(i, move |app, ctx, _| app.save_serials_then(ctx, serials));
+                return;
+            }
+            self.save_active_at(i);
+        }
+        if let Some(mut d) = self.windows_dlg.take() {
+            self.select_active_window(&mut d);
+            self.windows_dlg = Some(d);
+        }
+        let _ = ctx;
+    }
+
     /// The rows: every document's title, sorted as LBS_SORT does (ignoring
     /// case).
     pub fn window_rows(&self) -> Vec<(u64, String)> {
@@ -84,7 +103,7 @@ impl App {
         rows
     }
 
-    fn doc_by_serial(&self, s: u64) -> Option<usize> {
+    pub(crate) fn doc_by_serial(&self, s: u64) -> Option<usize> {
         self.docs.iter().position(|d| d.serial == s)
     }
 
@@ -93,7 +112,7 @@ impl App {
         // `0x101aa666`: WM_CLOSE to each selected window, the last row
         // first; each runs its own save question, «Отмена» keeps that one
         // and the next follows.
-        if self.setfile.prompt.is_none() {
+        if self.setfile.prompt.is_none() && !self.sysdlg_busy() {
             while !dlg.closing.is_empty() {
                 let s = dlg.closing.remove(0);
                 if let Some(i) = self.doc_by_serial(s) {
@@ -194,15 +213,12 @@ impl App {
         // `0x101aa5aa`: each selected window's document saved, in list
         // order; then the list is refilled and the active one selected.
         if save {
-            let prev = self.active;
-            for (s, _) in rows.iter().filter(|(s, _)| dlg.sel.contains(s)) {
-                if let Some(i) = self.doc_by_serial(*s) {
-                    self.active = Some(i);
-                    self.save_active();
-                }
-            }
-            self.active = prev;
-            self.select_active_window(&mut dlg);
+            // Each one saved in turn (a Save As waits for its dialog,
+            // outside the frame), then the list is refilled.
+            let serials: Vec<u64> = rows.iter().filter(|(s, _)| dlg.sel.contains(s)).map(|r| r.0).collect();
+            self.windows_dlg = Some(dlg);
+            self.save_serials_then(ctx, serials);
+            return;
         }
         if close {
             dlg.closing = rows.iter().rev().filter(|(s, _)| dlg.sel.contains(s)).map(|r| r.0).collect();

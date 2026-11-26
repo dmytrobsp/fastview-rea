@@ -206,6 +206,20 @@ pub fn measured(a: f32, b: f32, c: f32) -> f32 {
     v.round()
 }
 
+/// A length laid out from a table of five points, 100, 125, 150, 175 and 200 % (96, 120, 144, 168, 192 dpi): exact
+/// at them, linear between, and past 200 % along the last two. Whole pixels. No formula fits these (Segoe UI's
+/// hinting), so they stay tables. Not every point was measured on a clone: where the caller's table says one is
+/// interpolated or extrapolated (the status bar's 175 % reserve and inset), it is.
+pub fn measured5(v: [f32; 5]) -> f32 {
+    let d = dpi() as f32;
+    if unscaled() {
+        return v[0];
+    }
+    let at = [96.0, 120.0, 144.0, 168.0, 192.0];
+    let i = (0..4).find(|&i| d <= at[i + 1]).unwrap_or(3);
+    (v[i] + (v[i + 1] - v[i]) * (d - at[i]) / (at[i + 1] - at[i])).round()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

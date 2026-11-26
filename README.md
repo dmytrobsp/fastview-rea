@@ -145,7 +145,7 @@ index/           factual indexes + symbol list (addresses, ids, names)
 
 ## Build & run
 
-Requires a stable Rust toolchain (1.75+).
+Requires the Rust toolchain pinned in `rust-toolchain.toml` (rustup installs it on first use).
 
 ```bash
 # Linux / macOS / Windows (native)

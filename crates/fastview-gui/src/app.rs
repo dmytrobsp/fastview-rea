@@ -643,11 +643,13 @@ pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_
 /// with — primary / secondary when primary values are shown of a file
 /// stored in secondary ones (`+0x89` set, `+0x88` clear), secondary /
 /// primary in the converse case (a «P» record shown «Вторичные», the
-/// default: `0x422460` clears `+0x89`), else 1.
+/// default: `0x422460` clears `+0x89`), else 1. The division is not guarded:
+/// a zero ratio field (a `.cfg` text atof reads as 0) gives an infinite or
+/// NaN factor, as in the original (clone, #170).
 pub fn display_k(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> f64 {
     match (show_primary, ch.is_primary) {
-        (true, false) if ch.secondary != 0.0 => ch.primary / ch.secondary,
-        (false, true) if ch.primary != 0.0 => ch.secondary / ch.primary,
+        (true, false) => ch.primary / ch.secondary,
+        (false, true) => ch.secondary / ch.primary,
         _ => 1.0,
     }
 }
@@ -777,6 +779,9 @@ pub struct Doc {
     pub comment_mode: u8,
     /// First visible sample (`view+0xfc`).
     pub first: usize,
+    /// The horizontal scroll bar's position (first sample, samples shown, record's, position) as the
+    /// Shift+wheel left it (`0x45d990` sets the bar and leaves it); valid while those still hold.
+    pub hscroll_pos: Option<(usize, usize, usize, usize, i64)>,
     /// Horizontal scale `f` (`view+0xf0`, a power of two ≤ 1, 25·f px per
     /// sample); `None` until the view first lays out (initial = stored
     /// `View/XScale`, else twice the fit scale).
@@ -819,6 +824,9 @@ pub struct Doc {
     /// Transient: the next [`Doc::recompute`] is the batch of a flag / value-mode command (`0x415780` over the
     /// list), which also makes channels of the rows that have none (#31).
     pub batch_makes_rows: bool,
+    /// Transient: the text of the failure that ended the batch of a flag / value-mode command run inside
+    /// [`Doc::recompute`]; the app shows it as the box the original's batch posts (`0x475680`, #174) and clears it.
+    pub batch_error: Option<String>,
     /// The definition list's row order as kill-active last wrote it (↑ / ↓ move rows, `0x487210` / `0x4873a0`):
     /// the formula page lists its rows in it.
     pub def_order: Vec<String>,
@@ -906,6 +914,7 @@ impl Doc {
             group_names: Default::default(),
             comment_mode: 0,
             first: 0,
+            hscroll_pos: None,
             xscale: None,
             vscroll: 0.0,
             diff_band: true,
@@ -928,6 +937,7 @@ impl Doc {
             pending: Vec::new(),
             loose_defs: Vec::new(),
             batch_makes_rows: false,
+            batch_error: None,
             def_order: Vec::new(),
             merge_offset: 0.0,
             set: Default::default(),
@@ -962,7 +972,12 @@ impl Doc {
         self.analysis = analysis;
         // The copy was just taken: no name to bring over.
         let create = std::mem::take(&mut self.batch_makes_rows);
-        let _ = self.evaluate_formula_list_before(show_primary, &[], create);
+        // The batch's failure is its box (`0x415780` catches and posts, #174); a recompute that is no batch stays silent.
+        if let Err(e) = self.evaluate_formula_list_before(show_primary, &[], create, false) {
+            if create {
+                self.batch_error = Some(e.to_string());
+            }
+        }
     }
 
     /// Analog channel `i`'s window of statistics and phasors: its own rate
@@ -1024,7 +1039,15 @@ impl Doc {
     /// formula naming one of them, itself or a later one is the error 0x1d4 (#30).
     pub fn try_reevaluate_formulas_before(&mut self, show_primary: bool, new_names: &[String]) -> Result<(), fvb_core::expr::FormulaError> {
         self.sync_flagged_names();
-        self.evaluate_formula_list_before(show_primary, new_names, true)
+        self.evaluate_formula_list_before(show_primary, new_names, true, true)
+    }
+
+    /// The batch `0x415780` as the flag / value-mode / stats-row commands run it: like
+    /// [`Doc::try_reevaluate_formulas_before`], but the channels it made before a failing row stay (only the quick
+    /// analysis deletes what it added, `0x416f1b`).
+    pub fn run_batch(&mut self, show_primary: bool) -> Result<(), fvb_core::expr::FormulaError> {
+        self.sync_flagged_names();
+        self.evaluate_formula_list_before(show_primary, &[], true, false)
     }
 
     /// [`Doc::try_reevaluate_formulas`] over the flagged copy as it is.
@@ -1059,8 +1082,9 @@ impl Doc {
     /// `0x415780` over the definition list in the list's order: each formula channel is recomputed in place; with
     /// `create_loose` the rows without a channel become channels (at the block's end, as a new formula is). A
     /// definition's name guard (`0x419074`) covers the names after it in the list, then `new_names`. A failure ends
-    /// the walk (the ones before keep their new values, the channels it created go again, `0x416f1b`).
-    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool) -> Result<(), fvb_core::expr::FormulaError> {
+    /// the walk (the ones before keep their new values; the channels it created go again with `rollback`, the quick
+    /// analysis's `0x416f1b`, else they stay).
+    fn evaluate_formula_list_before(&mut self, show_primary: bool, new_names: &[String], create_loose: bool, rollback: bool) -> Result<(), fvb_core::expr::FormulaError> {
         let is_def = |c: &Computed| crate::setfile::is_formula(c);
         let seq = self.definition_list();
         let names: Vec<String> = seq
@@ -1115,9 +1139,14 @@ impl Doc {
             Ok(())
         };
         if let Err(e) = walk() {
-            if !created.is_empty() {
+            if rollback && !created.is_empty() {
                 self.computed.truncate(len0);
                 self.loose_defs = loose0;
+                self.channels_changed();
+            } else if !created.is_empty() {
+                // No roll-back: the channels made stay, registered as the adders `0x42e940` / `0x42e810` do
+                // (frequency candidates, colours); their rows are no longer definitions without a channel.
+                self.loose_defs.retain(|(n, _)| !created.contains(n));
                 self.channels_changed();
             }
             return Err(e);
@@ -1797,6 +1826,13 @@ pub struct App {
     /// enabled combo boxes and buttons of the merge bar, the document
     /// tabs' ▾ button) this frame: `CopyFocus::Other`.
     pub focus_other: Vec<egui::Rect>,
+    /// The ribbon, the parameters bar and the status bar as last drawn (the status bar last): a press on
+    /// them leaves the keyboard focus where it was.
+    pub keep_focus_rects: Vec<egui::Rect>,
+    /// The frame control (merge bar, ▾) holding egui's keyboard focus at the start of the frame.
+    pub key_owner: Option<egui::Id>,
+    /// The foreground layers of the last frame (`keep_key_focus`).
+    pub fg_prev: Vec<egui::LayerId>,
     /// A document group's ▾ list was open at the last frame.
     pub doc_list_open: bool,
     /// Each document group's ▾ button as last drawn.
@@ -1907,6 +1943,8 @@ pub struct App {
     /// later pass once the closed menu has been painted (the dialog blocks
     /// the frame loop).
     pub deferred: Vec<(Command, u64)>,
+    /// The system dialog in progress (#190): [`crate::sysdlg`].
+    pub sysdlg: Option<crate::sysdlg::Pending>,
     /// Dialogs and bars of `chandlg` / `recdlg` (backlog 16, 18, 28, 29, 34, 39).
     pub dlg: crate::recdlg::DialogState,
 
@@ -2028,6 +2066,9 @@ impl App {
             pane_tab_rects: Vec::new(),
             doc_tab_rects: Vec::new(),
             focus_other: Vec::new(),
+            keep_focus_rects: Vec::new(),
+            key_owner: None,
+            fg_prev: Vec::new(),
             doc_list_open: false,
             list_buttons: Vec::new(),
             focus_doc: None,
@@ -2071,6 +2112,7 @@ impl App {
             status_menu: None,
             status_grip: None,
             deferred: Vec::new(),
+            sysdlg: None,
             status_panes: ["Верт. визир 1:", "Верт. визир 2:", "Разница в. визиров:", "Гор. визир 1:", "Гор. визир 2:", "Разница г. визиров:"].map(String::from),
             dlg: Default::default(),
             status: "Готово".to_string(),
@@ -2229,6 +2271,15 @@ impl App {
     }
 
     pub fn dispatch(&mut self, cmd: Command) {
+        // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
+        // the first sample again (`lanes::hscroll_page`).
+        // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
+        // open a dialog or a chooser (Open, Печать, its preview) leave the bar alone.
+        if !matches!(cmd, Command::Copy | Command::Open | Command::Print | Command::PrintPreview) {
+            if let Some(d) = self.active_doc_mut() {
+                d.hscroll_pos = None;
+            }
+        }
         let mark = crate::setfile::marks_modified(&cmd).then_some(self.active).flatten();
         // The handlers that end in the frame's refresh-all `0x475420` (the
         // diagrams' refresh, slot 90): paste 57637 and undo / redo
@@ -2446,52 +2497,57 @@ impl App {
     /// holds text —, with no key event; Ctrl+V's key-up still comes, so a
     /// paste no `Event::Paste` announced fires there.
     pub fn handle_keys(&mut self, ctx: &egui::Context) {
-        let mut cmds = Vec::new();
         // (Taken before the input's lock: the data store shares it.)
-        let (mut edit_copies, mut edit_pastes) = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
-        ctx.input(|i| {
-            let m = i.modifiers;
-            // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
-            // Ctrl+Tab, L9.130) acts through a child's system menu, which the
-            // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
-            // do nothing with two documents open (L9.294).
-            // Each key by the modifiers it came with: in a slow frame Ctrl
-            // may be up again by the frame's end (the software runner, VM).
-            // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
-            // too: refused while Shift / Alt is held).
-            let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
-            let plain = !m.shift && !m.alt;
-            // Insert's copy / paste kept for a text edit are the edit's own.
-            for e in &i.events {
-                match e {
-                    egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
-                    egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
-                    egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
-                        if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
-                            // Ctrl+V acts at the press (a key-up after it
-                            // is not another paste).
-                            if *key == egui::Key::V {
-                                self.paste_announced = true;
-                            }
-                            cmds.push(c);
-                        }
-                    }
-                    egui::Event::Copy if plain => cmds.push(Command::Copy),
-                    egui::Event::Paste(_) if plain => {
-                        self.paste_announced = true;
-                        cmds.push(Command::Paste);
-                    }
-                    // The key-up also clears the announcement.
-                    egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
-                    _ => {}
-                }
-            }
-        });
+        let edit = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
+        let cmds = ctx.input(|i| self.accel_commands(&i.events, edit, !i.modifiers.shift && !i.modifiers.alt));
         for c in cmds {
             if self.shortcut_enabled(&c) {
                 self.dispatch(c);
             }
         }
+    }
+
+    /// The commands this frame's events fire through table 128 (`handle_keys`'s scan; the print preview, which
+    /// swaps the table, reads the same events through it). `edit` is the (copies, pastes) kept for a text edit, `plain` that the frame's
+    /// Shift and Alt are up (`Event::Copy` / `Paste` carry no modifiers).
+    pub fn accel_commands(&mut self, events: &[egui::Event], edit: (u8, u8), plain: bool) -> Vec<Command> {
+        let mut cmds = Vec::new();
+        let (mut edit_copies, mut edit_pastes) = edit;
+        // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
+        // Ctrl+Tab, L9.130) acts through a child's system menu, which the
+        // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
+        // do nothing with two documents open (L9.294).
+        // Each key by the modifiers it came with: in a slow frame Ctrl
+        // may be up again by the frame's end (the software runner, VM).
+        // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
+        // too: refused while Shift / Alt is held).
+        let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
+        // Insert's copy / paste kept for a text edit are the edit's own.
+        for e in events {
+            match e {
+                egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
+                egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
+                egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
+                    if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
+                        // Ctrl+V acts at the press (a key-up after it
+                        // is not another paste).
+                        if *key == egui::Key::V {
+                            self.paste_announced = true;
+                        }
+                        cmds.push(c);
+                    }
+                }
+                egui::Event::Copy if plain => cmds.push(Command::Copy),
+                egui::Event::Paste(_) if plain => {
+                    self.paste_announced = true;
+                    cmds.push(Command::Paste);
+                }
+                // The key-up also clears the announcement.
+                egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
+                _ => {}
+            }
+        }
+        cmds
     }
 
     /// The table-128 commands' update rules (`0x45bf60`; Open is the
@@ -2594,7 +2650,10 @@ impl App {
     pub fn run_definition_batch(&mut self) {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return };
         let show_primary = self.docs[ai].primary_values();
-        let _ = self.docs[ai].try_reevaluate_formulas_before(show_primary, &[]);
+        // A failing batch is a box with the exception's text (`0x415780` → `0x475680`; its callers ignore the result, #174).
+        if let Err(e) = self.docs[ai].run_batch(show_primary) {
+            self.dlg.push_alert(e.to_string());
+        }
     }
 
     /// Save the view preferences (`View`: XScale, YAnalogSize, RulerState,
@@ -2835,47 +2894,47 @@ impl App {
 
     // ---------- data loading ----------
     pub fn open_fvb(&mut self) {
-        if let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("FastView library", &["fvb"])
-            .pick_file()
-        {
+        let dlg = crate::dialogs::file_dialog().add_filter("FastView library", &["fvb"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
+            let Some((path, _)) = picked else { return };
             match std::fs::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
             {
                 Ok(lib) => {
-                    self.library = plane_library(&lib, self.diagram_dim);
-                    self.full_library = lib;
-                    self.diagrams = [None, None];
-                    self.source_name = path
+                    app.library = plane_library(&lib, app.diagram_dim);
+                    app.full_library = lib;
+                    app.diagrams = [None, None];
+                    app.source_name = path
                         .file_name()
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_default();
-                    self.block_idx = 0;
-                    self.chars.clear();
-                    self.selected_char = None;
-                    self.ensure_block_state();
-                    self.status = format!("Загружена библиотека: {}", self.source_name);
+                    app.block_idx = 0;
+                    app.chars.clear();
+                    app.selected_char = None;
+                    app.ensure_block_state();
+                    app.status = format!("Загружена библиотека: {}", app.source_name);
                 }
-                Err(e) => self.status = format!("Ошибка загрузки .fvb: {e}"),
+                Err(e) => app.status = format!("Ошибка загрузки .fvb: {e}"),
             }
-        }
+        });
     }
 
     pub fn open_comtrade(&mut self) {
         // String 328 (`0x447e30` when opening); patterns in both cases for
         // the case-sensitive dialogs off Windows.
-        if let Some(path) = crate::dialogs::file_dialog()
+        let dlg = crate::dialogs::file_dialog()
             .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
             .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
             .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
             .add_filter("Осциллограммы OSC2 (*.osc)", &["osc", "OSC"])
             .add_filter("Осциллограммы Configurator-MT (*.sto)", &["sto", "STO"])
-            .add_filter("Все файлы (*.*)", &["*"])
-            .pick_file()
-        {
-            self.load_comtrade_path(&path);
-        }
+            .add_filter("Все файлы (*.*)", &["*"]);
+        self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
+            if let Some((path, _)) = picked {
+                app.load_comtrade_path(&path);
+            }
+        });
     }
 
     /// Open a record as a new document. Parsing runs on a worker thread
@@ -2919,6 +2978,14 @@ impl App {
             }
         });
         self.loading.push(Loading { path: path.to_path_buf(), big: loading_shown(path), rx, progress, shown: (0, f64::NEG_INFINITY) });
+    }
+
+    /// A load that never finishes, big enough for the progress dialog (tests); keep the sender alive.
+    #[cfg(test)]
+    pub fn test_hold_loading(&mut self) -> std::sync::mpsc::Sender<LoadResult> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.loading.push(Loading { path: "held.cfg".into(), big: true, rx, progress: Default::default(), shown: (0, f64::NEG_INFINITY) });
+        tx
     }
 
     /// Collect finished loads (called every frame).
@@ -3017,18 +3084,18 @@ impl App {
             self.status = "Нет осциллограммы для экспорта.".into();
             return;
         };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("CSV", &["csv"])
-            .set_file_name(format!("{}.csv", d.name))
-            .save_file()
-        else {
-            return;
-        };
-        let out = Self::csv_string(d);
-        match std::fs::write(&path, out) {
-            Ok(()) => self.status = format!("Экспортировано в {}", path.display()),
-            Err(e) => self.status = format!("Ошибка экспорта: {e}"),
-        }
+        let (name, serial) = (format!("{}.csv", d.name), d.serial);
+        let dlg = crate::dialogs::file_dialog().add_filter("CSV", &["csv"]).set_file_name(name);
+        self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+            let Some((path, _)) = picked else { return };
+            // The record the command was given for (the dialog ran meanwhile).
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let out = Self::csv_string(d);
+            match std::fs::write(&path, out) {
+                Ok(()) => app.status = format!("Экспортировано в {}", path.display()),
+                Err(e) => app.status = format!("Ошибка экспорта: {e}"),
+            }
+        });
     }
 
     /// Archive the active record (COMTRADE + CSV) into a `.zip` for sending.
@@ -3037,24 +3104,23 @@ impl App {
             self.status = "Нет осциллограммы для архивирования.".into();
             return;
         };
-        let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("ZIP", &["zip"])
-            .set_file_name(format!("{}.zip", d.name))
-            .save_file()
-        else {
-            return;
-        };
-        let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
-        let csv = Self::csv_string(d);
-        let zip = crate::util::zip_store(&[
-            (format!("{}.cfg", d.name), cfg),
-            (format!("{}.dat", d.name), dat),
-            (format!("{}.csv", d.name), csv.into_bytes()),
-        ]);
-        match std::fs::write(&path, zip) {
-            Ok(()) => self.status = format!("Архив сохранён: {}", path.display()),
-            Err(e) => self.status = format!("Ошибка архивирования: {e}"),
-        }
+        let (name, serial) = (format!("{}.zip", d.name), d.serial);
+        let dlg = crate::dialogs::file_dialog().add_filter("ZIP", &["zip"]).set_file_name(name);
+        self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
+            let Some((path, _)) = picked else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
+            let csv = Self::csv_string(d);
+            let zip = crate::util::zip_store(&[
+                (format!("{}.cfg", d.name), cfg),
+                (format!("{}.dat", d.name), dat),
+                (format!("{}.csv", d.name), csv.into_bytes()),
+            ]);
+            match std::fs::write(&path, zip) {
+                Ok(()) => app.status = format!("Архив сохранён: {}", path.display()),
+                Err(e) => app.status = format!("Ошибка архивирования: {e}"),
+            }
+        });
     }
 
     /// Ask for an export path and flag that the next frame's screenshot should be
@@ -3064,14 +3130,13 @@ impl App {
             self.status = "Нет осциллограммы для печати/экспорта изображения.".into();
             return;
         }
-        if let Some(path) = crate::dialogs::file_dialog()
-            .add_filter("PNG", &["png"])
-            .set_file_name("fastview.png")
-            .save_file()
-        {
-            self.want_screenshot = Some(path);
-            self.status = "Готовится изображение…".into();
-        }
+        let dlg = crate::dialogs::file_dialog().add_filter("PNG", &["png"]).set_file_name("fastview.png");
+        self.pick(crate::sysdlg::Job::Save(dlg), |app, _, picked| {
+            if let Some((path, _)) = picked {
+                app.want_screenshot = Some(path);
+                app.status = "Готовится изображение…".into();
+            }
+        });
     }
 
     // ---- undo / redo ----
@@ -3312,6 +3377,45 @@ mod tests {
             assert!(app.docs.is_empty());
             assert_eq!(app.dlg.alert(), Some(format!("Неправильный формат файла - {}", dir.join("rec").display()).as_str()), "cancelled: {cancel}");
         }
+    }
+
+    /// #170: a «P» channel whose primary field atof reads as 0 (`inf`) is shown through the unguarded
+    /// secondary / primary: an infinite factor, an infinite value at the cursor, every sample infinite or NaN (a
+    /// zero sample is 0 × inf).
+    #[test]
+    fn a_zero_primary_ratio_scales_by_infinity_as_the_original_does() {
+        let dir = std::env::temp_dir().join(format!("fv_zero_ratio_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = "S,D,1999\r\n1,1A,0D\r\n1,X,,,V,0.5,0,0,-9,9,inf,5.5,P\r\n50\r\n1\r\n1250,4\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
+        std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
+        std::fs::write(dir.join("rec.dat"), "1,0,3\r\n2,800,-5\r\n3,1600,7\r\n4,2400,9\r\n").unwrap();
+        let mut app = App::new();
+        app.load_comtrade_path(&dir.join("rec.cfg"));
+        while !app.loading.is_empty() {
+            app.poll_loading();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let d = app.active_doc().expect("the record opens");
+        assert!(!d.chans[0].primary, "a «P» record shows secondary values by default");
+        assert_eq!(display_k(&d.osc.analog[0], false), f64::INFINITY);
+        assert_eq!(d.shown_samples(0).get(1).copied(), Some(f64::NEG_INFINITY));
+        assert_eq!(d.shown_samples(0).get(2).copied(), Some(f64::INFINITY));
+        let (.., val) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 2);
+        assert_eq!(val, f64::INFINITY);
+        // The trace sits on the lane's lowest row, on a range of both infinities.
+        let (lo, hi) = crate::lanes::chan_range(d, 0);
+        assert_eq!((lo, hi), (f64::NEG_INFINITY, f64::INFINITY));
+        // …and the range the lane is painted in keeps them.
+        let row = crate::lanes::Row { key: ChanKey::Analog(0), members: vec![ChanKey::Analog(0)], h: 93.0 };
+        assert_eq!(crate::lanes::row_range(d, &row), (f64::NEG_INFINITY, f64::INFINITY));
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NEG_INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        // A NaN sample (0 × inf) is placed as an infinite one: the lowest row on a range, the middle on a flat lane.
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, 0.0, 0.0), 46.0);
+        // A lane of one infinity alone is flat, as the original's is: its middle.
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, f64::INFINITY, f64::INFINITY), 46.0);
+        assert_eq!(fvb_core::views::readout_text(val, ""), " 1.#INF   ");
     }
 
     /// A formula channel is an analog record like the file's: its frequency
@@ -4220,6 +4324,12 @@ mod tests {
         ch.is_primary = false;
         assert_eq!(display_k(&ch, true), 2380.0);
         assert_eq!(display_k(&ch, false), 1.0);
+        // A zero divisor is not guarded (`0x428490` divides straight through): inf, and 0 / 0 is NaN.
+        (ch.primary, ch.secondary, ch.is_primary) = (0.0, 5.0, true);
+        assert_eq!(display_k(&ch, false), f64::INFINITY);
+        ch.primary = 0.0;
+        ch.secondary = 0.0;
+        assert!(display_k(&ch, false).is_nan());
         ch.samples = vec![1.0, 3.0];
         let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };
         assert_eq!(flag_series(&ch, &v, (2.0, 7.0), 4.0), [-1.0, 1.0], "the k of the raw values is applied later");
@@ -4745,6 +4855,116 @@ mod tests {
 
     fn computed_names(app: &App) -> Vec<String> {
         app.active_doc().unwrap().computed.iter().map(|c| c.name.clone()).collect()
+    }
+
+    /// #174: the batch `0x415780` catches its own exception and posts it to the frame (`0x475680`, message 0x40a):
+    /// a box with the failure's text, whichever command ran the batch; the callers (`0x42fad3`, `0x4305e3`,
+    /// `0x42ff54`) ignore its result. The channels made before the failing row stay (only the quick analysis
+    /// deletes what it added, `0x416f1b`).
+    #[test]
+    fn a_failing_definition_batch_shows_its_box() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        // The commands that run the batch without a recompute (stats rows, value modes, 32849-32852).
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1, "one box");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "the rows before the failure became channels: {:?}", computed_names(&app));
+        assert!(!computed_names(&app).contains(&"Q1".to_string()));
+        // Invert / DC / ADC and «Коэффициенты» recompute first and end in the same batch.
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.after_flag_command(crate::chansel::ChanFlag::Invert);
+        assert_eq!(app.dlg.alerts.len(), 1, "invert");
+        assert!(computed_names(&app).contains(&"L1".to_string()), "no roll-back on the recompute path either");
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.set_primary_values(true);
+        assert_eq!(app.dlg.alerts.len(), 1, "32867");
+        // A batch that succeeds shows nothing.
+        let mut app = kept_row_app();
+        app.run_definition_batch();
+        assert!(app.dlg.alerts.is_empty());
+    }
+
+    /// #193: with two stored reduction methods the formulas outnumber the names list (one «прив.» set per arm); the
+    /// original pairs by index with no bounds check (`0x4167f0`, `0x416c61`: a read past the vector). «Рассчитать»
+    /// in ours gives every channel a defined, distinct name, the extra lines `_2`.
+    #[test]
+    fn two_stored_methods_name_every_added_channel() {
+        let mut app = demo_app();
+        let mut sec = fvb_core::recset::SetNode::default();
+        let opt = sec.child_mut("legOption");
+        opt.set_int("byPowerState", 1);
+        opt.set_int("byCastCoeffState", 1);
+        let page = crate::quick_ui::page_index(AnalysisTab::Differential).unwrap();
+        crate::quick_ui::load_page(page, &mut app.quick[page], &mut sec, &[]);
+        for a in &mut app.quick[page].arms {
+            a.currents = ["Ia".into(), "Ib".into(), "Ic".into()];
+        }
+        app.analysis_tab = AnalysisTab::Differential;
+        app.quick_calc();
+        assert!(app.dlg.alerts.is_empty(), "{:?}", app.dlg.alerts);
+        let names = computed_names(&app);
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert!(names.len() > 6 && sorted.len() == names.len(), "distinct: {names:?}");
+        assert!(names.iter().any(|n| n.ends_with("_2")), "{names:?}");
+    }
+
+    /// A partial batch (#174): the channels made before the failing row stay and are registered as the adders do
+    /// (`0x42e940`, `0x42e810`: the frequency candidates), and their rows are no longer loose definitions.
+    #[test]
+    fn a_partial_batch_registers_the_channels_it_made() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("F1".into(), "Ua[Hz]".into()));
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        app.run_definition_batch();
+        assert_eq!(app.dlg.alerts.len(), 1);
+        let d = app.active_doc().unwrap();
+        assert!(d.computed.iter().any(|c| c.name == "F1"));
+        assert!(d.osc.extra_freq.iter().any(|e| e.name == "F1"), "{:?}", d.osc.extra_freq);
+        assert_eq!(d.loose_defs, [("Q1".to_string(), "NoSuchChannel+1".to_string())]);
+    }
+
+    /// A recompute that is no batch command stays silent and leaves nothing for a later one (#174).
+    #[test]
+    fn a_plain_recompute_shows_no_batch_box() {
+        let mut app = kept_row_app();
+        app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let ai = app.active.unwrap();
+        app.recompute_doc(ai);
+        assert!(app.dlg.alerts.is_empty());
+        assert!(app.docs[ai].batch_error.is_none());
+    }
+
+    /// «Параметры файла» (`0x44a25d` → `0x42e540` → `0x415780`) and «Объединить» (`0x47e8c0`) run the batch too: a
+    /// failing definition is a box, and the rows kept without a channel become channels.
+    #[test]
+    fn file_parameters_and_merge_run_the_batch() {
+        let bad = |app: &mut App| app.active_doc_mut().unwrap().loose_defs.push(("Q1".into(), "NoSuchChannel+1".into()));
+        let mut app = kept_row_app();
+        bad(&mut app);
+        let ai = app.active.unwrap();
+        app.apply_file_rate(ai, "1250").unwrap();
+        assert_eq!(app.dlg.alerts.len(), 1, "rate");
+        assert!(computed_names(&app).contains(&"L1".to_string()));
+        assert!(app.docs[ai].batch_error.is_none());
+        let mut app = kept_row_app();
+        bad(&mut app);
+        app.docs[ai].osc.freq_sel = 0;
+        let mut app2 = app;
+        app2.active_doc_mut().unwrap().selection.insert(ChanKey::Analog(0));
+        app2.copy_channels_for_merge();
+        app2.paste_channels_for_merge();
+        app2.merge_records();
+        assert_eq!(app2.dlg.alerts.len(), 1, "merge");
+        assert!(computed_names(&app2).contains(&"L1".to_string()));
+        // A clean batch shows nothing.
+        let mut app = kept_row_app();
+        app.apply_file_rate(ai, "1250").unwrap();
+        assert!(app.dlg.alerts.is_empty());
     }
 
     /// «Коэффициенты» OK with nothing edited: the dialog's OK (`0x47b610`) ends
