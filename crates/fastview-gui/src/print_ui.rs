@@ -226,13 +226,20 @@ impl App {
         };
         let title = self.docs[di].name.clone();
         match printer {
-            Some(p) => match spool::print(&p, &title, &imgs, &dev, &setup) {
-                Ok(()) => {}
-                // MFC's OnFilePrint: a printer DC that fails or a StartDoc
-                // of −1 shows string 61702 in an MB_OK box (`0x10232bcf`,
-                // `0x1023303b`); the cause is not shown.
-                Err(_) => self.dlg.push_alert(MSG_PRINT_FAILED),
-            },
+            // StartDoc of a driver that asks for a file (Print to PDF, XPS, OneNote) shows a dialog of its own and runs
+            // its modal loop where it is called: outside the egui frame, from a posted message, like every system
+            // dialog (#190).
+            Some(p) => {
+                let job = crate::sysdlg::Job::Task(Box::new(move || spool::print(&p, &title, &imgs, &dev, &setup).is_ok()));
+                self.pick(job, |app, _, done| {
+                    // MFC's OnFilePrint: a printer DC that fails or a StartDoc
+                    // of −1 shows string 61702 in an MB_OK box (`0x10232bcf`,
+                    // `0x1023303b`); the cause is not shown.
+                    if done.is_none() {
+                        app.dlg.push_alert(MSG_PRINT_FAILED);
+                    }
+                });
+            }
             None => {
                 // The PDF's file dialog runs outside the frame (#190); the file is written once it answers.
                 let dlg = crate::dialogs::file_dialog().add_filter("PDF", &["pdf"]).set_file_name(format!("{title}.pdf"));
@@ -765,6 +772,32 @@ mod tests {
         assert!(page(&app) == before, "undo takes it off the page");
         frame(&ctx, &mut app, vec![ctrl(egui::Key::Y)]);
         assert!(page(&app) != before, "redo puts it back");
+    }
+
+    /// #190: the real print's StartDoc (a driver's own save dialog) is not run inside the frame that asks for it: the
+    /// command returns at once, the job runs from the posted message, and a failure is the box of the continuation.
+    #[test]
+    fn a_real_print_runs_outside_the_frame_and_a_failure_shows_its_box() {
+        for (answer, boxes) in [(Some((std::path::PathBuf::new(), None)), 0), (None, 1)] {
+            let (_guard, tx) = crate::sysdlg::testing::gate();
+            let mut app = App::new();
+            app.dispatch(Command::Demo);
+            app.dlg.alerts.clear();
+            app.print_run(0, Some("A printer".into()));
+            assert!(app.sysdlg_busy(), "the job waits for its turn outside the frame");
+            assert!(app.dlg.alerts.is_empty(), "nothing is printed or reported inside the frame");
+            tx.send(answer).unwrap();
+            let ctx = egui::Context::default();
+            for _ in 0..400 {
+                app.poll_sysdlg(&ctx);
+                if !app.sysdlg_busy() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(!app.sysdlg_busy());
+            assert_eq!(app.dlg.alerts.len(), boxes);
+        }
     }
 
     /// The pages laid out again after a paste keep the sheet's own setup, not the page setup of the moment.
