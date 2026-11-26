@@ -4,34 +4,37 @@ The current state, in short. This page is rewritten when things change, never ap
 What happened before is in the milestones' ledgers ([milestones/](milestones/README.md)), the record of the original
 ([original/](original/README.md)), [history/](history/) and `git log`.
 
-Last rewritten: 2026-11-02 (milestone 0.7.1 paused at a checkpoint for a usage-limit reset; v0.7.0 is the latest release).
+Last rewritten: 2026-11-26 (milestone 0.7.1 merged and released as v0.7.1; no milestone in flight).
 
 ## Latest release
 
-- **v0.7.0**, 2026-11-01: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.7.0). Linux x86-64,
-  Windows x86-64 and macOS (universal) archives. Milestone 0.7.0: channel drags and pasted lanes, panes, the formula
-  editor's definitions, files byte for byte with the original's, display scaling above 100 %, Windows 11's frame, the
-  keyboard in the frame's controls and dialogs, the print path; the record's stale verdicts corrected.
+- **v0.7.1**, 2026-11-26: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.7.1). Linux x86-64,
+  Windows x86-64 and macOS (universal) archives. Milestone 0.7.1: 0.7.0's follow-ups and verification debt — the
+  `.cfg`'s numbers through atof, short BINARY records, drop cursors and first floats, the Shift wheel's back-step,
+  scaling up to 200 %, system dialogs outside the frame, menus bounded by the work area, zero-height frequency bars and
+  the real print; every fixed issue run side by side with the original in Windows VMs at the end.
+- v0.7.0, 2026-11-01: [release page](https://github.com/dmytrobsp/fastview-rea/releases/tag/v0.7.0).
 
 ## Where the reconstruction stands
 
-- Every engine and the UI layer read and reconciled: the record runs L1–L9.430 ([original/](original/README.md)); 91.8 %
-  of the program's own code is in cited functions (`tools/coverage.py`).
+- Every engine and the UI layer read and reconciled: the record runs L1–L9.439 ([original/](original/README.md)); 91.8 %
+  of the program's own code is in cited functions (`tools/coverage.py`, last counted for 0.7.0).
 - Deliberate improvements: [IMPROVEMENTS.md](IMPROVEMENTS.md); differences the maintainer accepted:
   [ACCEPTED-DIFFERENCES.md](ACCEPTED-DIFFERENCES.md).
+- Windows VMs for side-by-side runs: the testbox clones (`tools/vm/clone.sh`) on a Linux host, local Hyper-V clones
+  (`tools/vm/hyperv.ps1`) on a Windows host ([agents/windows-testing.md](agents/windows-testing.md)).
 
 ## In flight
 
-- **Milestone 0.7.1** (plan and ledger: [milestones/0.7.1.md](milestones/0.7.1.md)) — **paused 2026-11-02 for a usage-limit
-  reset** at a clean checkpoint: six of ten units merged into `milestone/0.7.1` (tooling, analysis-2, formats-2, panes-2,
-  keys-2, platform-2), record-2 applied on main; print-2 (PR #213, review asks for small fixes), scaling-2 (PR #218)
-  and verify-ui-2 (PR #217) pushed and waiting for review. The ledger's checkpoint lists the exact next steps.
+- No milestone. The next one is proposed from the `later` queue — fidelity bugs and differences from the original
+  first, then improvements, then new features — and starts once it is agreed.
 
 ## Next topics
 
 - **Waiting for the maintainer:** #198 / #199 (accept MSVCR120's atof rounding and towlower differences?), #180 (the
   original's black print margins — decode first), #155 (scale the graph — design) and #156 (several diagrams, pop-out —
   design); a lean rebuild of the testbox Windows base (clones die at the overlay cap; the cap is 4 GB meanwhile).
+- **0.7.1's leftovers** (all in `later`): the verification's residuals #224–#236 and #238–#247; #219, #209, #211.
 - **The maintainer's new direction (filed 2026-10-30, all `improvement`):** translations (#88), anti-aliased
   waveforms keeping every sample exact (#89), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
