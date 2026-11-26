@@ -65,12 +65,15 @@ use eframe::egui;
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
 /// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
-/// border, `WinMetrics::border() − 1` a side (7 at 100 %, 12 at 200 %; #176).
+/// border a side. The border measured on clones is 7 / 9 / 11 / 12 / 13 px at 100 / 125 / 150 / 175 / 200 %:
+/// `WinMetrics::border()` at the scaled looks (a first run's client is the clamped rect less it, #176) and one less
+/// at 100 %, where the visible frame line is not part of the client.
 fn min_visible_at(dpi: u32) -> [f32; 2] {
-    let b = oscgeom::WinMetrics::at(dpi).border() - 1.0;
-    [866.0 - 2.0 * b, MIN_TRACK_H - b]
+    let b = oscgeom::WinMetrics::at(dpi).border() - if dpi <= 96 { 1.0 } else { 0.0 };
+    [MIN_TRACK_W - 2.0 * b, MIN_TRACK_H - b]
 }
-/// The frame's minimum tracking height as a window rect (see [`MIN_VISIBLE`]).
+/// The frame's minimum tracking size as a window rect (see [`MIN_VISIBLE`]).
+const MIN_TRACK_W: f32 = 866.0;
 const MIN_TRACK_H: f32 = 500.0;
 
 /// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
@@ -619,10 +622,12 @@ fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
         d if d < 168 => (21.0 + (d as f32 - 96.0) / 6.0).round(),
         d => (34.0 + (d as f32 - 168.0) / 6.0).round(),
     };
-    // The frame is never shorter than its minimum tracking size, 500 px (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
+    // The frame is never smaller than its minimum tracking size, 866 × 500 (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
     // the work area 704 gives 528 − 38 = 490, the window came out 500 high, 960 wide).
     let rect_h = ((work[1] * 0.75).floor() - cut).max(MIN_TRACK_H);
-    [(work[0] * 0.75).floor() - 2.0 * m.border(), rect_h - m.border()]
+    // …and never narrower than 866 (a small work area: the clone's clamped frame, 866 × 500).
+    let rect_w = (work[0] * 0.75).floor().max(MIN_TRACK_W);
+    [rect_w - 2.0 * m.border(), rect_h - m.border()]
 }
 
 #[cfg(windows)]
@@ -2919,17 +2924,28 @@ mod window_tests {
         }
     }
 
-    /// #176 (clone, 200 %): the frame is never shorter than its 866 × 500 minimum tracking rect: a first run on a
+    /// #176 (clone, 200 %): the frame is never smaller than its 866 × 500 minimum tracking rect: a first run on a
     /// 704 px work area is 500 high (the ¾ rule gives 490), and the smallest client is the rect less the invisible
-    /// border (852 × 493 at 100 %, 842 × 488 at 200 %).
+    /// border (852 × 493 at 100 %, 840 × 487 at 200 %).
     #[test]
     fn the_first_run_frame_keeps_the_minimum_tracking_size() {
         assert_eq!(min_visible_at(96), MIN_VISIBLE);
-        assert_eq!(min_visible_at(192), [842.0, 488.0]);
+        assert_eq!(min_visible_at(192), [840.0, 487.0]);
         // The work area 1280 × 704 at 192 dpi: 528 − 38 = 490 would be below the minimum 500.
         assert_eq!(first_run_client([1280.0, 704.0], 192)[1], 500.0 - 13.0);
         // Where the rule gives more, the rule stands (168 dpi: 537 − 34 = 503).
         assert_eq!(first_run_client([1280.0, 716.0], 168)[1], 503.0 - 12.0);
+        // A small work area: the clamped frame is 866 wide (clone, 168 dpi) …
+        assert_eq!(first_run_client([1000.0, 566.0], 168), [866.0 - 24.0, 500.0 - 12.0]);
+        // … and what the first run gives is never below what the window can be sized to, at any scale: the two
+        // rules were one pixel apart at 200 %, so the window grew the clone's first run to 488 high.
+        for dpi in [96, 120, 144, 168, 192] {
+            let (min, first) = (min_visible_at(dpi), first_run_client([1280.0, 704.0], dpi));
+            assert!(first[0] >= min[0] && first[1] >= min[1], "dpi {dpi}: {first:?} against {min:?}");
+        }
+        let small = first_run_client([1000.0, 566.0], 192);
+        assert_eq!(small, [866.0 - 26.0, 500.0 - 13.0]);
+        assert_eq!(small, min_visible_at(192), "the clamped first run is exactly the smallest window");
     }
 
     /// #147: on a first run's frame ours' MDI area is the original's at every display scale (clone,
