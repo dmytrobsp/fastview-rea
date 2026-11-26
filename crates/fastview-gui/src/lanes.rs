@@ -27,7 +27,7 @@ const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
 /// the view's window scroll bars, at the default system metric (96 dpi).
 #[cfg(test)]
-const HSCROLL_H: f32 = 17.0;
+const HSCROLL_H: f32 = 16.0;
 #[cfg(test)]
 const VSCROLL_W: f32 = 17.0;
 
@@ -39,8 +39,11 @@ pub(crate) fn scroll_w() -> f32 {
     crate::oscgeom::WinMetrics::at(crate::dpi::dpi()).scroll
 }
 
+/// The horizontal bar's band: the system metric less the row below it (clone, #175: the original's bar is 16 / 20 /
+/// 25 rows at 100 / 125 / 150 %, the metric 17 / 21 / 26, ours was one row thicker, so the vertical bar's floor was
+/// reached one frame pixel later). The planes' bars take the pixel the same way (`diagram_ui::scroll_w`).
 fn scroll_h() -> f32 {
-    scroll_w()
+    scroll_w() - 1.0
 }
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
@@ -3025,6 +3028,9 @@ mod menu_tests {
             let lanes: f32 = lane_layout(app.active_doc().unwrap(), app.y_analog).iter().map(|r| r.h).sum();
             assert!(lanes > full.height() + 200.0, "the lanes are far taller than the view");
             let bar = client.right() < full.right();
+            // The horizontal bar's band is the original's 16 rows (the demo record scrolls), so a frame's height
+            // ends in a client 74 high one frame pixel sooner than with the metric's 17.
+            assert_eq!(full.bottom() - client.bottom(), HSCROLL_H, "screen {screen_h}");
             seen.insert(client.height().round() as i32, bar);
             assert_eq!(bar, client.height() >= g::VBAR_FLOOR, "screen {screen_h}: client {} px high, bar {bar}", client.height());
         }
@@ -3038,7 +3044,7 @@ mod menu_tests {
     fn the_view_scroll_bars_follow_the_system_metric() {
         for (dpi, w) in [(96, 17.0), (120, 21.0), (144, 26.0), (168, 30.0), (192, 34.0)] {
             crate::dpi::set(dpi);
-            assert_eq!((scroll_w(), scroll_h()), (w, w), "{dpi}");
+            assert_eq!((scroll_w(), scroll_h()), (w, w - 1.0), "{dpi}");
         }
         crate::dpi::set(96);
     }
