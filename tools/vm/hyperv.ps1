@@ -115,6 +115,12 @@ function Invoke-Guest([string]$Name, $Cred, [string]$Cmd, [switch]$Desktop) {
     if ($items.Count -ge 1) { [int]$items[-1] } else { 0 }
 }
 
+# OneDrive's setup window takes the foreground of a fresh clone and the harness's keys act on it: stopped (clone.sh
+# does the same; no setting is changed, and a failure to stop it is not one).
+function Stop-OneDrive([string]$Name, $Cred) {
+    try { $null = Invoke-Guest $Name $Cred 'taskkill /f /im OneDrive.exe >nul 2>&1 & taskkill /f /im OneDriveSetup.exe >nul 2>&1' } catch { }
+}
+
 function Copy-ToGuest($Session, [string]$Src, [string]$Dst) {
     if (-not (Test-Path -LiteralPath $Src)) { throw "no such file or folder: $Src" }
     $isDir = (Get-Item -LiteralPath $Src).PSIsContainer
@@ -239,6 +245,7 @@ function New-Clone {
         Start-VM -VM $vm
         Write-Host "clone ${name}: preparing"
         $sec = Wait-Desktop $name $cred
+        Stop-OneDrive $name $cred
         # The harness scripts of this checkout (not the base's copies), then ours.
         $s = New-PSSession -VMName $name -Credential $cred
         try {
@@ -271,6 +278,8 @@ try {
                 param($G, $exe, $open, $soft, $Keys, $Who, $Fresh)
                 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
                 $H = "$G\harness"
+                # OneDrive's setup window takes the foreground in a fresh clone, and the keys act on it.
+                Stop-Process -Name OneDrive, OneDriveSetup -Force -ErrorAction SilentlyContinue
                 & powershell -NoProfile -ExecutionPolicy Bypass -File "$H\cleanup.ps1" *> $null
                 if ($Fresh) {
                     if ($Who -eq 'o') { Get-ChildItem HKCU:\Software | Get-ChildItem | Where-Object PSChildName -like '*FastView' | Remove-Item -Recurse }
@@ -353,6 +362,9 @@ try {
         }
         default { (Get-Content -LiteralPath $PSCommandPath -TotalCount 40) -join "`n" | Write-Host; exit 2 }
     }
+    # Called in-process (the way the docs advise from PowerShell) `$LASTEXITCODE` keeps the last native command's
+    # value otherwise: a step that went through says so.
+    exit 0
 } catch {
     [Console]::Error.WriteLine("hyperv.ps1 ${Action}: $($_.Exception.Message)")
     exit 1
