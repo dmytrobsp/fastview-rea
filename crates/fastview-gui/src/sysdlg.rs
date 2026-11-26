@@ -27,6 +27,9 @@ pub enum Job {
     Folder(rfd::FileDialog),
     /// Another system call that shows dialogs of its own (the shell's delete): answers `Some` when it returns true.
     Task(Box<dyn FnOnce() -> bool + Send>),
+    /// The real print: a task whose StartDoc may raise the driver's own save dialog, the one job the centring hook
+    /// ([`wants_centring`]) is set for.
+    Print(Box<dyn FnOnce() -> bool + Send>),
     /// A save dialog that reports the chosen file type: `filters` are (description, extension).
     SaveTyped { filters: Vec<(String, String)>, dir: Option<String>, name: String, owner: isize },
 }
@@ -75,7 +78,7 @@ pub fn run(job: Job) -> Picked {
         Job::Open(d) => d.pick_file().map(|p| (p, None)),
         Job::Save(d) => d.save_file().map(|p| (p, None)),
         Job::Folder(d) => d.pick_folder().map(|p| (p, None)),
-        Job::Task(f) => f().then(|| (PathBuf::new(), None)),
+        Job::Task(f) | Job::Print(f) => f().then(|| (PathBuf::new(), None)),
         Job::SaveTyped { filters, dir, name, owner } => save_typed(&filters, dir, &name, owner),
     }
 }
@@ -134,10 +137,18 @@ fn save_typed(filters: &[(String, String)], dir: Option<String>, name: &str, own
     }
 }
 
+/// Whether `job` runs under the centring hook: the print only (the finder's shell delete and the file dialogs open
+/// where the system puts them).
+#[cfg(any(windows, test))]
+fn wants_centring(job: &Job) -> bool {
+    matches!(job, Job::Print(_))
+}
+
 /// Where a driver's dialog that Windows leaves at the screen's top-left opens: centred over the frame, kept on the
 /// monitor's work area. (Clone, #190: Print to PDF's «Save Print Output As», raised in StartDoc, opens at the
 /// screen's corner under ours, where the original's sits where Windows puts a file dialog it remembers; the Open
 /// dialog is the same place in both programs without any help, and keeps it.)
+#[cfg(any(windows, test))]
 pub fn centred_over(owner: (i32, i32, i32, i32), dialog: (i32, i32), work: (i32, i32, i32, i32)) -> (i32, i32) {
     let (ow, oh) = (owner.2 - owner.0, owner.3 - owner.1);
     let x = owner.0 + (ow - dialog.0) / 2;
@@ -303,9 +314,9 @@ impl App {
         };
         #[cfg(all(windows, not(test)))]
         let runner: Box<dyn FnOnce() -> Picked + Send> = {
-            // Only the tasks (the real print, whose driver raises its own dialog): the file dialogs of ours open
-            // where Windows puts them, which is where the original's do.
-            let owner = if matches!(job, Job::Task(_)) { owner() } else { 0 };
+            // Only the print, whose driver raises its own dialog: the file dialogs and the finder's delete open
+            // where Windows puts them.
+            let owner = if wants_centring(&job) { owner() } else { 0 };
             Box::new(move || centre::around(owner, || run(job)))
         };
         #[cfg(all(not(windows), not(test)))]
@@ -379,6 +390,14 @@ mod tests {
         assert!(!app.sysdlg_busy());
         assert_eq!(app.docs.len(), 1, "the dropped request opened nothing");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The centring hook is set for the print and for nothing else: not the finder's shell delete, not a file dialog.
+    #[test]
+    fn only_the_print_asks_for_the_centring_hook() {
+        assert!(wants_centring(&Job::Print(Box::new(|| true))));
+        assert!(!wants_centring(&Job::Task(Box::new(|| true))));
+        assert!(!wants_centring(&Job::Open(rfd::FileDialog::new())));
     }
 
     /// A dialog is centred over its owner, and kept on the work area when that would push it off.

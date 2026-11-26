@@ -230,7 +230,7 @@ impl App {
             // its modal loop where it is called: outside the egui frame, from a posted message, like every system
             // dialog (#190).
             Some(p) => {
-                let job = crate::sysdlg::Job::Task(Box::new(move || spool::print(&p, &title, &imgs, &dev, &setup).is_ok()));
+                let job = crate::sysdlg::Job::Print(Box::new(move || spool::print(&p, &title, &imgs, &dev, &setup).is_ok()));
                 self.pick(job, |app, _, done| {
                     // MFC's OnFilePrint: a printer DC that fails or a StartDoc
                     // of −1 shows string 61702 in an MB_OK box (`0x10232bcf`,
