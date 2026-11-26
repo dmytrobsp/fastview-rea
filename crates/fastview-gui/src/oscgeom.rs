@@ -64,8 +64,9 @@ impl WinMetrics {
 
 /// The shortest view (its client after the horizontal bar) that shows a vertical scroll bar: 74 px at 100 %
 /// (clone, #175: resizing the original's frame step by step, the bar appears when the view goes from 73 to 74
-/// px high, with lanes far taller than the view; none below), the smallest lane 70 px plus the view's 4 px
-/// edge. Not scaled: the view paints in device pixels at every scale (L9.406).
+/// px high, with lanes far taller than the view; none below). Not scaled: measured at 100 / 125 / 150 % as 74
+/// client rows above the horizontal bar each time (clone, #175; the view paints in device pixels at every scale,
+/// L9.406). The smallest lane's 70 px plus an edge of the view is only how the number looks, not its rule.
 pub const VBAR_FLOOR: f32 = 74.0;
 
 /// The width the view measures for its first zoom (`0x45c430`, `GetClientRect` of the view, in its

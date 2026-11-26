@@ -470,7 +470,7 @@ impl App {
         // The frame's accelerator table 128 stays live over the preview (VM:
         // Ctrl+P shows the print dialog over it, Ctrl+S «Сохранить как» and
         // Ctrl+O «Открыть» their dialogs, the preview staying under them).
-        // Ours reads the same events here through `accel_commands` (Ctrl+C
+        // Ours reads all seven of its keys (P, S, O, C, V, Z, Y) from the same events here through `accel_commands` (Ctrl+C
         // and Ctrl+V arrive as `Event::Copy` / `Event::Paste`, not as key
         // presses); the preview gate in `handle_keys`' caller is left alone.
         let edit = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();

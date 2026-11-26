@@ -197,13 +197,14 @@ fn status_ext_w() -> f32 {
     dpi::measured5([135.0, 157.0, 189.0, 213.0, 238.0])
 }
 
-/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
+/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %;
+/// the 175 % entry, 11, is interpolated, 200 % is the same).
 fn status_text_inset() -> f32 {
     dpi::measured5([9.0, 9.0, 10.0, 11.0, 11.0])
 }
 
-/// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
-/// pane leaves no gap): `(index, x, width)` of each shown one.
+/// The status bar's six panes from `left` to `room` (a hidden pane leaves no gap, a pane that does not fit is left
+/// out but a later, narrower one that does is still placed): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
     let mut x = left;
     let mut out = Vec::new();
@@ -1045,9 +1046,9 @@ impl App {
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
         let (ext_w, room) = status_reserve(r.right(), status_ext_w(), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
-        // A hidden pane leaves no gap: the rest move left (VM). A pane that
-        // does not fit before the extended one is not shown (VM, 150 % at
-        // 1280 px: «Гор. визир 2:» and on gone).
+        // A hidden pane leaves no gap: the rest move left (VM). A pane that does not fit before the extended one is
+        // not shown (VM, 150 % at 1280 px: «Гор. визир 2:» and the panes after it gone); a later pane narrow
+        // enough still is (clone, 175 / 200 %, see `status_pane_places`).
         for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
             let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
@@ -2915,7 +2916,8 @@ mod window_tests {
         // 200 % (clone: the work area 1280 × 704, the window rect 960 × 500): the table's cut would give 490, the
         // minimum tracking height 500 holds; the borders 5 + 8 = 13.
         assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 487.0]);
-        // A taller work area is cut as before (4 px per 24 dpi beyond 168).
+        // A taller work area is cut as before (the rule beyond 168 dpi, 4 px per 24 dpi, is extrapolated: the cut of
+        // 38 at 192 dpi is not measured, the clone's 200 % first run was clamped to the minimum).
         assert_eq!(first_run_client([1280.0, 800.0], 192)[1], 600.0 - 38.0 - 13.0);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
