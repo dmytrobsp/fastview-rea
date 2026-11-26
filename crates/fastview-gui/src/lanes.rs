@@ -363,7 +363,9 @@ impl OscView<'_> {
                 // A group's curves in member-set order (`0x4311e0`); the
                 // first draws the zero line.
                 let order = doc.group_paint_order(&r.members);
-                if lo <= 0.0 && 0.0 <= hi {
+                // (A lane of nothing but NaN, a 0 / 0 ratio, or on an infinite range draws none: clone, #170.)
+                let only_nan = order.iter().all(|m| matches!(m, Lane::Analog(i) if doc.shown_samples(*i).iter().all(|v| v.is_nan())));
+                if lo <= 0.0 && 0.0 <= hi && !only_nan && lo.is_finite() && hi.is_finite() {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
@@ -861,8 +863,9 @@ pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, 
 /// whole record (a group: min of mins, max of maxes).
 pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    // An infinite extreme (a zero ratio, #170) is part of the range; a NaN is not.
     let mut take = |v: f64| {
-        if v.is_finite() {
+        if !v.is_nan() {
             lo = lo.min(v);
             hi = hi.max(v);
         }
@@ -1002,11 +1005,17 @@ fn draw_series(
     if last < first {
         return;
     }
-    let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).filter(|p| !p.y.is_nan()).collect();
+    // A NaN sample is not drawn; an infinite one is a point on the baseline, drawn with its mark but no line (the
+    // original's polyline through such a point leaves nothing between them, clone, #170).
+    let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).filter(|(p, _)| !p.y.is_nan()).collect();
+    let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
-    for r in g::aliased_runs(&pts) {
-        mesh.add_colored_rect(r, color);
+    for run in samples.split(|s| !s.1) {
+        let line: Vec<Pos2> = run.iter().map(|s| s.0).collect();
+        for r in g::aliased_runs(&line) {
+            mesh.add_colored_rect(r, color);
+        }
     }
     p.add(Shape::mesh(mesh));
     if f > 0.16 {
