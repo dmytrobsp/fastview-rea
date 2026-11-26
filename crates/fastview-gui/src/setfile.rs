@@ -863,7 +863,14 @@ impl App {
             let (active, status) = (self.active, self.status.clone());
             self.active = Some(di);
             let batch: Vec<(String, String)> = calc;
-            self.append_computed(&batch);
+            // A failing batch is its box; the rows stay in the definition list like any kept row, so the next
+            // command that runs the batch shows the box again (clone, #174).
+            if self.append_computed(&batch).is_none() {
+                if let Some(d) = self.docs.get_mut(di) {
+                    let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
+                    d.loose_defs.extend(fresh);
+                }
+            }
             self.active = active;
             self.status = status;
         }
@@ -2107,6 +2114,28 @@ mod tests {
         let bi = open(&mut back, &cfg);
         let names: Vec<_> = back.docs[bi].computed.iter().map(|c| (c.name.as_str(), c.formula.as_str())).collect();
         assert_eq!(names, [("Y", "Ub*2"), ("Z1", "Uc*2"), ("X", "Ua*2")]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #174 (clone): a `.set` whose `CalculatedChannels` holds a definition that cannot be evaluated shows its box
+    /// on load, and the definition stays in the list: the next command that runs the batch (a flag command on a
+    /// lane) shows the box again.
+    #[test]
+    fn a_failing_definition_loaded_from_a_set_file_stays_and_boxes_again() {
+        let dir = temp_dir("failload");
+        let cfg = write_record(&dir);
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        app.active = Some(di);
+        app.dlg.alerts.clear();
+        app.docs[di].set.tree.section_mut("CalculatedChannels").set_str("Channel0", "Q1,NoSuchChannel+1");
+        app.apply_record_settings(di, true);
+        assert_eq!(app.dlg.alerts.len(), 1, "the box on load");
+        assert_eq!(app.docs[di].loose_defs, [("Q1".to_string(), "NoSuchChannel+1".to_string())]);
+        app.dlg.alerts.clear();
+        app.after_flag_command(crate::chansel::ChanFlag::Invert);
+        assert_eq!(app.dlg.alerts.len(), 1, "the box again after a flag command");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

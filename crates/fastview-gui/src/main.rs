@@ -65,12 +65,15 @@ use eframe::egui;
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
 /// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
-/// border, `WinMetrics::border() − 1` a side (7 at 100 %, 12 at 200 %; #176).
+/// border a side. The border measured on clones is 7 / 9 / 11 / 12 / 13 px at 100 / 125 / 150 / 175 / 200 %:
+/// `WinMetrics::border()` at the scaled looks (a first run's client is the clamped rect less it, #176) and one less
+/// at 100 %, where the visible frame line is not part of the client.
 fn min_visible_at(dpi: u32) -> [f32; 2] {
-    let b = oscgeom::WinMetrics::at(dpi).border() - 1.0;
-    [866.0 - 2.0 * b, MIN_TRACK_H - b]
+    let b = oscgeom::WinMetrics::at(dpi).border() - if dpi <= 96 { 1.0 } else { 0.0 };
+    [MIN_TRACK_W - 2.0 * b, MIN_TRACK_H - b]
 }
-/// The frame's minimum tracking height as a window rect (see [`MIN_VISIBLE`]).
+/// The frame's minimum tracking size as a window rect (see [`MIN_VISIBLE`]).
+const MIN_TRACK_W: f32 = 866.0;
 const MIN_TRACK_H: f32 = 500.0;
 
 /// The size grip of a normal (not maximised) window, at 100 % in px, as the original's last status pane
@@ -92,6 +95,43 @@ fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f
     } else {
         (ext + grip, right - ext - grip)
     }
+}
+
+/// How many pixels of the layout's right and bottom edge a normal (not maximised) window of ours does not show: the
+/// clone's windows end one pixel before the egui area at 100 / 125 % and two at 150 % (the last row and column are the
+/// desktop's; the 175 / 200 % entries repeat 150 %, not measured). The older looks' grip (lines, dots) is placed
+/// against the edge that shows, as the original's is against its client's (#167); the Office 2007 looks' dots, which
+/// an earlier clone run found at the client's edge, are left as they were.
+fn status_grip_inset(grip: theme::Grip) -> f32 {
+    if cfg!(windows) && !matches!(grip, theme::Grip::Shadowed { .. }) {
+        dpi::measured5([1.0, 1.0, 2.0, 2.0, 2.0])
+    } else {
+        0.0
+    }
+}
+
+/// Where the older looks' last pane draws its right bracket line, from the layout's right edge (clone, #167: 22 px
+/// from the last pixel the window shows at 125 %, 27 at 150 %, with the window's cut of 1 / 2 px; at 100 % 19, as it
+/// was). The 175 / 200 % entries continue the step, not measured.
+fn status_pane_line_offset() -> f32 {
+    dpi::measured5([19.0, 24.0, 30.0, 35.0, 40.0])
+}
+
+/// The left bracket line the original draws at the scaled looks only, from the layout's right edge: 184 / 266 px from
+/// the last pixel the window shows at 125 / 150 % (clone, Office XP and Windows XP; none at 100 %). Not measured at
+/// 175 / 200 %, where none is drawn.
+fn status_pane_left_line_offset() -> Option<f32> {
+    match dpi::dpi() {
+        120 => Some(186.0),
+        144 => Some(269.0),
+        _ => None,
+    }
+}
+
+/// How much further right the extended pane's text starts in the older looks than `status_text_inset` puts it (clone:
+/// the original's ink 3 px further right than ours at 125 % (after the bracket fix) and, by the first run, 3 at 150 %; 100 % none, 175 / 200 % held).
+fn status_ext_text_shift() -> f32 {
+    dpi::measured5([0.0, 3.0, 3.0, 3.0, 3.0])
 }
 
 /// The dots' pitch in px at the system DPI (measured at 150 %: 4).
@@ -194,13 +234,14 @@ fn status_ext_w() -> f32 {
     dpi::measured5([135.0, 157.0, 189.0, 213.0, 238.0])
 }
 
-/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %).
+/// A pane's text starts this far into it (clone: ink 10 / 10 / 11 px from the pane's edge at 100 / 125 / 150 %;
+/// the 175 % entry, 11, is interpolated, 200 % is the same).
 fn status_text_inset() -> f32 {
     dpi::measured5([9.0, 9.0, 10.0, 11.0, 11.0])
 }
 
-/// The status bar's six panes from `left` to `room` (the first that does not fit ends the row, a hidden
-/// pane leaves no gap): `(index, x, width)` of each shown one.
+/// The status bar's six panes from `left` to `room` (a hidden pane leaves no gap, a pane that does not fit is left
+/// out but a later, narrower one that does is still placed): `(index, x, width)` of each shown one.
 fn status_pane_places(left: f32, room: f32, hidden: &[bool; 7]) -> Vec<(usize, f32, f32)> {
     let mut x = left;
     let mut out = Vec::new();
@@ -619,10 +660,12 @@ fn first_run_client(work: [f32; 2], dpi: u32) -> [f32; 2] {
         d if d < 168 => (21.0 + (d as f32 - 96.0) / 6.0).round(),
         d => (34.0 + (d as f32 - 168.0) / 6.0).round(),
     };
-    // The frame is never shorter than its minimum tracking size, 500 px (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
+    // The frame is never smaller than its minimum tracking size, 866 × 500 (`OnGetMinMaxInfo` `0x4728a0`; clone at 200 %:
     // the work area 704 gives 528 − 38 = 490, the window came out 500 high, 960 wide).
     let rect_h = ((work[1] * 0.75).floor() - cut).max(MIN_TRACK_H);
-    [(work[0] * 0.75).floor() - 2.0 * m.border(), rect_h - m.border()]
+    // …and never narrower than 866 (a small work area: the clone's clamped frame, 866 × 500).
+    let rect_w = (work[0] * 0.75).floor().max(MIN_TRACK_W);
+    [rect_w - 2.0 * m.border(), rect_h - m.border()]
 }
 
 #[cfg(windows)]
@@ -1040,9 +1083,9 @@ impl App {
         let maximised = ui.ctx().input(|i| i.viewport().maximized.unwrap_or(false));
         let (ext_w, room) = status_reserve(r.right(), status_ext_w(), maximised, self.status_hidden[6]);
         let hidden = self.status_hidden;
-        // A hidden pane leaves no gap: the rest move left (VM). A pane that
-        // does not fit before the extended one is not shown (VM, 150 % at
-        // 1280 px: «Гор. визир 2:» and on gone).
+        // A hidden pane leaves no gap: the rest move left (VM). A pane that does not fit before the extended one is
+        // not shown (VM, 150 % at 1280 px: «Гор. визир 2:» and the panes after it gone); a later pane narrow
+        // enough still is (clone, 175 / 200 %, see `status_pane_places`).
         for (i, x, w) in status_pane_places(r.left(), room, &hidden) {
             let text = &s[i];
             let clip = egui::Rect::from_min_max(egui::pos2(x, r.top()), egui::pos2(x + w - 2.0, r.bottom()));
@@ -1065,20 +1108,26 @@ impl App {
             painter.vline(ext.left() + 0.5, ext.y_range(), egui::Stroke::new(1.0f32, p.status_bg.lerp_to_gamma(egui::Color32::WHITE, 0.6)));
         }
         if ext_shown {
-            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at every scale).
-            painter.text(egui::pos2(ext.left() + 16.0, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
+            // Its text starts 16 px in (clone: ink 17 px from the pane's edge at 100 %, further in the older looks at
+            // 125 / 150 %).
+            let shift = if p.status_flat.is_some() { status_ext_text_shift() } else { 0.0 };
+            painter.text(egui::pos2(ext.left() + 16.0 + shift, ext.center().y), egui::Align2::LEFT_CENTER, "НТЦ Механотроника", font, p.status_text);
         }
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
-            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right(), r.bottom()) {
+            let inset = status_grip_inset(self.skin.status_grip());
+            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right() - inset, r.bottom() - inset) {
                 painter.rect_filled(rect, 0.0, c);
             }
-            // The older looks' last pane: a line before it, 19 / 23 / 28 px from the right edge, 4 px short of the
-            // bar's top and bottom.
+            // The older looks' last pane: a line at its right ([`status_pane_line_offset`]) and, at 125 / 150 %, one at
+            // its left ([`status_pane_left_line_offset`]), both 4 px short of the bar's top and bottom (clone, #167).
             if let Some(c) = self.skin.status_pane_line() {
-                let x = r.right() - (19.0 * dpi::k()).floor();
-                painter.rect_filled(egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0)), 0.0, c);
+                let line = |x: f32| egui::Rect::from_min_max(egui::pos2(x, r.bottom() - dpi::s(24.0) + 4.0), egui::pos2(x + 1.0, r.bottom() - 4.0));
+                painter.rect_filled(line(r.right() - status_pane_line_offset()), 0.0, c);
+                if let Some(off) = status_pane_left_line_offset().filter(|_| ext_shown) {
+                    painter.rect_filled(line(r.right() - off), 0.0, c);
+                }
             }
         }
         // CMFCRibbonStatusBar's right-click: its configuration menu.
@@ -2065,6 +2114,39 @@ mod window_tests {
         assert_eq!((Skin::OfficeXp.status_pane_line(), Skin::WinXp.status_pane_line(), Skin::Win2000.status_pane_line()), (Some(egui::Color32::from_gray(160)), Some(egui::Color32::from_gray(180)), None));
     }
 
+    /// #167 (clone, 125 / 150 %): the older looks' extended pane: its right bracket line 24 / 29 px from the layout's
+    /// edge (the original's, against the cut of the window's edge), the text 3 px further right than the blue look's
+    /// inset puts it, and a second bracket line left of the pane at the scaled looks only.
+    #[test]
+    fn the_older_looks_extended_pane_follows_the_clone() {
+        for (d, line, shift) in [(96, 19.0, 0.0), (120, 24.0, 3.0), (144, 30.0, 3.0)] {
+            dpi::set(d);
+            assert_eq!((status_pane_line_offset(), status_ext_text_shift()), (line, shift), "{d}");
+        }
+        dpi::set(96);
+        assert_eq!(status_pane_left_line_offset(), None, "none at 100 %");
+        dpi::set(120);
+        assert_eq!(status_pane_left_line_offset(), Some(186.0));
+        dpi::set(144);
+        assert_eq!(status_pane_left_line_offset(), Some(269.0));
+        dpi::set(96);
+    }
+
+    /// #167 (clone): the grip is laid against the edge of the window that shows, one pixel in at 100 / 125 % and two at
+    /// 150 %, so the dots keep the original's three clear columns and two clear rows.
+    #[cfg(windows)]
+    #[test]
+    fn the_size_grip_keeps_to_the_edge_that_shows() {
+        for (d, want) in [(96, 1.0), (120, 1.0), (144, 2.0)] {
+            dpi::set(d);
+            for skin in [theme::Skin::Win2000, theme::Skin::OfficeXp, theme::Skin::WinXp, theme::Skin::Office2003, theme::Skin::Vs2005] {
+                assert_eq!(status_grip_inset(skin.status_grip()), want, "{d} {skin:?}");
+            }
+            assert_eq!(status_grip_inset(theme::Skin::Blue.status_grip()), 0.0, "{d}: the Office 2007 look is as it was");
+        }
+        dpi::set(96);
+    }
+
     /// #138 / the final review: a press on a normal (decorated) window's size grip begins a south-east resize;
     /// while a dialog is up the original's frame is disabled and the press does nothing.
     #[test]
@@ -2910,7 +2992,8 @@ mod window_tests {
         // 200 % (clone: the work area 1280 × 704, the window rect 960 × 500): the table's cut would give 490, the
         // minimum tracking height 500 holds; the borders 5 + 8 = 13.
         assert_eq!(first_run_client([1280.0, 704.0], 192), [934.0, 487.0]);
-        // A taller work area is cut as before (4 px per 24 dpi beyond 168).
+        // A taller work area is cut as before (the rule beyond 168 dpi, 4 px per 24 dpi, is extrapolated: the cut of
+        // 38 at 192 dpi is not measured, the clone's 200 % first run was clamped to the minimum).
         assert_eq!(first_run_client([1280.0, 800.0], 192)[1], 600.0 - 38.0 - 13.0);
         // The MDI area that follows: a quarter of it less 6, rounded up (230, 230, 229 on the VM).
         for (dpi, w) in [(96, 230.0), (120, 230.0), (144, 229.0)] {
@@ -2919,17 +3002,28 @@ mod window_tests {
         }
     }
 
-    /// #176 (clone, 200 %): the frame is never shorter than its 866 × 500 minimum tracking rect: a first run on a
+    /// #176 (clone, 200 %): the frame is never smaller than its 866 × 500 minimum tracking rect: a first run on a
     /// 704 px work area is 500 high (the ¾ rule gives 490), and the smallest client is the rect less the invisible
-    /// border (852 × 493 at 100 %, 842 × 488 at 200 %).
+    /// border (852 × 493 at 100 %, 840 × 487 at 200 %).
     #[test]
     fn the_first_run_frame_keeps_the_minimum_tracking_size() {
         assert_eq!(min_visible_at(96), MIN_VISIBLE);
-        assert_eq!(min_visible_at(192), [842.0, 488.0]);
+        assert_eq!(min_visible_at(192), [840.0, 487.0]);
         // The work area 1280 × 704 at 192 dpi: 528 − 38 = 490 would be below the minimum 500.
         assert_eq!(first_run_client([1280.0, 704.0], 192)[1], 500.0 - 13.0);
         // Where the rule gives more, the rule stands (168 dpi: 537 − 34 = 503).
         assert_eq!(first_run_client([1280.0, 716.0], 168)[1], 503.0 - 12.0);
+        // A small work area: the clamped frame is 866 wide (clone, 168 dpi) …
+        assert_eq!(first_run_client([1000.0, 566.0], 168), [866.0 - 24.0, 500.0 - 12.0]);
+        // … and what the first run gives is never below what the window can be sized to, at any scale: the two
+        // rules were one pixel apart at 200 %, so the window grew the clone's first run to 488 high.
+        for dpi in [96, 120, 144, 168, 192] {
+            let (min, first) = (min_visible_at(dpi), first_run_client([1280.0, 704.0], dpi));
+            assert!(first[0] >= min[0] && first[1] >= min[1], "dpi {dpi}: {first:?} against {min:?}");
+        }
+        let small = first_run_client([1000.0, 566.0], 192);
+        assert_eq!(small, [866.0 - 26.0, 500.0 - 13.0]);
+        assert_eq!(small, min_visible_at(192), "the clamped first run is exactly the smallest window");
     }
 
     /// #147: on a first run's frame ours' MDI area is the original's at every display scale (clone,

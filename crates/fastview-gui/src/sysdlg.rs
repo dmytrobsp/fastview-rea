@@ -27,6 +27,9 @@ pub enum Job {
     Folder(rfd::FileDialog),
     /// Another system call that shows dialogs of its own (the shell's delete): answers `Some` when it returns true.
     Task(Box<dyn FnOnce() -> bool + Send>),
+    /// The real print: a task whose StartDoc may raise the driver's own save dialog, the one job the centring hook
+    /// ([`wants_centring`]) is set for.
+    Print(Box<dyn FnOnce() -> bool + Send>),
     /// A save dialog that reports the chosen file type: `filters` are (description, extension).
     SaveTyped { filters: Vec<(String, String)>, dir: Option<String>, name: String, owner: isize },
 }
@@ -75,7 +78,7 @@ pub fn run(job: Job) -> Picked {
         Job::Open(d) => d.pick_file().map(|p| (p, None)),
         Job::Save(d) => d.save_file().map(|p| (p, None)),
         Job::Folder(d) => d.pick_folder().map(|p| (p, None)),
-        Job::Task(f) => f().then(|| (PathBuf::new(), None)),
+        Job::Task(f) | Job::Print(f) => f().then(|| (PathBuf::new(), None)),
         Job::SaveTyped { filters, dir, name, owner } => save_typed(&filters, dir, &name, owner),
     }
 }
@@ -131,6 +134,95 @@ fn save_typed(filters: &[(String, String)], dir: Option<String>, name: &str, own
             dlg = dlg.set_directory(d);
         }
         dlg.set_file_name(name).save_file().map(|p| (p, None))
+    }
+}
+
+/// Whether `job` runs under the centring hook: the print only (the finder's shell delete and the file dialogs open
+/// where the system puts them).
+#[cfg(any(windows, test))]
+fn wants_centring(job: &Job) -> bool {
+    matches!(job, Job::Print(_))
+}
+
+/// Where a driver's dialog that Windows leaves at the screen's top-left opens: centred over the frame, kept on the
+/// monitor's work area. (Clone, #190: Print to PDF's «Save Print Output As», raised in StartDoc, opens at the
+/// screen's corner under ours, where the original's sits where Windows puts a file dialog it remembers; the Open
+/// dialog is the same place in both programs without any help, and keeps it.)
+#[cfg(any(windows, test))]
+pub fn centred_over(owner: (i32, i32, i32, i32), dialog: (i32, i32), work: (i32, i32, i32, i32)) -> (i32, i32) {
+    let (ow, oh) = (owner.2 - owner.0, owner.3 - owner.1);
+    let x = owner.0 + (ow - dialog.0) / 2;
+    let y = owner.1 + (oh - dialog.1) / 2;
+    (x.min(work.2 - dialog.0).max(work.0), y.min(work.3 - dialog.1).max(work.1))
+}
+
+/// A WH_CBT hook on this thread for the duration of a task that raises a dialog: the first window activated on this
+/// thread but the owner itself is centred over the owner ([`centred_over`]), by a timer a moment after its
+/// activation — a file dialog places itself while it is shown and would undo an earlier move.
+#[cfg(all(windows, not(test)))]
+mod centre {
+    use std::sync::atomic::{AtomicIsize, Ordering};
+    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
+    use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, GetWindowRect, KillTimer, SetTimer, SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, HCBT_ACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WH_CBT};
+
+    static OWNER: AtomicIsize = AtomicIsize::new(0);
+    /// The dialog found by the hook, moved by the timer a moment later: a common dialog places itself while it is
+    /// shown, after its first activation, and would undo a move made there.
+    static DIALOG: AtomicIsize = AtomicIsize::new(0);
+
+    unsafe extern "system" fn hook(code: i32, w: usize, l: isize) -> isize {
+        if code == HCBT_ACTIVATE as i32 {
+            let owner = OWNER.load(Ordering::Acquire);
+            if owner != 0 && w as isize != owner && OWNER.compare_exchange(owner, 0, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                DIALOG.store(w as isize, Ordering::Release);
+                OWNER_OF_DIALOG.store(owner, Ordering::Release);
+                // SAFETY: a thread timer without a window, handled on this thread.
+                unsafe { SetTimer(std::ptr::null_mut(), 0x4651, 30, Some(place)) };
+            }
+        }
+        // SAFETY: passes the hook chain on.
+        unsafe { CallNextHookEx(std::ptr::null_mut(), code, w, l) }
+    }
+
+    static OWNER_OF_DIALOG: AtomicIsize = AtomicIsize::new(0);
+
+    unsafe extern "system" fn place(_: HWND, _: u32, id: usize, _: u32) {
+        // SAFETY: plain queries and a move of the dialog found by the hook, on this thread.
+        unsafe {
+            KillTimer(std::ptr::null_mut(), id);
+            let (win, owner) = (DIALOG.swap(0, Ordering::AcqRel) as HWND, OWNER_OF_DIALOG.swap(0, Ordering::AcqRel) as HWND);
+            if win.is_null() || owner.is_null() {
+                return;
+            }
+            let empty = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            let (mut o, mut d) = (empty, empty);
+            if GetWindowRect(owner, &mut o) != 0 && GetWindowRect(win, &mut d) != 0 {
+                let mut mi: MONITORINFO = std::mem::zeroed();
+                mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+                let work = if GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut mi) != 0 { (mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom) } else { (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2) };
+                let (x, y) = super::centred_over((o.left, o.top, o.right, o.bottom), (d.right - d.left, d.bottom - d.top), work);
+                SetWindowPos(win, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+    }
+
+    /// Run `f` with the hook set (none when there is no owner).
+    pub fn around<R>(owner: isize, f: impl FnOnce() -> R) -> R {
+        if owner == 0 {
+            return f();
+        }
+        OWNER.store(owner, Ordering::Release);
+        // SAFETY: a thread hook on this thread, removed before returning.
+        let h = unsafe { SetWindowsHookExW(WH_CBT, Some(hook), std::ptr::null_mut(), GetCurrentThreadId()) };
+        let r = f();
+        if !h.is_null() {
+            // SAFETY: the hook set above.
+            unsafe { UnhookWindowsHookEx(h) };
+        }
+        OWNER.store(0, Ordering::Release);
+        r
     }
 }
 
@@ -220,7 +312,14 @@ impl App {
             // A timeout answers as a cancel: a test that blocks on the dialog fails on its assertions, it does not hang CI.
             Box::new(move || rx.and_then(|rx| rx.recv_timeout(std::time::Duration::from_secs(10)).ok()).flatten())
         };
-        #[cfg(not(test))]
+        #[cfg(all(windows, not(test)))]
+        let runner: Box<dyn FnOnce() -> Picked + Send> = {
+            // Only the print, whose driver raises its own dialog: the file dialogs and the finder's delete open
+            // where Windows puts them.
+            let owner = if wants_centring(&job) { owner() } else { 0 };
+            Box::new(move || centre::around(owner, || run(job)))
+        };
+        #[cfg(all(not(windows), not(test)))]
         let runner: Box<dyn FnOnce() -> Picked + Send> = Box::new(move || run(job));
         self.sysdlg = Some(Pending { rx: start(runner), then: Box::new(then) });
     }
@@ -291,6 +390,24 @@ mod tests {
         assert!(!app.sysdlg_busy());
         assert_eq!(app.docs.len(), 1, "the dropped request opened nothing");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The centring hook is set for the print and for nothing else: not the finder's shell delete, not a file dialog.
+    #[test]
+    fn only_the_print_asks_for_the_centring_hook() {
+        assert!(wants_centring(&Job::Print(Box::new(|| true))));
+        assert!(!wants_centring(&Job::Task(Box::new(|| true))));
+        assert!(!wants_centring(&Job::Open(rfd::FileDialog::new())));
+    }
+
+    /// A dialog is centred over its owner, and kept on the work area when that would push it off.
+    #[test]
+    fn a_dialog_is_centred_over_its_owner() {
+        let work = (0, 0, 1280, 752);
+        assert_eq!(centred_over((100, 50, 900, 650), (400, 300), work), (300, 200));
+        // An owner at the screen's corner: the dialog stays on the screen.
+        assert_eq!(centred_over((-50, -40, 350, 260), (600, 400), work), (0, 0));
+        assert_eq!(centred_over((1000, 500, 1400, 800), (600, 400), work), (680, 352));
     }
 
     /// A cancelled dialog does nothing.

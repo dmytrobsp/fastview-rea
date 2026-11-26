@@ -27,7 +27,7 @@ const ROW_H: f32 = 15.0;
 /// Horizontal scrollbar height below the view and vertical scrollbar width:
 /// the view's window scroll bars, at the default system metric (96 dpi).
 #[cfg(test)]
-const HSCROLL_H: f32 = 17.0;
+const HSCROLL_H: f32 = 16.0;
 #[cfg(test)]
 const VSCROLL_W: f32 = 17.0;
 
@@ -39,8 +39,11 @@ pub(crate) fn scroll_w() -> f32 {
     crate::oscgeom::WinMetrics::at(crate::dpi::dpi()).scroll
 }
 
+/// The horizontal bar's band: the system metric less the row below it (clone, #175: the original's bar is 16 / 20 /
+/// 25 rows at 100 / 125 / 150 %, the metric 17 / 21 / 26, ours was one row thicker, so the vertical bar's floor was
+/// reached one frame pixel later). The planes' bars take the pixel the same way (`diagram_ui::scroll_w`).
 fn scroll_h() -> f32 {
-    scroll_w()
+    scroll_w() - 1.0
 }
 /// The V scroll bar's line step (`0x45d6d0`: SB_LINEUP/DOWN = 100 px).
 const VSCROLL_LINE: f32 = 100.0;
@@ -360,7 +363,9 @@ impl OscView<'_> {
                 // A group's curves in member-set order (`0x4311e0`); the
                 // first draws the zero line.
                 let order = doc.group_paint_order(&r.members);
-                if lo <= 0.0 && 0.0 <= hi {
+                // (A lane of nothing but NaN, a 0 / 0 ratio, or on an infinite range draws none: clone, #170.)
+                let only_nan = order.iter().all(|m| matches!(m, Lane::Analog(i) if doc.shown_samples(*i).iter().all(|v| v.is_nan())));
+                if lo <= 0.0 && 0.0 <= hi && !only_nan && lo.is_finite() && hi.is_finite() {
                     let zy = g::value_y(0.0, top, h, lo, hi);
                     painter_for(order.first().copied()).px_hline(left..=plot_right, zy, Stroke::new(1.0f32, Color32::from_rgb(200, 200, 200)));
                 }
@@ -373,7 +378,11 @@ impl OscView<'_> {
                     match m {
                         Lane::Analog(i) => {
                             let c = doc.chans[i].color;
-                            draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
+                            // read at `0x42955a` does not say why).
+                            if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
+                                draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                            }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
@@ -858,8 +867,9 @@ pub(crate) fn bold_text(p: &egui::Painter, pos: Pos2, text: &str, font: FontId, 
 /// whole record (a group: min of mins, max of maxes).
 pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
     let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+    // An infinite extreme (a zero ratio, #170) is part of the range; a NaN is not.
     let mut take = |v: f64| {
-        if v.is_finite() {
+        if !v.is_nan() {
             lo = lo.min(v);
             hi = hi.max(v);
         }
@@ -925,7 +935,12 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
 }
 
 pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
-    let [mut lo, mut hi, ..] = scaled_minmax(doc, i);
+    let [mut lo, mut hi, mn, mx] = scaled_minmax(doc, i);
+    // An infinite sample (a zero ratio field, #170) is part of the range the original draws in: the trace then sits
+    // on the baseline (`value_y`), not on the middle a range of no finite value gives.
+    if mn.is_infinite() || mx.is_infinite() {
+        (lo, hi) = (mn, mx);
+    }
     if lo > hi {
         (lo, hi) = (0.0, 0.0);
     }
@@ -994,11 +1009,17 @@ fn draw_series(
     if last < first {
         return;
     }
-    let pts: Vec<Pos2> = (first..=last).map(|k| Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi))).collect();
+    // A NaN or infinite sample is a point on the baseline, drawn with its mark but no line (the original's polyline
+    // through such a point leaves nothing between them, clone, #170).
+    let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).collect();
+    let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
-    for r in g::aliased_runs(&pts) {
-        mesh.add_colored_rect(r, color);
+    for run in samples.split(|s| !s.1) {
+        let line: Vec<Pos2> = run.iter().map(|s| s.0).collect();
+        for r in g::aliased_runs(&line) {
+            mesh.add_colored_rect(r, color);
+        }
     }
     p.add(Shape::mesh(mesh));
     if f > 0.16 {
@@ -3025,6 +3046,9 @@ mod menu_tests {
             let lanes: f32 = lane_layout(app.active_doc().unwrap(), app.y_analog).iter().map(|r| r.h).sum();
             assert!(lanes > full.height() + 200.0, "the lanes are far taller than the view");
             let bar = client.right() < full.right();
+            // The horizontal bar's band is the original's 16 rows (the demo record scrolls), so a frame's height
+            // ends in a client 74 high one frame pixel sooner than with the metric's 17.
+            assert_eq!(full.bottom() - client.bottom(), HSCROLL_H, "screen {screen_h}");
             seen.insert(client.height().round() as i32, bar);
             assert_eq!(bar, client.height() >= g::VBAR_FLOOR, "screen {screen_h}: client {} px high, bar {bar}", client.height());
         }
@@ -3038,7 +3062,7 @@ mod menu_tests {
     fn the_view_scroll_bars_follow_the_system_metric() {
         for (dpi, w) in [(96, 17.0), (120, 21.0), (144, 26.0), (168, 30.0), (192, 34.0)] {
             crate::dpi::set(dpi);
-            assert_eq!((scroll_w(), scroll_h()), (w, w), "{dpi}");
+            assert_eq!((scroll_w(), scroll_h()), (w, w - 1.0), "{dpi}");
         }
         crate::dpi::set(96);
     }
@@ -3575,11 +3599,15 @@ mod menu_tests {
             (h, at)
         };
         let (mut h, at) = setup();
-        let one = h.doc().hscroll_pos.map(|k| k.0).unwrap();
+        let kept = h.doc().hscroll_pos.unwrap();
+        let one = kept.0;
         h.app.dispatch(Command::Copy);
         assert!(h.doc().hscroll_pos.is_some(), "Copy keeps it");
         h.wheel(at, 1.0, egui::Modifiers::SHIFT);
         assert_ne!(h.doc().first, one);
+        // The notch lands on the kept rule's sample, not on the page rule's from the sample shown.
+        let (_, v, n, _, _) = kept;
+        assert_eq!(h.doc().first, hscroll_page(one, n, v, true, Some(kept.3)).0, "the notch back is from the kept position");
         // The height: the same state with another view height in the memo's key.
         let (mut h, at) = setup();
         let k = h.doc().hscroll_pos.unwrap();

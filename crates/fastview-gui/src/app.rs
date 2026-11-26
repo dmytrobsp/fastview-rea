@@ -643,11 +643,13 @@ pub fn flag_series(c: &fvb_core::comtrade::AnalogChannel, v: &ChanView, (dc, dc_
 /// with — primary / secondary when primary values are shown of a file
 /// stored in secondary ones (`+0x89` set, `+0x88` clear), secondary /
 /// primary in the converse case (a «P» record shown «Вторичные», the
-/// default: `0x422460` clears `+0x89`), else 1.
+/// default: `0x422460` clears `+0x89`), else 1. The division is not guarded:
+/// a zero ratio field (a `.cfg` text atof reads as 0) gives an infinite or
+/// NaN factor, as in the original (clone, #170).
 pub fn display_k(ch: &fvb_core::comtrade::AnalogChannel, show_primary: bool) -> f64 {
     match (show_primary, ch.is_primary) {
-        (true, false) if ch.secondary != 0.0 => ch.primary / ch.secondary,
-        (false, true) if ch.primary != 0.0 => ch.secondary / ch.primary,
+        (true, false) => ch.primary / ch.secondary,
+        (false, true) => ch.secondary / ch.primary,
         _ => 1.0,
     }
 }
@@ -2495,52 +2497,57 @@ impl App {
     /// holds text —, with no key event; Ctrl+V's key-up still comes, so a
     /// paste no `Event::Paste` announced fires there.
     pub fn handle_keys(&mut self, ctx: &egui::Context) {
-        let mut cmds = Vec::new();
         // (Taken before the input's lock: the data store shares it.)
-        let (mut edit_copies, mut edit_pastes) = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
-        ctx.input(|i| {
-            let m = i.modifiers;
-            // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
-            // Ctrl+Tab, L9.130) acts through a child's system menu, which the
-            // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
-            // do nothing with two documents open (L9.294).
-            // Each key by the modifiers it came with: in a slow frame Ctrl
-            // may be up again by the frame's end (the software runner, VM).
-            // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
-            // too: refused while Shift / Alt is held).
-            let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
-            let plain = !m.shift && !m.alt;
-            // Insert's copy / paste kept for a text edit are the edit's own.
-            for e in &i.events {
-                match e {
-                    egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
-                    egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
-                    egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
-                        if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
-                            // Ctrl+V acts at the press (a key-up after it
-                            // is not another paste).
-                            if *key == egui::Key::V {
-                                self.paste_announced = true;
-                            }
-                            cmds.push(c);
-                        }
-                    }
-                    egui::Event::Copy if plain => cmds.push(Command::Copy),
-                    egui::Event::Paste(_) if plain => {
-                        self.paste_announced = true;
-                        cmds.push(Command::Paste);
-                    }
-                    // The key-up also clears the announcement.
-                    egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
-                    _ => {}
-                }
-            }
-        });
+        let edit = ctx.data_mut(|d| d.remove_temp::<(u8, u8)>(egui::Id::new(crate::winkeys::KEPT_FOR_EDIT))).unwrap_or_default();
+        let cmds = ctx.input(|i| self.accel_commands(&i.events, edit, !i.modifiers.shift && !i.modifiers.alt));
         for c in cmds {
             if self.shortcut_enabled(&c) {
                 self.dispatch(c);
             }
         }
+    }
+
+    /// The commands this frame's events fire through table 128 (`handle_keys`'s scan; the print preview, which
+    /// swaps the table, reads the same events through it). `edit` is the (copies, pastes) kept for a text edit, `plain` that the frame's
+    /// Shift and Alt are up (`Event::Copy` / `Paste` carry no modifiers).
+    pub fn accel_commands(&mut self, events: &[egui::Event], edit: (u8, u8), plain: bool) -> Vec<Command> {
+        let mut cmds = Vec::new();
+        let (mut edit_copies, mut edit_pastes) = edit;
+        // No MDI keys: TranslateMDISysAccel (Ctrl+F4 / Ctrl+F6 /
+        // Ctrl+Tab, L9.130) acts through a child's system menu, which the
+        // tabbed MDI children have not — on the VM Ctrl+Tab and Ctrl+F4
+        // do nothing with two documents open (L9.294).
+        // Each key by the modifiers it came with: in a slow frame Ctrl
+        // may be up again by the frame's end (the software runner, VM).
+        // `Copy` / `Paste` come only from their shortcuts (Ctrl+Shift
+        // too: refused while Shift / Alt is held).
+        let accel = |m: &egui::Modifiers| (m.command || m.ctrl) && !m.shift && !m.alt;
+        // Insert's copy / paste kept for a text edit are the edit's own.
+        for e in events {
+            match e {
+                egui::Event::Copy if edit_copies > 0 => edit_copies -= 1,
+                egui::Event::Paste(_) if edit_pastes > 0 => edit_pastes -= 1,
+                egui::Event::Key { key, pressed: true, modifiers, .. } if accel(modifiers) => {
+                    if let Some((_, c)) = Self::keymap().into_iter().find(|(k, _)| k == key) {
+                        // Ctrl+V acts at the press (a key-up after it
+                        // is not another paste).
+                        if *key == egui::Key::V {
+                            self.paste_announced = true;
+                        }
+                        cmds.push(c);
+                    }
+                }
+                egui::Event::Copy if plain => cmds.push(Command::Copy),
+                egui::Event::Paste(_) if plain => {
+                    self.paste_announced = true;
+                    cmds.push(Command::Paste);
+                }
+                // The key-up also clears the announcement.
+                egui::Event::Key { key: egui::Key::V, pressed: false, modifiers, .. } if accel(modifiers) && !std::mem::take(&mut self.paste_announced) => cmds.push(Command::Paste),
+                _ => {}
+            }
+        }
+        cmds
     }
 
     /// The table-128 commands' update rules (`0x45bf60`; Open is the
@@ -3370,6 +3377,45 @@ mod tests {
             assert!(app.docs.is_empty());
             assert_eq!(app.dlg.alert(), Some(format!("Неправильный формат файла - {}", dir.join("rec").display()).as_str()), "cancelled: {cancel}");
         }
+    }
+
+    /// #170: a «P» channel whose primary field atof reads as 0 (`inf`) is shown through the unguarded
+    /// secondary / primary: an infinite factor, an infinite value at the cursor, every sample infinite or NaN (a
+    /// zero sample is 0 × inf).
+    #[test]
+    fn a_zero_primary_ratio_scales_by_infinity_as_the_original_does() {
+        let dir = std::env::temp_dir().join(format!("fv_zero_ratio_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = "S,D,1999\r\n1,1A,0D\r\n1,X,,,V,0.5,0,0,-9,9,inf,5.5,P\r\n50\r\n1\r\n1250,4\r\n01/01/2024,00:00:00.000000\r\n01/01/2024,00:00:00.000000\r\nASCII\r\n1\r\n";
+        std::fs::write(dir.join("rec.cfg"), cfg).unwrap();
+        std::fs::write(dir.join("rec.dat"), "1,0,3\r\n2,800,-5\r\n3,1600,7\r\n4,2400,9\r\n").unwrap();
+        let mut app = App::new();
+        app.load_comtrade_path(&dir.join("rec.cfg"));
+        while !app.loading.is_empty() {
+            app.poll_loading();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let d = app.active_doc().expect("the record opens");
+        assert!(!d.chans[0].primary, "a «P» record shows secondary values by default");
+        assert_eq!(display_k(&d.osc.analog[0], false), f64::INFINITY);
+        assert_eq!(d.shown_samples(0).get(1).copied(), Some(f64::NEG_INFINITY));
+        assert_eq!(d.shown_samples(0).get(2).copied(), Some(f64::INFINITY));
+        let (.., val) = crate::lanes::lane_stats(d, &ChanKey::Analog(0), 2);
+        assert_eq!(val, f64::INFINITY);
+        // The trace sits on the lane's lowest row, on a range of both infinities.
+        let (lo, hi) = crate::lanes::chan_range(d, 0);
+        assert_eq!((lo, hi), (f64::NEG_INFINITY, f64::INFINITY));
+        // …and the range the lane is painted in keeps them.
+        let row = crate::lanes::Row { key: ChanKey::Analog(0), members: vec![ChanKey::Analog(0)], h: 93.0 };
+        assert_eq!(crate::lanes::row_range(d, &row), (f64::NEG_INFINITY, f64::INFINITY));
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NEG_INFINITY, 0.0, 93.0, lo, hi), 88.0);
+        // A NaN sample (0 × inf) is placed as an infinite one: the lowest row on a range, the middle on a flat lane.
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, lo, hi), 88.0);
+        assert_eq!(crate::oscgeom::value_y(f64::NAN, 0.0, 93.0, 0.0, 0.0), 46.0);
+        // A lane of one infinity alone is flat, as the original's is: its middle.
+        assert_eq!(crate::oscgeom::value_y(f64::INFINITY, 0.0, 93.0, f64::INFINITY, f64::INFINITY), 46.0);
+        assert_eq!(fvb_core::views::readout_text(val, ""), " 1.#INF   ");
     }
 
     /// A formula channel is an analog record like the file's: its frequency
@@ -4278,6 +4324,12 @@ mod tests {
         ch.is_primary = false;
         assert_eq!(display_k(&ch, true), 2380.0);
         assert_eq!(display_k(&ch, false), 1.0);
+        // A zero divisor is not guarded (`0x428490` divides straight through): inf, and 0 / 0 is NaN.
+        (ch.primary, ch.secondary, ch.is_primary) = (0.0, 5.0, true);
+        assert_eq!(display_k(&ch, false), f64::INFINITY);
+        ch.primary = 0.0;
+        ch.secondary = 0.0;
+        assert!(display_k(&ch, false).is_nan());
         ch.samples = vec![1.0, 3.0];
         let v = ChanView { adc_counts: false, remove_dc: true, invert: false, ..view.clone() };
         assert_eq!(flag_series(&ch, &v, (2.0, 7.0), 4.0), [-1.0, 1.0], "the k of the raw values is applied later");

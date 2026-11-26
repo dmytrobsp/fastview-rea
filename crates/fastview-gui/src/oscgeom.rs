@@ -64,8 +64,9 @@ impl WinMetrics {
 
 /// The shortest view (its client after the horizontal bar) that shows a vertical scroll bar: 74 px at 100 %
 /// (clone, #175: resizing the original's frame step by step, the bar appears when the view goes from 73 to 74
-/// px high, with lanes far taller than the view; none below), the smallest lane 70 px plus the view's 4 px
-/// edge. Not scaled: the view paints in device pixels at every scale (L9.406).
+/// px high, with lanes far taller than the view; none below). Not scaled: measured at 100 / 125 / 150 % as 74
+/// client rows above the horizontal bar each time (clone, #175; the view paints in device pixels at every scale,
+/// L9.406). The smallest lane's 70 px plus an edge of the view is only how the number looks, not its rule.
 pub const VBAR_FLOOR: f32 = 74.0;
 
 /// The width the view measures for its first zoom (`0x45c430`, `GetClientRect` of the view, in its
@@ -221,12 +222,23 @@ pub fn digital_window(raw: &[bool]) -> (f64, f64) {
 }
 
 pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
-    if max <= min || !v.is_finite() {
+    // A NaN sample is placed as an infinite one: the lane painter converts the scaled offset with a truncation
+    // (`0x429a43`, `0x429ade`, `0x429810`, `0x4298b0`) that gives the same indefinite integer for NaN and for
+    // infinity, and no test of NaN lies between it and the Polyline / Ellipse calls (`0x429b4c`, `0x429b91`).
+    // (A lane of nothing but NaN draws nothing at all: a lane-level rule, see `lanes::draw_series`'s callers.)
+    if max <= min {
         // The lane's middle in whole pixels (VM: a flat channel of a 93 px
         // lane on its row 46, not 46.5).
         return top + (h / 2.0).floor();
     }
-    top + h - 5.0 - round_half_up((v - min) * f64::from(h - 10.0) / (max - min)) as f32
+    let off = (v - min) * f64::from(h - 10.0) / (max - min);
+    if !off.is_finite() {
+        // An infinite value, or one on an infinite range (a zero ratio, #170): the original's float-to-int
+        // conversion gives its "indefinite" 0x80000000, the row it makes wraps back to the baseline in GDI's
+        // 16-bit coordinates, so the points sit on the lane's lowest row (clone).
+        return top + h - 5.0;
+    }
+    top + h - 5.0 - round_half_up(off) as f32
 }
 
 /// Inverse of [`value_y`] (`0x495b40`).

@@ -145,7 +145,8 @@ impl ClipRecord {
         // on the VM, W5.2).
         let mut out = String::from("<?xml version=\"1.0\" encoding=\"utf-16\"?>\n");
         root.write("", &mut out);
-        out.replace('\n', "\r\n")
+        // An attribute's own CR LF (the record comment) stays one CR LF.
+        out.replace("\r\n", "\n").replace('\n', "\r\n")
     }
 
     /// Read a clipboard document as the paste does: `num_values` by `_wtoi`
@@ -269,6 +270,17 @@ mod tests {
         assert!(t.contains("\r\n\t<channel color_custom=\"0\" custom_color_set=\"false\" data=\"1.000000,-2.250000,0.000000,\""));
         assert!(t.contains(" mul=\"0.5\" "));
         assert!(t.ends_with("</channels>\r\n"));
+    }
+
+    /// A record comment with CR LF line ends (a `.hdr` read as it is) goes through the clipboard text with the same
+    /// CR LF, not CR CR LF (clone, #192: the `.hdr` a lane paste saved beside an existing one).
+    #[test]
+    fn a_comment_keeps_its_crlf_through_the_clipboard_text() {
+        let mut r = sample();
+        r.hdr_file = "line 1\r\nline 2\r\n".into();
+        let t = r.to_text();
+        assert!(!t.contains("\r\r"), "{t:?}");
+        assert_eq!(ClipRecord::parse(&t).unwrap().hdr_file, "line 1\r\nline 2\r\n");
     }
 
     #[test]
