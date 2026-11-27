@@ -17,6 +17,11 @@ Nothing of the ISO, the original or the records goes into the repository. The gu
 the answers ISO (deleted at the end) and kept only as <Root>\<Name>.cred.xml, encrypted with this Windows user's DPAPI
 key (only this user on this machine reads it). Takes about 25 minutes. A 90-day evaluation: renew by building a new
 base (see docs/agents/windows-testing.md). To test this script, build under another -Name and -Root, then remove it.
+
+A failed build removes what it made: the VM, its disk, the credential file and the VM's folder under <Root> (the
+"Virtual Machines" folder Remove-VM leaves behind among them), only by the exact paths of this -Name, which did not exist
+before the run (the script refuses an existing VM, disk or credential file). -KeepOnFail leaves them for a look at the
+half-built VM; it then prints the commands that remove them.
 #>
 param(
     [Parameter(Mandatory)][string]$Iso,
@@ -28,6 +33,7 @@ param(
     [string]$Harness = $PSScriptRoot,
     [string]$ActivationSwitch = 'Default Switch',
     [switch]$NoActivate,
+    [switch]$KeepOnFail,
     [int]$Cpus = 4,
     [long]$Memory = 4GB,
     [long]$DiskSize = 64GB,
@@ -186,8 +192,30 @@ Set-ItemProperty -LiteralPath $vhd -Name IsReadOnly -Value $true
 Write-Host "${Name}: done - $vhd is read-only, the parent of clones (credential: $credFile)"
 } catch {
     [Console]::Error.WriteLine("${Name}: build failed: $($_.Exception.Message)")
-    [Console]::Error.WriteLine("To start over, remove what is left (a rerun refuses existing names):")
-    [Console]::Error.WriteLine("  Stop-VM -Name $Name -TurnOff -Force; Remove-VM -Name $Name -Force; Remove-Item -LiteralPath '$vhd', '$credFile'")
+    $vmDir = Join-Path $Root $Name   # New-VM -Path $Root keeps the VM's own folders here
+    if ($KeepOnFail) {
+        [Console]::Error.WriteLine("To start over, remove what is left (a rerun refuses existing names):")
+        [Console]::Error.WriteLine("  Stop-VM -Name $Name -TurnOff -Force; Remove-VM -Name $Name -Force; Remove-Item -LiteralPath '$vhd', '$credFile'; Remove-Item -LiteralPath '$vmDir' -Recurse")
+    } else {
+        # Everything under these names is this run's own: the pre-checks above refused a VM, a disk or a credential file
+        # that already existed.
+        try {
+            $half = @(Get-VM | Where-Object { $_.Name -ceq $Name }) | Select-Object -First 1
+            if ($half) {
+                if ($half.State -ne 'Off') { Stop-VM -VM $half -TurnOff -Force }
+                Remove-VM -VM $half -Force
+            }
+            foreach ($f in @($vhd, $credFile)) { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force } }
+            # Remove-VM leaves the VM's folders (an empty "Virtual Machines" one among them): the known sub-folders, when
+            # they hold no file, and the VM's folder itself, when nothing else is in it.
+            foreach ($sub in 'Virtual Machines', 'Snapshots') {
+                $d = Join-Path $vmDir $sub
+                if ((Test-Path -LiteralPath $d -PathType Container) -and -not (Get-ChildItem -LiteralPath $d -Recurse -File -Force)) { Remove-Item -LiteralPath $d -Recurse -Force }
+            }
+            if ((Test-Path -LiteralPath $vmDir -PathType Container) -and -not (Get-ChildItem -LiteralPath $vmDir -Force)) { Remove-Item -LiteralPath $vmDir -Force }
+            [Console]::Error.WriteLine("${Name}: removed what the failed build made (-KeepOnFail keeps it)")
+        } catch { [Console]::Error.WriteLine("${Name}: cleanup: $($_.Exception.Message)") }
+    }
     throw
 } finally {
     Get-VMDvdDrive -VMName $Name -ErrorAction SilentlyContinue | Set-VMDvdDrive -Path $null -ErrorAction SilentlyContinue

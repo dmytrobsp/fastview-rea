@@ -84,8 +84,30 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, 
 - A step prints the clone's disk size on stderr (a clone costs about 2 GB of the host's disk after a run or two and 4 GB
   of RAM while it runs; `FV_MEM_GB` changes the RAM). Several clones fit as far as the host's RAM does.
 - Never run the commands of one clone from two shells at once; a different clone is independent.
-- `desk` and `run` exit 0 once the step was started (a failing `drive.ps1` inside is not reflected); read their output and
-  the shots. `exec` returns the guest command's exit code. Non-ASCII output of `exec` can come back mangled from Git Bash.
+- **A clone with the host's GPU: `FV_GPU=1`** (set for `new`; the clone remembers it in its state file). Without it a clone
+  has the basic display adapter only, so ours runs in its software runner; with it ours runs on its GPU runner (eframe /
+  OpenGL) on the host GPU's partition (GPU-P). `new` picks the partitionable GPU Hyper-V lists (`Get-VMHostPartitionableGpu`;
+  a discrete NVIDIA / AMD one before an integrated one; `FV_GPU_NAME=<part of its name or PCI path>` picks another),
+  sets the VM's memory-mapped I/O space (1 GB low, 32 GB high, guest-controlled cache types), adds the partition adapter
+  before the first start, then copies the host's display driver into the guest (the DriverStore folder named by the
+  adapter's `InstalledDisplayDrivers` to `C:\Windows\System32\HostDriverStore\FileRepository\<same name>`, and the driver's
+  DLLs that also live in the host's `System32`, plus the vendor's usual ones: `nv*.dll`, `amd*.dll` / `ati*.dll`, `ig*.dll`),
+  restarts the guest and checks that the GPU device is OK there. `run u` then leaves out `-Soft` (`FV_GPU=0` on a call
+  keeps it: the software runner) and, after the run, prints the process's OpenGL modules (`gl: GPU path (opengl32 +
+  <vendor ICD>)`, or a warning when they are not both loaded: the run was not on the GPU; the list is taken before a
+  trailing `CLOSE` step). `FV_GPU=1` on a `run` of a clone without the partition fails at once. When ours' GPU start
+  fails its launcher stays alive with a hung window and runs the software runner as a child: `keys.ps1` follows the
+  child (so the module list and the warning are the child's) and stops both. It costs: a partitionable host GPU with a driver in the DriverStore, about 5
+  minutes for `new` and about 7 GB of overlay (the copied driver is most of it; a plain clone is 2 GB), and a clone still
+  has no network. The host driver and the guest's must be the same files: renew the clone after a driver update.
+- **Exit codes**, the same in `hyperv.ps1` and `clone.sh`: `exec` and `desk` return the guest command's exit code (`desk`
+  gives up after 120 s with 124, the command still running). `run` returns 0 when the keys ran; **3** when the program
+  died or showed no window before its first key (`keys.ps1` checks within seconds, 30 s for a program that stays
+  windowless, and then sends no key: the maximise keys no longer open Windows Search, whose flyout stayed over later
+  shots); 124 when it did not finish in 180 s; 4 for another failure of the driver. The log shows why, and the shots
+  that exist are still pulled. Non-ASCII output of `exec` can come back mangled from Git Bash. `clone.sh`: `run` gives
+  3 and 124 as they are and 4 for any other failure (testbox's own codes included); `desk` passes on testbox's exit
+  status (not run here: no testbox on the Windows PC).
 - `new` and every `run` stop the clone's OneDrive (clone.sh does too): its setup window takes the foreground of a fresh clone and the keys of `run` (SIZE, CLICK) would act on it. After a restart inside the clone (a DPI change) it starts again at the next sign-in; the next `run` stops it.
 
 **Calling it** - the two shells each break arguments in their own way, so pass a command with quotes or `/options` as
@@ -112,14 +134,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, 
 
 **Limits.** A clone has no network adapter (nothing leaves it, nothing comes in except through PowerShell Direct, which
 the commands use). Like the Windows clones `clone.sh` makes on a Linux host it is 1280 x 800 on the basic display adapter: no OpenGL 2, so ours runs
-through its software runner (`run u` passes `-Soft`). There are no shared-box claims: it is your machine's VMs; remove
+through its software runner (`run u` passes `-Soft`; `FV_GPU=1` above gives a clone the host's GPU). There are no shared-box claims: it is your machine's VMs; remove
 every clone you made.
 
 **The 90-day evaluation.** The base is a Windows evaluation: it works for 90 days from its activation (clones show the
 remaining time in the watermark; in a clone `cscript //nologo %windir%\system32\slmgr.vbs /xpr` prints the expiry
 date). After that Windows warns and may shut down hourly. Renewal is a **new base**: run `hyperv-base.ps1` again (the
 same command; it refuses an existing name, so build under a new `-Name` and set `FV_BASE`, or remove the old base
-first; after a failed build it prints the commands that remove what is left), then delete the old base's disk once no clone depends on it (`Get-VHD` of a clone shows its parent).
+first; a failed build removes what it made, the VM's empty `Virtual Machines` folder included; `-KeepOnFail` keeps it for a look and prints the commands that remove it), then delete the old base's disk once no clone depends on it (`Get-VHD` of a clone shows its parent).
 
 ## What a clone is
 
@@ -127,7 +149,7 @@ Windows 11 Enterprise evaluation, 1280 × 800 on the Basic Display Adapter (no o
 (the original's MFC strings appear in English there — expected), a fresh registry each time, user `tbuser`.
 
 - **No OpenGL 2 / Direct3D 12**: ours runs through its software runner (`softrun`, our rasteriser into a GDI
-  window); the eframe GPU path can't be exercised in a clone.
+  window); the eframe GPU path can't be exercised in a clone (except `FV_GPU=1` on a Hyper-V host, above).
 - **The small screen** shows size-dependent behaviour a large one never does (the start-up pane layout, tall dialogs,
   the ribbon's collapse).
 - **Display scaling**: set `HKCU\Control Panel\Desktop` `LogPixels` (120 = 125 %, 144 = 150 %) and `Win8DpiScaling` =
