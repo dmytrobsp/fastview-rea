@@ -386,14 +386,15 @@ impl OscView<'_> {
                             // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
                             // read at `0x42955a` does not say why).
                             if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
-                                draw_series(series_painter(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                                let finite = doc.shown_samples(i).iter().any(|v| v.is_finite());
+                                draw_series(series_painter(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f, finite);
                             }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
                             // The display cache (`0x429490` reads ch+0x2c).
                             let c = &doc.computed[j];
-                            draw_series(series_painter(None), (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f);
+                            draw_series(series_painter(None), (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f, true);
                         }
                         Lane::Digital(_) => {}
                     }
@@ -896,7 +897,10 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
         Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
             Some(Ok(_)) => doc.computed[i].own_series().iter().for_each(|&v| take(v)),
             Some(Err(_)) => return (0.0, 1.0),
-            None => doc.computed[i].shown_series().iter().for_each(|&v| take(v)),
+            // A formula lane's range counts the finite samples only: the original's min / max loop takes a value
+            // strictly between -DBL_MAX and DBL_MAX (`0x42888d`–`0x4288c3`), so an infinite or NaN sample is
+            // out of it and a lane of none has the flat range (clone, #243).
+            None => doc.computed[i].shown_series().iter().filter(|v| v.is_finite()).for_each(|&v| take(v)),
         },
         Lane::Digital(_) => return (0.0, 1.0),
     }
@@ -941,9 +945,10 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
 
 pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
     let [mut lo, mut hi, mn, mx] = scaled_minmax(doc, i);
-    // An infinite sample (a zero ratio field, #170) is part of the range the original draws in: the trace then sits
-    // on the baseline (`value_y`), not on the middle a range of no finite value gives.
-    if mn.is_infinite() || mx.is_infinite() {
+    // A lane of nothing but infinite or NaN samples (a zero ratio field, #170): the infinite extremes are the range,
+    // so the trace sits on the baseline (`value_y`), not on the middle a flat range gives. With any finite sample the
+    // range is theirs (the min / max loop `0x42888d` leaves the others out; clone, #243).
+    if lo > hi && (mn.is_infinite() || mx.is_infinite()) {
         (lo, hi) = (mn, mx);
     }
     if lo > hi {
@@ -997,6 +1002,18 @@ fn digital_fill(omp: bool) -> Color32 {
     }
 }
 
+/// The runs of a lane's polyline. A lane with any finite sample is one Polyline through every point, the non-finite
+/// ones on the baseline row (clone, #243: formula lanes with samples out of range, lines between the baseline marks
+/// too); a lane of nothing but non-finite samples (a zero ratio field) draws its marks and no line at all (clone,
+/// #170): the polyline breaks at each non-finite point, which leaves nothing between them.
+fn polyline_runs(samples: &[(Pos2, bool)], through_nonfinite: bool) -> Vec<Vec<Pos2>> {
+    if through_nonfinite {
+        vec![samples.iter().map(|s| s.0).collect()]
+    } else {
+        samples.split(|s| !s.1).map(|run| run.iter().map(|s| s.0).collect()).collect()
+    }
+}
+
 /// A waveform: every sample of `first..=last` as a 1 px polyline, with 4×4
 /// circles at the samples above 4 px per sample (`f > 0.16`).
 #[allow(clippy::too_many_arguments)]
@@ -1010,18 +1027,16 @@ fn draw_series(
     (lo, hi): (f64, f64),
     color: Color32,
     f: f64,
+    through_nonfinite: bool,
 ) {
     if last < first {
         return;
     }
-    // A NaN or infinite sample is a point on the baseline, drawn with its mark but no line (the original's polyline
-    // through such a point leaves nothing between them, clone, #170).
     let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).collect();
     let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
-    for run in samples.split(|s| !s.1) {
-        let line: Vec<Pos2> = run.iter().map(|s| s.0).collect();
+    for line in polyline_runs(&samples, through_nonfinite) {
         for r in g::aliased_runs(&line) {
             mesh.add_colored_rect(r, color);
         }
@@ -3671,6 +3686,101 @@ mod menu_tests {
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A colour no demo lane has.
+    const FORMULA_INK: Color32 = Color32::from_rgb(7, 9, 11);
+
+    /// A harness whose demo record carries one formula lane of `samples` (cut to the record's length) and shows
+    /// the marks.
+    fn formula_lane_harness(f: impl Fn(usize) -> f64) -> (Harness, Row) {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.computed.push(crate::app::Computed::new("F".into(), "1".into(), (0..n).map(f).collect(), FORMULA_INK));
+        d.computed[0].custom_color = true;
+        // Only the formula lane, so it lies in the view.
+        d.chans.iter_mut().for_each(|c| c.visible = false);
+        d.digital_visible.iter_mut().for_each(|v| *v = false);
+        d.channels_changed();
+        d.xscale = Some(1.0);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let row = lane_layout(h.doc(), h.app.y_analog).into_iter().find(|r| r.key == Lane::Computed(0)).expect("the formula lane");
+        (h, row)
+    }
+
+    /// #243 (clone): a formula lane with finite and non-finite samples (a division by a channel's zeros) is ranged by
+    /// its finite samples (the original's min / max loop keeps a value strictly inside ±DBL_MAX, `0x42888d`), the
+    /// others sit on the baseline row, and one Polyline runs through every point, the baseline ones included.
+    #[test]
+    fn a_formula_lane_with_non_finite_samples_is_ranged_by_its_finite_ones() {
+        let value = |k: usize| match k % 6 {
+            0 => f64::INFINITY,
+            3 => f64::NAN,
+            4 => f64::NEG_INFINITY,
+            _ => (k as f64 * 0.37).sin() * 3.7 + 0.4,
+        };
+        let (h, row) = formula_lane_harness(value);
+        let n = h.doc().osc.sample_count();
+        let finite: Vec<f64> = (0..n).map(value).filter(|v| v.is_finite()).collect();
+        let want = (finite.iter().copied().fold(f64::INFINITY, f64::min), finite.iter().copied().fold(f64::NEG_INFINITY, f64::max));
+        assert_eq!(row_range(h.doc(), &row), want, "the finite samples' range");
+        let (top, hgt) = (0.0, row.h);
+        assert_eq!(g::value_y(f64::INFINITY, top, hgt, want.0, want.1), top + hgt - 5.0, "an infinite sample on the baseline");
+        assert_eq!(g::value_y(f64::NAN, top, hgt, want.0, want.1), top + hgt - 5.0, "so is a NaN");
+        let samples: Vec<(Pos2, bool)> = (0..n).map(|k| (Pos2::new(k as f32, g::value_y(value(k), top, hgt, want.0, want.1)), value(k).is_finite())).collect();
+        let runs = polyline_runs(&samples, true);
+        assert_eq!(runs.len(), 1, "one Polyline");
+        assert_eq!(runs[0].len(), n, "through every point");
+        // A lane of nothing but non-finite samples breaks at each of them.
+        assert!(polyline_runs(&samples, false).len() > 1);
+    }
+
+    /// #243 (clone): a formula lane whose samples are all NaN (0 / 0) has the flat range: its points on the lane's
+    /// middle row with the line through them.
+    #[test]
+    fn an_all_nan_formula_lane_is_flat_on_the_middle_row() {
+        let (h, row) = formula_lane_harness(|_| f64::NAN);
+        assert_eq!(row_range(h.doc(), &row), (0.0, 0.0));
+        assert_eq!(g::value_y(f64::NAN, 0.0, row.h, 0.0, 0.0), (row.h / 2.0).floor(), "on the middle row");
+        // Drawn: the marks, in the lane's own colour, are there.
+        let marks = h.shapes.iter().filter(|c| matches!(&c.shape, Shape::Mesh(m) if m.vertices.len() == 48 && m.vertices[0].color == FORMULA_INK)).count();
+        assert!(marks > 0, "the marks of the NaN samples");
+        // ... and the line through them: the one-pixel columns of a long run in the lane's colour.
+        let line = h.shapes.iter().any(|c| match &c.shape {
+            Shape::Mesh(m) if m.vertices.len() > 48 && m.vertices.first().is_some_and(|v| v.color == FORMULA_INK) => {
+                let (lo, hi) = m.vertices.iter().fold((f32::MAX, f32::MIN), |(l, r), v| (l.min(v.pos.x), r.max(v.pos.x)));
+                hi - lo > 100.0
+            }
+            _ => false,
+        });
+        assert!(line, "the Polyline through the NaN points");
+    }
+
+    /// #243 (clone, #170): a file lane whose samples are all NaN (a 0 / 0 ratio) draws nothing, marks included; the
+    /// same lane with finite samples does.
+    #[test]
+    fn an_all_nan_file_lane_draws_nothing() {
+        let own = |nan: bool| {
+            let mut h = Harness::new();
+            let d = h.app.active_doc_mut().unwrap();
+            let n = d.osc.sample_count();
+            d.shown = vec![None; d.osc.analog.len()];
+            if nan {
+                d.shown[0] = Some(vec![f64::NAN; n]);
+            }
+            d.series_gen += 1;
+            d.xscale = Some(1.0);
+            let color = d.chans[0].color;
+            h.frame(vec![]);
+            h.frame(vec![]);
+            // Marks of the channel's colour inside the first lane (the lanes of one phase share a colour).
+            let (mid, half) = (h.row(0).y, lane_layout(h.doc(), h.app.y_analog)[0].h / 2.0);
+            h.shapes.iter().filter(|c| matches!(&c.shape, Shape::Mesh(m) if m.vertices.len() == 48 && m.vertices[0].color == color && (m.vertices[0].pos.y - mid).abs() < half)).count()
+        };
+        assert!(own(false) > 0, "the lane with finite samples draws");
+        assert_eq!(own(true), 0, "an all-NaN lane draws nothing");
     }
 
     /// #245: with marks shown (above 4 px per sample) the first sample's mark is drawn whole at the plot's left
