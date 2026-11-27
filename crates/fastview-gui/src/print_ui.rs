@@ -54,11 +54,20 @@ pub struct SetupDlg {
     pub invalid: bool,
 }
 
-/// Whether margins (left, top, right, bottom mm) overlap or leave the paper of `sheet` mm: the common Page Setup
-/// refuses them with «The margins overlap or they are off the paper». On a clone (A4): left + right 210 and
-/// top + bottom 296 are taken, 298 is refused (so the page may keep no printable area at all).
+/// What comdlg32 says when the margins overlap or leave the paper: its string 1108 in the system's language (the
+/// check is comdlg32's own PageSetupDlg, not the program's or MFC's; English: «The margins overlap or they are off
+/// the paper. Enter a different margin size.»), the two sentences on two lines. The box's caption is the dialog's.
+const MARGINS_REFUSED: &str = "Поля перекрываются или выходят за пределы страницы.\nУкажите другие размеры полей.";
+
+/// Whether margins (left, top, right, bottom mm) overlap or leave the paper of `sheet` mm: comdlg32 refuses them
+/// (`MARGINS_REFUSED`). On a clone (A4): left + right 210 and top + bottom 296 are taken, 298 is refused, so a page
+/// may keep no printable area at all. comdlg32 works in hundredths of a millimetre on the form's own size: the sheet
+/// here is the measured one (a printer's pixels over its dpi, 209.97 mm for a 4960-px A4), so a sum within 0.1 mm of
+/// it counts as equal, and a sum equal to the paper is taken.
 pub fn margins_invalid(mm: [f32; 4], sheet: (f32, f32)) -> bool {
-    mm[0] + mm[2] > sheet.0 || mm[1] + mm[3] > sheet.1
+    let hundredths = |v: f32| (v * 100.0).round() as i64;
+    let paper = |v: f32| hundredths(v) + 10;
+    hundredths(mm[0]) + hundredths(mm[2]) > paper(sheet.0) || hundredths(mm[1]) + hundredths(mm[3]) > paper(sheet.1)
 }
 
 /// A margin as the page-setup edits show it: whole millimetres plain,
@@ -436,8 +445,7 @@ impl App {
         if dlg.invalid {
             // The refusal's box; OK closes it and the dialog stays.
             crate::dialogs::dlg(ctx, "Параметры страницы").order(egui::Order::Tooltip).show(ctx, |ui| {
-                if crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Exclamation, "Поля перекрываются или выходят за пределы бумаги.
-Введите другой размер полей.", &["OK"]).is_some() {
+                if crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Exclamation, MARGINS_REFUSED, &["OK"]).is_some() {
                     dlg.invalid = false;
                 }
             });
@@ -658,6 +666,11 @@ mod tests {
         assert!(!margins_invalid([20.0, 148.0, 20.0, 148.0], a4));
         assert!(margins_invalid([20.0, 149.0, 20.0, 149.0], a4));
         assert!(margins_invalid([106.0, 20.0, 105.0, 20.0], a4));
+        // A printer's measured A4 (4960 x 7014 px at 600 dpi: 209.97 x 296.92 mm) is the form's A4 to comdlg32.
+        assert!(!margins_invalid([105.0, 20.0, 105.0, 20.0], (209.97, 296.92)));
+        assert!(!margins_invalid([20.0, 148.5, 20.0, 148.5], (209.97, 296.92)), "a sum equal to the paper is taken");
+        // comdlg32's own string 1108, ru-RU.
+        assert_eq!(MARGINS_REFUSED, "Поля перекрываются или выходят за пределы страницы.\nУкажите другие размеры полей.");
         let enter = || vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
         let mut app = App::new();
         app.persist = false;
