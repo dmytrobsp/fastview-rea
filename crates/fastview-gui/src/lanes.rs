@@ -3737,6 +3737,30 @@ mod menu_tests {
         assert!(h.doc().chans.iter().filter(|c| c.window.is_some()).count() == 1);
     }
 
+    /// #47: the ribbon's vertical-визир toggles place В1 / В2 / В3 at ¼ / ½ / ¾ of the plot's visible width
+    /// (the view's client without the vertical scroll bar), the quarter a truncated integer division.
+    #[test]
+    fn the_vizir_toggles_place_at_quarters_of_the_visible_plot_width() {
+        // Tall lanes bring the vertical scroll bar; the default ones do not.
+        for (y_analog, bar) in [(400.0, true), (g::Y_ANALOG_DEFAULT, false)] {
+            let mut h = Harness::new();
+            h.app.y_analog = y_analog;
+            h.frame(vec![]);
+            let (full, plot) = h.app.view_rects.expect("the view was drawn");
+            assert_eq!(plot.width() < full.width(), bar, "the vertical bar at {y_analog}");
+            let (left_w, f, first) = (h.app.view_left, h.doc().xscale.unwrap(), h.doc().first);
+            let n = h.doc().osc.sample_count();
+            for k in 0..3 {
+                h.app.dispatch(Command::ToggleVizir(k));
+                let quarter = ((plot.width() - left_w) as i32 / 4) as f32;
+                let want = g::sample_at(left_w + quarter * (k as f32 + 1.0), first, f, left_w).clamp(0, n as i64 - 1) as usize;
+                let d = h.doc();
+                let got = [d.main_cursor, d.aux_cursor, d.v3_cursor][k];
+                assert!(d.v_shown[k] && got == want, "В{} ({y_analog}): sample {got}, expected {want}", k + 1);
+            }
+        }
+    }
+
     /// Holding an arrow keeps scrolling after a delay; holding the track
     /// pages until the thumb reaches the pointer.
     #[test]
