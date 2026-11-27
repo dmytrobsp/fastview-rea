@@ -2,7 +2,7 @@
 hyperv.ps1 - clone.sh on a Windows host: runs of the original and ours in throwaway Hyper-V clones.
 
   hyperv.ps1 new                     a differencing disk on the base VM (hyperv-base.ps1), boot, wait for the desktop,
-                                     refresh the harness scripts and push ours; ready in about a minute
+                                     refresh the harness scripts and push ours; ready in about a minute (FV_GPU=1: see below)
   hyperv.ps1 run o|u "<keys>" [record]
                                      drive.ps1 in the clone: the original (o) or ours (u, in its software runner),
                                      maximised first (not with FV_NOMAX=1), with records\<record> (WIN_1999.cfg by
@@ -23,7 +23,12 @@ Environment (as clone.sh): FV_CLONE = the state file naming the clone (one file 
 default %LOCALAPPDATA%\fastview-rea\clone-hyperv); FV_PURPOSE (kept in the VM's notes); FV_SHOTS (default: the current
 folder); FV_FRESH; FV_NOMAX; FV_KEEP; FV_FORCE. Hyper-V specific: FV_BASE (default fv-base), FV_VMROOT (default
 %USERPROFILE%\fastview-vm: the base disk, its credential file <base>.cred.xml or tbuser.cred.xml, and clones\),
-FV_MEM_GB (a clone's memory, default 4). FV_ORIG and FV_RECORDS belong to hyperv-base.ps1: the original and the
+FV_MEM_GB (a clone's memory, default 4).
+FV_GPU=1: `new` partitions the host's GPU into the clone (GPU-P: the partitionable GPU Hyper-V lists, a discrete one
+preferred, FV_GPU_NAME = a part of its name or PCI path picks another; MMIO space, the partition adapter, the host's
+display driver copied into the guest, a restart, the guest device checked OK; about 5 minutes and 7 GB of overlay, the
+clone is on the host GPU only as far as the host driver allows it), and `run u` (also with FV_GPU=1 in its own
+environment) starts ours without -Soft, on its GPU runner, and prints the OpenGL modules the process loaded. FV_ORIG and FV_RECORDS belong to hyperv-base.ps1: the original and the
 records are in the base, a clone inherits them. Needs membership in "Hyper-V Administrators"; no elevation.
 
 Layout in the guest as clone.sh: C:\Users\tbuser\fv-test\{FastView5,harness,records,out,ours}. A clone has no network
@@ -225,6 +230,101 @@ function Remove-Clone([string]$Name) {
     if (Test-Path -LiteralPath $dir) { Remove-Item -LiteralPath $dir -Recurse -Force }
 }
 
+# ---- FV_GPU=1: the host's GPU partitioned into the clone (GPU-P) ------------------------------------------------
+# The host GPU Hyper-V can partition (Get-VMHostPartitionableGpu), matched to its display adapter (Win32_VideoController)
+# by the PCI id. A discrete one (NVIDIA 10DE, AMD 1002) is preferred to an integrated one; FV_GPU_NAME, a part of the
+# adapter's name or of its PCI path (case-insensitive), picks another.
+function Get-HostGpu {
+    $parts = @(Get-VMHostPartitionableGpu -ErrorAction Stop)
+    if ($parts.Count -eq 0) { throw 'FV_GPU=1: Hyper-V lists no partitionable GPU on this host (Get-VMHostPartitionableGpu)' }
+    $ctrls = @(Get-CimInstance Win32_VideoController)
+    $cands = @(foreach ($part in $parts) {
+        # \\?\PCI#VEN_10DE&DEV_2D18&SUBSYS_xxxx&REV_A1#0BBE...#{guid}\GPUPARAV -> PCI\VEN_10DE&DEV_2D18&SUBSYS_xxxx&REV_A1\0BBE...
+        $pnp = (($part.Name -replace '^\\\\\?\\', '') -replace '#\{.*$', '') -replace '#', '\'
+        $c = $ctrls | Where-Object { $_.PNPDeviceID -and $_.PNPDeviceID -ieq $pnp } | Select-Object -First 1
+        $ven = if ($pnp -match 'VEN_([0-9A-Fa-f]{4})') { $Matches[1].ToUpper() } else { '' }
+        [pscustomobject]@{ Part = $part.Name; Ctrl = $c; Vendor = $ven; Discrete = ($ven -in '10DE', '1002'); Label = $(if ($c) { $c.Name } else { $pnp }) }
+    })
+    $want = $env:FV_GPU_NAME
+    if ($want) {
+        $pick = @($cands | Where-Object { $_.Label -like "*$want*" -or $_.Part -like "*$want*" })
+        if ($pick.Count -eq 0) { throw "FV_GPU_NAME='$want' matches none of: $(($cands | ForEach-Object { $_.Label }) -join '; ')" }
+        return $pick[0]
+    }
+    $pick = @($cands | Where-Object { $_.Discrete -and $_.Ctrl })
+    if ($pick.Count -eq 0) { $pick = @($cands | Where-Object { $_.Ctrl }) }
+    if ($pick.Count -eq 0) { throw "FV_GPU=1: no partitionable GPU has a display adapter with an installed driver here ($(($cands | ForEach-Object { $_.Label }) -join '; '))" }
+    $pick[0]
+}
+
+# The host driver, as the guest needs it: the display driver's DriverStore folder (named by the adapter's own
+# InstalledDisplayDrivers) goes to C:\Windows\System32\HostDriverStore\FileRepository\<same name>; the user-mode DLLs
+# of the driver that also live in the host's System32 (the driver folder's own DLL names found there) and the vendor's
+# usual System32 DLLs (nv*.dll; amd*/ati*.dll; ig*.dll) go to the guest's System32.
+function Get-GpuDriverFiles($Gpu) {
+    $drv = @($Gpu.Ctrl.InstalledDisplayDrivers -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $folder = $null
+    foreach ($d in $drv) { if ($d -match '^(?<dir>.*\\DriverStore\\FileRepository\\[^\\]+)\\') { $folder = $Matches['dir']; break } }
+    if (-not $folder -or -not (Test-Path -LiteralPath $folder -PathType Container)) {
+        throw "FV_GPU=1: the driver of $($Gpu.Label) has no DriverStore folder on the host (InstalledDisplayDrivers: $($drv -join ', '))"
+    }
+    $sys = Join-Path $env:windir 'System32'
+    $patterns = switch ($Gpu.Vendor) { '10DE' { @('nv*.dll') } '1002' { @('amd*.dll', 'ati*.dll') } '8086' { @('ig*.dll') } default { @() } }
+    $names = @{}
+    foreach ($f in Get-ChildItem -LiteralPath $folder -Filter *.dll -File) { if (Test-Path -LiteralPath (Join-Path $sys $f.Name)) { $names[$f.Name.ToLower()] = Join-Path $sys $f.Name } }
+    foreach ($pat in $patterns) { foreach ($f in Get-ChildItem -Path (Join-Path $sys $pat) -File -ErrorAction SilentlyContinue) { $names[$f.Name.ToLower()] = $f.FullName } }
+    [pscustomobject]@{ Folder = $folder; Name = (Split-Path -Leaf $folder); Dlls = @($names.Values | Sort-Object) }
+}
+
+# Before the first start (the VM must be off): the partition adapter and the memory-mapped I/O space it needs.
+function Add-GpuPartition($Vm, $Gpu) {
+    Set-VM -VM $Vm -GuestControlledCacheTypes $true -LowMemoryMappedIoSpace 1GB -HighMemoryMappedIoSpace 32GB
+    Add-VMGpuPartitionAdapter -VM $Vm -InstancePath $Gpu.Part
+}
+
+# After the desktop is up: the host driver into the guest, a restart, and the check that the guest's GPU device is OK.
+function Install-GpuDriver([string]$Name, $Cred, $Gpu, $Files) {
+    $s = New-PSSession -VMName $Name -Credential $Cred
+    try {
+        $dst = "C:\Windows\System32\HostDriverStore\FileRepository\$($Files.Name)"
+        Invoke-Command -Session $s -ArgumentList $dst -ScriptBlock { param($d) New-Item -ItemType Directory -Force (Split-Path -Parent $d) | Out-Null }
+        Write-Host "clone ${Name}: copying the host display driver $($Files.Name) (about 1 GB)"
+        Copy-Item -ToSession $s -LiteralPath $Files.Folder -Destination $dst -Recurse -Force
+        $bad = @()
+        foreach ($f in $Files.Dlls) {
+            try { Copy-Item -ToSession $s -LiteralPath $f -Destination 'C:\Windows\System32\' -Force -ErrorAction Stop } catch { $bad += (Split-Path -Leaf $f) }
+        }
+        if ($bad.Count -gt 0) { [Console]::Error.WriteLine("clone: $($bad.Count) of $($Files.Dlls.Count) System32 DLLs not copied (in use or protected in the guest): $($bad -join ', ')") }
+    } finally { Remove-PSSession $s }
+    Restart-VM -Name $Name -Force
+    $null = Wait-Desktop $Name $Cred
+    Stop-OneDrive $Name $Cred
+    # The device is up a little after the desktop is.
+    $dev = $null
+    for ($i = 0; $i -lt 40 -and -not $dev; $i++) {
+        $dev = Invoke-Command -VMName $Name -Credential $Cred -ScriptBlock {
+            Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -notmatch 'Hyper-V|Basic' -and $_.Status -eq 'OK' } | Select-Object -First 1 -ExpandProperty FriendlyName
+        }
+        if (-not $dev) { Start-Sleep -Seconds 3 }
+    }
+    if (-not $dev) {
+        $seen = Invoke-Command -VMName $Name -Credential $Cred -ScriptBlock { (Get-PnpDevice -Class Display -ErrorAction SilentlyContinue | ForEach-Object { "$($_.FriendlyName)=$($_.Status)/$($_.Problem)" }) -join '; ' }
+        throw "the GPU device of $($Gpu.Label) is not OK in the guest after the restart (display devices there: $seen)"
+    }
+    Write-Host "clone ${Name}: GPU partition ready ($dev, status OK)"
+}
+
+# The modules of the run's program (keys.ps1 MODULES): the OpenGL path of ours, printed; a warning when it is not the GPU's.
+function Show-GlPath([string]$File) {
+    if (-not (Test-Path -LiteralPath $File)) { [Console]::Error.WriteLine('gl: no module list came back'); return }
+    $mods = @(Get-Content -LiteralPath $File | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+    $gl = @($mods | Where-Object { $_ -match '(?i)opengl|ogl|icd|^(nv|ati|amd|ig)[a-z0-9_]*\.dll$|^(d3d1[12]|dxgi|vulkan-1)\.dll$' })
+    Write-Host ("gl modules: " + ($gl -join ', '))
+    $vendor = @($mods | Where-Object { $_ -match '(?i)^(nvoglv|atio|amdvlk|ig[0-9a-z]*icd|nvwgf2um|nvd3dum)' })
+    if (($mods -contains 'opengl32.dll') -and $vendor.Count -gt 0) { Write-Host "gl: GPU path (opengl32 + $($vendor -join ', '))" }
+    else { [Console]::Error.WriteLine('gl: WARNING - opengl32 and a vendor OpenGL driver are not both loaded: this run was not on the GPU') }
+}
+
 function New-Clone {
     if (Test-Path -LiteralPath $State) { Fail "a clone is already recorded in $State (hyperv.ps1 rm first)" }
     $cred = Get-Cred
@@ -235,6 +335,9 @@ function New-Clone {
     New-Item -ItemType Directory -Force $dir | Out-Null
     $vhd = Join-Path $dir "$name.vhdx"
     $mem = [long]([double](EnvOr 'FV_MEM_GB' '4') * 1GB)
+    # FV_GPU=1: look at the host's GPU first, so that a host without one fails before anything is made.
+    $gpu = $null; $gpuFiles = $null
+    if ($env:FV_GPU) { $gpu = Get-HostGpu; $gpuFiles = Get-GpuDriverFiles $gpu; Write-Host "clone ${name}: GPU partition of $($gpu.Label)" }
     try {
         New-VHD -Differencing -ParentPath $parent -Path $vhd | Out-Null
         $vm = New-VM -Name $name -Generation 2 -MemoryStartupBytes $mem -VHDPath $vhd -Path $dir
@@ -245,12 +348,14 @@ function New-Clone {
         Set-VMVideo -VM $vm -HorizontalResolution 1280 -VerticalResolution 800 -ResolutionType Single
         Set-VMFirmware -VM $vm -EnableSecureBoot On -SecureBootTemplate MicrosoftWindows
         Enable-VMIntegrationService -VM $vm -Name 'Guest Service Interface'
+        if ($gpu) { Add-GpuPartition $vm $gpu }
         New-Item -ItemType Directory -Force (Split-Path -Parent $State) | Out-Null
         Set-Content -LiteralPath $State -Value $name -Encoding ASCII
         Start-VM -VM $vm
         Write-Host "clone ${name}: preparing"
         $sec = Wait-Desktop $name $cred
         Stop-OneDrive $name $cred
+        if ($gpu) { Install-GpuDriver $name $cred $gpu $gpuFiles }
         # The harness scripts of this checkout (not the base's copies), then ours.
         $s = New-PSSession -VMName $name -Credential $cred
         try {
@@ -277,9 +382,14 @@ try {
             $name = Get-CloneName; $cred = Get-Cred
             $who = $Rest[0]; $keys = $Rest[1]; $rec = if ($Rest.Count -gt 2) { $Rest[2] } else { 'WIN_1999.cfg' }
             if (-not $env:FV_NOMAX) { $keys = "% ;x;;$keys" }
+            # FV_GPU=1 (a clone made with it): ours on the host GPU's partition, not in its software runner; its loaded
+            # modules are listed after the run (opengl32 and the vendor's OpenGL driver show the path).
+            $gpu = ($who -eq 'u') -and [bool]$env:FV_GPU
+            $glFile = '_glmods.txt'
+            if ($gpu) { $keys = "$keys;MODULES $glFile" }
             $exe = if ($who -eq 'o') { "$G\FastView5\FastView.exe" } else { "$G\ours\fastview.exe" }
             $open = if ($rec -notin '-', '--', 'none') { "$G\records\$rec" } else { '' }
-            $out = Invoke-Command -VMName $name -Credential $cred -ArgumentList $G, $exe, $open, ($who -eq 'u'), $keys, $who, [bool]$env:FV_FRESH -ScriptBlock {
+            $out = Invoke-Command -VMName $name -Credential $cred -ArgumentList $G, $exe, $open, (($who -eq 'u') -and -not $gpu), $keys, $who, [bool]$env:FV_FRESH -ScriptBlock {
                 param($G, $exe, $open, $soft, $Keys, $Who, $Fresh)
                 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
                 $H = "$G\harness"
@@ -303,6 +413,7 @@ try {
             @($out.Lines) | ForEach-Object { Write-Host $_ }
             $failed = [int64]$out.Code -ne 0
             $names = @([regex]::Matches($keys, 'SHOT ([^;]+)') | ForEach-Object { $_.Groups[1].Value.Trim() })
+            if ($gpu) { $names += $glFile }
             if ($names.Count -gt 0) {
                 New-Item -ItemType Directory -Force $Shots | Out-Null
                 $s = New-PSSession -VMName $name -Credential $cred
@@ -316,6 +427,7 @@ try {
                     }
                 } finally { Remove-PSSession $s }
             }
+            if ($gpu -and -not $failed) { Show-GlPath (Join-Path $Shots $glFile) }
             Show-Overlay $name
             if ($failed) {
                 # 3 = the program died or showed no window before the first key (keys.ps1); 124 = drive.ps1 timed out;

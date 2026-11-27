@@ -84,6 +84,19 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, 
 - A step prints the clone's disk size on stderr (a clone costs about 2 GB of the host's disk after a run or two and 4 GB
   of RAM while it runs; `FV_MEM_GB` changes the RAM). Several clones fit as far as the host's RAM does.
 - Never run the commands of one clone from two shells at once; a different clone is independent.
+- **A clone with the host's GPU: `FV_GPU=1`** (set for `new` and for the `run u` calls on that clone). Without it a clone
+  has the basic display adapter only, so ours runs in its software runner; with it ours runs on its GPU runner (eframe /
+  OpenGL) on the host GPU's partition (GPU-P). `new` picks the partitionable GPU Hyper-V lists (`Get-VMHostPartitionableGpu`;
+  a discrete NVIDIA / AMD one before an integrated one; `FV_GPU_NAME=<part of its name or PCI path>` picks another),
+  sets the VM's memory-mapped I/O space (1 GB low, 32 GB high, guest-controlled cache types), adds the partition adapter
+  before the first start, then copies the host's display driver into the guest (the DriverStore folder named by the
+  adapter's `InstalledDisplayDrivers` to `C:\Windows\System32\HostDriverStore\FileRepository\<same name>`, and the driver's
+  DLLs that also live in the host's `System32`, plus the vendor's usual ones: `nv*.dll`, `amd*.dll` / `ati*.dll`, `ig*.dll`),
+  restarts the guest and checks that the GPU device is OK there. `run u` then leaves out `-Soft` and, after the run,
+  prints the process's OpenGL modules (`gl: GPU path (opengl32 + <vendor ICD>)`, or a warning when they are not both
+  loaded: the run was not on the GPU). It costs: a partitionable host GPU with a driver in the DriverStore, about 5
+  minutes for `new` and about 7 GB of overlay (the copied driver is most of it; a plain clone is 2 GB), and a clone still
+  has no network. The host driver and the guest's must be the same files: renew the clone after a driver update.
 - **Exit codes**, the same in `hyperv.ps1` and `clone.sh`: `exec` and `desk` return the guest command's exit code (`desk`
   gives up after 120 s with 124, the command still running). `run` returns 0 when the keys ran; **3** when the program
   died or showed no window before its first key (`keys.ps1` checks within seconds, 30 s for a program that stays
@@ -117,7 +130,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, 
 
 **Limits.** A clone has no network adapter (nothing leaves it, nothing comes in except through PowerShell Direct, which
 the commands use). Like the Windows clones `clone.sh` makes on a Linux host it is 1280 x 800 on the basic display adapter: no OpenGL 2, so ours runs
-through its software runner (`run u` passes `-Soft`). There are no shared-box claims: it is your machine's VMs; remove
+through its software runner (`run u` passes `-Soft`; `FV_GPU=1` above gives a clone the host's GPU). There are no shared-box claims: it is your machine's VMs; remove
 every clone you made.
 
 **The 90-day evaluation.** The base is a Windows evaluation: it works for 90 days from its activation (clones show the
