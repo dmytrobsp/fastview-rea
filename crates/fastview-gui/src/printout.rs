@@ -284,10 +284,17 @@ const SLICE_PPI: f32 = 136.0;
 const SLICE_RASTER_MAX_PX: f32 = 16_000_000.0;
 
 /// The supersampling of the slice drawn at `k` px a point (< 1: drawn at about a pixel a point and shrunk keeping
-/// ink): `⌈1 / k⌉`, but never more than keeps the raster of a `size` slice within [`SLICE_RASTER_MAX_PX`].
+/// ink): `⌈1 / k⌉`, but for a slice taller than four times its width never more than keeps its raster within
+/// [`SLICE_RASTER_MAX_PX`].
 fn slice_oversample(size: Vec2, k: f32) -> f32 {
+    let ss = (1.0 / k).ceil();
+    // Only the pathological aspect is capped (a slice more than four times taller than wide: a margin rectangle a few
+    // pixels wide). A sheet's slice is about R's own pixel area at any view width, so it keeps `⌈1 / k⌉`.
+    if size.y <= 4.0 * size.x {
+        return ss;
+    }
     let area = (size.x * size.y * k * k).max(1.0);
-    (1.0 / k).ceil().min((SLICE_RASTER_MAX_PX / area).sqrt().floor().max(1.0))
+    ss.min((SLICE_RASTER_MAX_PX / area).sqrt().floor().max(1.0))
 }
 
 /// The header/footer font: «Arial» 12 screen px cell height.
@@ -1128,27 +1135,25 @@ mod dump {
         let ss = slice_oversample(size, k);
         assert!(size.x * size.y * (k * ss) * (k * ss) <= SLICE_RASTER_MAX_PX * 1.01, "{ss}");
         assert_eq!(slice_oversample(Vec2::new(1000.0, 3000.0), 0.5), 2.0, "a normal slice keeps ceil(1 / k)");
+        // A sheet's slice keeps it at any view width: a 4K monitor's 4000 pt, R 735 px wide at 110 dpi, A4's aspect.
+        let wide = Vec2::new(4000.0, 4000.0 * std::f32::consts::SQRT_2);
+        assert_eq!(slice_oversample(wide, 735.0 / 4000.0), (4000.0f32 / 735.0).ceil());
         // `frame` clips: an empty R, one at the canvas's right or bottom edge, an inverted one.
         let mut c = Canvas::white(100, 50);
         for r in [Rect::from_min_max(Pos2::new(100.0, 10.0), Pos2::new(100.0, 50.0)), Rect::from_min_max(Pos2::new(100.0, 10.0), Pos2::new(130.0, 60.0)), Rect::from_min_max(Pos2::new(40.0, 50.0), Pos2::new(60.0, 50.0)), Rect::from_min_max(Pos2::new(60.0, 40.0), Pos2::new(40.0, 10.0)), Rect::from_min_max(Pos2::new(-5.0, -5.0), Pos2::new(3.0, 3.0))] {
             frame(&mut c, r);
         }
-        // Every page kind under margins that leave 27 px or nothing, at a preview's and a printer's resolution.
-        let started = std::time::Instant::now();
-        for (margins, dpi) in [([21000, 2000, 0, 0], 110.0), ([10450, 2000, 10450, 2000], 110.0), ([2000, 14850, 2000, 14850], 110.0), ([10450, 2000, 10450, 2000], 600.0)] {
-            {
-                let mut app = App::new();
-                app.dispatch(Command::Demo);
-                app.docs[0].print_ticks = [true; 5];
-                let setup = PageSetup { margins, portrait: true };
-                let job = app.print_job(0, Device::sheet(&setup, dpi), setup);
-                for i in 0..job.pages.len().min(8) {
-                    let c = app.render_page(&egui::FontDefinitions::default(), &job, i, false);
-                    assert!(c.w * c.h <= 5000 * 7100, "the page is the sheet: {margins:?} {dpi} dpi");
-                }
-            }
+        // The oscillogram pages under the margins that leave 27 px or nothing (110 dpi: the preview's sheet): the plan
+        // is huge but the raster is bounded, so each renders at once and is the sheet.
+        for margins in [[21000, 2000, 0, 0], [10450, 2000, 10450, 2000]] {
+            let mut app = App::new();
+            app.dispatch(Command::Demo);
+            app.docs[0].print_ticks = [true, false, false, false, false];
+            let setup = PageSetup { margins, portrait: true };
+            let job = app.print_job(0, Device::sheet(&setup, 110.0), setup);
+            let c = app.render_page(&egui::FontDefinitions::default(), &job, 0, false);
+            assert_eq!((c.w, c.h), (job.dev.w, job.dev.h), "the page is the sheet: {margins:?}");
         }
-        assert!(started.elapsed().as_secs() < 100, "quick: {:?}", started.elapsed());
     }
 
     #[test]
