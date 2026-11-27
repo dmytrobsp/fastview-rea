@@ -213,7 +213,7 @@ impl OscView<'_> {
     /// sample (`doc+0x214`; 0 for COMTRADE) — the tick's µs is
     /// t(k) − t(trigger) for every unit (`0x4649cf`–`0x464a0d`), so
     /// «Абсолютное время» is the start's time of day plus it (a quirk with
-    /// an `.osc` trigger); samples print k − trigger + 1.
+    /// a trigger sample, which no record we open has now, #59); samples print k − trigger + 1.
     /// Past the record's end the times run on at its rate (`0x454b40`):
     /// the ruler labels the ticks out to the plot's edge (VM, L9.398).
     fn label_at(&self, k: usize) -> (f64, i64) {
@@ -360,6 +360,11 @@ impl OscView<'_> {
                 let zoomed = |m: ChanKey| matches!(m, Lane::Analog(i) if doc.chans.get(i).is_some_and(|c| c.window.is_some()));
                 let lane_clip = pp.with_clip_rect(pp.clip_rect().intersect(Rect::from_min_max(Pos2::new(left, top + 5.0), Pos2::new(plot_right, top + h))));
                 let painter_for = |m: Option<ChanKey>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
+                // The curves of the file and formula lanes (`0x429490`) are cut by the lane's own region only for
+                // a window-zoomed channel; any other goes to the view's client, so the first sample's mark shows
+                // whole at the plot's left edge, over the label column (clone, #245). The right edge is the
+                // client's own, as here.
+                let series_painter = |m: Option<ChanKey>| if m.is_some_and(zoomed) { &lane_clip } else { lp };
                 // A group's curves in member-set order (`0x4311e0`); the
                 // first draws the zero line.
                 let order = doc.group_paint_order(&r.members);
@@ -381,14 +386,15 @@ impl OscView<'_> {
                             // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
                             // read at `0x42955a` does not say why).
                             if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
-                                draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                                let finite = doc.shown_samples(i).iter().any(|v| v.is_finite());
+                                draw_series(series_painter(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f, finite);
                             }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
                             // The display cache (`0x429490` reads ch+0x2c).
                             let c = &doc.computed[j];
-                            draw_series(pp, (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f);
+                            draw_series(series_painter(None), (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f, true);
                         }
                         Lane::Digital(_) => {}
                     }
@@ -583,7 +589,7 @@ impl OscView<'_> {
     /// merged (`g::vizir_labels`), each on an opaque white text cell.
     pub fn vizirs(&self, painter: &egui::Painter, top: f32, v_bottom: f32, labels: bool) {
         // The trigger moment (`0x464219`): a dotted line when the record
-        // has one (`.osc` with pre-trigger blocks).
+        // has one (the original's `.osc` with pre-trigger blocks; none we open, #59).
         let trig = self.doc.osc.trigger_sample;
         if trig != 0 {
             let x = self.vizir_x(trig);
@@ -662,6 +668,33 @@ pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32)
             painter.rect_filled(cell, 0.0, Color32::WHITE);
             painter.galley(Pos2::new(cell.center().x - cx / 2.0, t), galley, col);
         }
+    }
+}
+
+/// The window a horizontal визир's value is read from (`0x42b640`, ch+0xb0 / ch+0xa8): the lane's range, except for a
+/// lane none of whose samples is finite (a zero ratio field): the min / max loop never moved off its start, DBL_MAX
+/// and -DBL_MAX, so a value read off such a lane is minus infinity (the span overflows, clone, #244).
+pub(crate) fn visor_window(doc: &crate::app::Doc, r: &Row, range: (f64, f64)) -> (f64, f64) {
+    let finite = |k: &ChanKey| match k {
+        Lane::Analog(i) => doc.shown_samples(*i).iter().any(|v| v.is_finite()),
+        Lane::Computed(j) if doc.pending_of(*j).is_none() => doc.computed[*j].shown_series().iter().any(|v| v.is_finite()),
+        _ => true,
+    };
+    if r.members.iter().any(finite) {
+        range
+    } else {
+        (f64::MAX, -f64::MAX)
+    }
+}
+
+/// A horizontal визир's row: the lane's, from its value. An infinite value (read off a lane without a finite sample)
+/// is the float-to-int conversion's indefinite integer in the original, a row far above the view: `y <= top`, so the
+/// label is at the top and the line out of sight (clone, #244).
+pub(crate) fn hviz_y(v: f64, top: f32, h: f32, lo: f64, hi: f64) -> f32 {
+    if v.is_finite() {
+        g::value_y(v, top, h, lo, hi)
+    } else {
+        top - 1.0e5
     }
 }
 
@@ -891,7 +924,10 @@ pub(crate) fn row_range(doc: &crate::app::Doc, r: &Row) -> (f64, f64) {
         Lane::Computed(i) => match doc.pending_of(i).map(|p| &p.pasted.channel) {
             Some(Ok(_)) => doc.computed[i].own_series().iter().for_each(|&v| take(v)),
             Some(Err(_)) => return (0.0, 1.0),
-            None => doc.computed[i].shown_series().iter().for_each(|&v| take(v)),
+            // A formula lane's range counts the finite samples only: the original's min / max loop takes a value
+            // strictly between -DBL_MAX and DBL_MAX (`0x42888d`–`0x4288c3`), so an infinite or NaN sample is
+            // out of it and a lane of none has the flat range (clone, #243).
+            None => doc.computed[i].shown_series().iter().filter(|v| v.is_finite()).for_each(|&v| take(v)),
         },
         Lane::Digital(_) => return (0.0, 1.0),
     }
@@ -936,9 +972,10 @@ fn member_range(doc: &crate::app::Doc, k: ChanKey) -> (f64, f64) {
 
 pub fn chan_range(doc: &crate::app::Doc, i: usize) -> (f64, f64) {
     let [mut lo, mut hi, mn, mx] = scaled_minmax(doc, i);
-    // An infinite sample (a zero ratio field, #170) is part of the range the original draws in: the trace then sits
-    // on the baseline (`value_y`), not on the middle a range of no finite value gives.
-    if mn.is_infinite() || mx.is_infinite() {
+    // A lane of nothing but infinite or NaN samples (a zero ratio field, #170): the infinite extremes are the range,
+    // so the trace sits on the baseline (`value_y`), not on the middle a flat range gives. With any finite sample the
+    // range is theirs (the min / max loop `0x42888d` leaves the others out; clone, #243).
+    if lo > hi && (mn.is_infinite() || mx.is_infinite()) {
         (lo, hi) = (mn, mx);
     }
     if lo > hi {
@@ -992,6 +1029,18 @@ fn digital_fill(omp: bool) -> Color32 {
     }
 }
 
+/// The runs of a lane's polyline. A lane with any finite sample is one Polyline through every point, the non-finite
+/// ones on the baseline row (clone, #243: formula lanes with samples out of range, lines between the baseline marks
+/// too); a lane of nothing but non-finite samples (a zero ratio field) draws its marks and no line at all (clone,
+/// #170): the polyline breaks at each non-finite point, which leaves nothing between them.
+fn polyline_runs(samples: &[(Pos2, bool)], through_nonfinite: bool) -> Vec<Vec<Pos2>> {
+    if through_nonfinite {
+        vec![samples.iter().map(|s| s.0).collect()]
+    } else {
+        samples.split(|s| !s.1).map(|run| run.iter().map(|s| s.0).collect()).collect()
+    }
+}
+
 /// A waveform: every sample of `first..=last` as a 1 px polyline, with 4×4
 /// circles at the samples above 4 px per sample (`f > 0.16`).
 #[allow(clippy::too_many_arguments)]
@@ -1005,18 +1054,16 @@ fn draw_series(
     (lo, hi): (f64, f64),
     color: Color32,
     f: f64,
+    through_nonfinite: bool,
 ) {
     if last < first {
         return;
     }
-    // A NaN or infinite sample is a point on the baseline, drawn with its mark but no line (the original's polyline
-    // through such a point leaves nothing between them, clone, #170).
     let samples: Vec<(Pos2, bool)> = (first..=last).map(|k| (Pos2::new(x_of(k as f64), g::value_y(value(k), top, h, lo, hi)), value(k).is_finite())).collect();
     let pts: Vec<Pos2> = samples.iter().map(|s| s.0).collect();
     // Aliased, as GDI's Polyline; the marks come after the line (`0x429b52`).
     let mut mesh = egui::Mesh::default();
-    for run in samples.split(|s| !s.1) {
-        let line: Vec<Pos2> = run.iter().map(|s| s.0).collect();
+    for line in polyline_runs(&samples, through_nonfinite) {
         for r in g::aliased_runs(&line) {
             mesh.add_colored_rect(r, color);
         }
@@ -1466,6 +1513,9 @@ impl App {
             y += r.h;
         }
         let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r)).collect();
+        // The window the horizontal визиры read their value from (`0x42b640`): the lane's min / max as the loop left
+        // them, which for a lane without a finite sample is (DBL_MAX, -DBL_MAX) (#244).
+        let vranges: Vec<(f64, f64)> = rows.iter().zip(&ranges).map(|(r, &rg)| visor_window(doc, r, rg)).collect();
         let grid_bottom = client.bottom() - g::RULER_H;
         let lanes_clip = Rect::from_min_max(client.min, Pos2::new(plot_right, plot_bottom));
         let painter = ui.painter_at(client);
@@ -1541,14 +1591,14 @@ impl App {
         for (j, h) in doc.hviz.iter().enumerate() {
             let Some(ch) = h.chan else { continue };
             let Some(li) = rows.iter().position(|r| r.has(Lane::Analog(ch))) else { continue };
-            let (lo, hi) = ranges[li];
+            let (lo, hi) = vranges[li];
             if h.value.is_nan() {
                 // First show: 10 / 20 px from the top of its lane.
                 let v = g::y_value(tops[li] + 10.0 * (j as f32 + 1.0), tops[li], rows[li].h, lo, hi);
                 actions.push(Act::SetH(j, ch, v));
                 continue;
             }
-            let yy = g::value_y(h.value, tops[li], rows[li].h, lo, hi);
+            let yy = hviz_y(h.value, tops[li], rows[li].h, lo, hi);
             hrows[j] = Some((yy, li));
         }
         paint_hvizirs(&painter, (client.left(), left, plot_right), (client.top(), plot_bottom), [0, 1].map(|j| (doc.hviz[j].shown, hrows[j].map(|r| r.0))));
@@ -1714,7 +1764,7 @@ impl App {
                                 }
                             }
                         } else if shift {
-                            if let Some((ch, v)) = analog_at(pos.y, &geo, &ranges) {
+                            if let Some((ch, v)) = analog_at(pos.y, &geo, &vranges) {
                                 actions.push(Act::SetH(usize::from(pressed_r), ch, v));
                             }
                         } else if pressed_l && self.rect_zoom == RectZoom::Armed {
@@ -1774,7 +1824,7 @@ impl App {
                 match drag {
                     VizDrag::V(k) => actions.push(Act::MoveV(k, sample_at(pos.x.clamp(left, plot_right.max(left))))),
                     VizDrag::H(j) => {
-                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), (plot_bottom - 1.0).max(client.top())), &geo, &ranges) {
+                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), (plot_bottom - 1.0).max(client.top())), &geo, &vranges) {
                             actions.push(Act::SetH(j, ch, v));
                         }
                     }
@@ -2017,7 +2067,7 @@ impl App {
                     actions.push(Act::MoveV(vk, c as usize));
                 }
                 if let Some(y) = y[vk].filter(|_| moved_h[vk]) {
-                    if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
+                    if let Some((ch, v)) = analog_at(y, &geo, &vranges) {
                         actions.push(Act::SetH(vk, ch, v));
                     }
                 }
@@ -2539,7 +2589,8 @@ impl App {
         }
         let hval = |j: usize| -> Option<(usize, f64)> {
             let h = &d.hviz[j];
-            (h.shown && h.value.is_finite()).then_some(())?;
+            // Infinite values show ("-1.#INF"); NaN is the never-placed sentinel.
+            (h.shown && !h.value.is_nan()).then_some(())?;
             Some((h.chan?, h.value))
         };
         // «Гор. визир N: %4g %s» (3171 / 3173): the value as stored, the
@@ -3619,6 +3670,259 @@ mod menu_tests {
         assert_ne!(hscroll_page(k.0, n, v, true, None).0, hscroll_page(k.0, n, v, true, Some(k.3)).0);
     }
 
+    /// #232: the commands that only open a dialog keep the Shift+wheel position while the dialog is up and when it
+    /// is cancelled (L9.434); a confirmed one is the views' refresh and drops it. One run per command: Save As,
+    /// «Загрузка настроек...», the exports and Сохранить on a record with no file of its own.
+    #[test]
+    fn the_kept_bar_position_waits_for_the_dialog_of_save_as_load_settings_and_the_exports() {
+        let dir = std::env::temp_dir().join(format!("fv_kept_bar_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (_guard, _unused) = crate::sysdlg::testing::gate();
+        let ctx = egui::Context::default();
+        let cmds = [
+            (Command::SaveAs, "rec_a.cfg"),
+            // Save on a record with no file of its own asks for one, as Save As does.
+            (Command::Save, "rec_g.cfg"),
+            (Command::LoadSettings, "rec_b.set"),
+            (Command::ExportCsv, "rec_c.csv"),
+            (Command::Archive, "rec_d.zip"),
+            (Command::OpenFvb, "lib_e.fvb"),
+            (Command::ExportImage, "img_f.png"),
+        ];
+        // Every command is run before the failures are reported, so one broken command does not hide the others.
+        let mut failures: Vec<String> = Vec::new();
+        for (cmd, file) in cmds {
+            for confirmed in [false, true] {
+                let mut h = Harness::new();
+                let at = Pos2::new(600.0, h.row(0).y);
+                h.button(at, egui::PointerButton::Primary);
+                for _ in 0..3 {
+                    h.wheel(at, 1.0, egui::Modifiers::CTRL);
+                }
+                h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                assert!(h.doc().hscroll_pos.is_some(), "kept by the wheel");
+                // The gate (held for the whole test) hands this answer to the next dialog.
+                let (tx, rx) = std::sync::mpsc::channel();
+                *crate::sysdlg::testing::ANSWER.lock().unwrap() = Some(rx);
+                h.app.dispatch(cmd.clone());
+                if !h.app.sysdlg_busy() {
+                    failures.push(format!("{cmd:?}: no dialog is up"));
+                    continue;
+                }
+                if h.doc().hscroll_pos.is_none() {
+                    failures.push(format!("{cmd:?}: dropped while the dialog is up"));
+                }
+                tx.send(confirmed.then(|| (dir.join(file), None))).unwrap();
+                for _ in 0..400 {
+                    h.app.poll_sysdlg(&ctx);
+                    if !h.app.sysdlg_busy() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                if h.app.sysdlg_busy() {
+                    failures.push(format!("{cmd:?}: the dialog did not answer"));
+                } else if h.doc().hscroll_pos.is_none() != confirmed {
+                    failures.push(format!("{cmd:?} (confirmed {confirmed}): the position after the dialog"));
+                }
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(failures.is_empty(), "{failures:#?}");
+    }
+
+    /// A colour no demo lane has.
+    const FORMULA_INK: Color32 = Color32::from_rgb(7, 9, 11);
+
+    /// A harness whose demo record carries one formula lane of `samples` (cut to the record's length) and shows
+    /// the marks.
+    fn formula_lane_harness(f: impl Fn(usize) -> f64) -> (Harness, Row) {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.computed.push(crate::app::Computed::new("F".into(), "1".into(), (0..n).map(f).collect(), FORMULA_INK));
+        d.computed[0].custom_color = true;
+        // Only the formula lane, so it lies in the view.
+        d.chans.iter_mut().for_each(|c| c.visible = false);
+        d.digital_visible.iter_mut().for_each(|v| *v = false);
+        d.channels_changed();
+        d.xscale = Some(1.0);
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let row = lane_layout(h.doc(), h.app.y_analog).into_iter().find(|r| r.key == Lane::Computed(0)).expect("the formula lane");
+        (h, row)
+    }
+
+    /// #243 (clone): a formula lane with finite and non-finite samples (a division by a channel's zeros) is ranged by
+    /// its finite samples (the original's min / max loop keeps a value strictly inside ±DBL_MAX, `0x42888d`), the
+    /// others sit on the baseline row, and one Polyline runs through every point, the baseline ones included.
+    #[test]
+    fn a_formula_lane_with_non_finite_samples_is_ranged_by_its_finite_ones() {
+        let value = |k: usize| match k % 6 {
+            0 => f64::INFINITY,
+            3 => f64::NAN,
+            4 => f64::NEG_INFINITY,
+            _ => (k as f64 * 0.37).sin() * 3.7 + 0.4,
+        };
+        let (h, row) = formula_lane_harness(value);
+        let n = h.doc().osc.sample_count();
+        let finite: Vec<f64> = (0..n).map(value).filter(|v| v.is_finite()).collect();
+        let want = (finite.iter().copied().fold(f64::INFINITY, f64::min), finite.iter().copied().fold(f64::NEG_INFINITY, f64::max));
+        assert_eq!(row_range(h.doc(), &row), want, "the finite samples' range");
+        let (top, hgt) = (0.0, row.h);
+        assert_eq!(g::value_y(f64::INFINITY, top, hgt, want.0, want.1), top + hgt - 5.0, "an infinite sample on the baseline");
+        assert_eq!(g::value_y(f64::NAN, top, hgt, want.0, want.1), top + hgt - 5.0, "so is a NaN");
+        let samples: Vec<(Pos2, bool)> = (0..n).map(|k| (Pos2::new(k as f32, g::value_y(value(k), top, hgt, want.0, want.1)), value(k).is_finite())).collect();
+        let runs = polyline_runs(&samples, true);
+        assert_eq!(runs.len(), 1, "one Polyline");
+        assert_eq!(runs[0].len(), n, "through every point");
+        // A lane of nothing but non-finite samples breaks at each of them.
+        assert!(polyline_runs(&samples, false).len() > 1);
+    }
+
+    /// #243 (clone): a formula lane whose samples are all NaN (0 / 0) has the flat range: its points on the lane's
+    /// middle row with the line through them.
+    #[test]
+    fn an_all_nan_formula_lane_is_flat_on_the_middle_row() {
+        let (h, row) = formula_lane_harness(|_| f64::NAN);
+        assert_eq!(row_range(h.doc(), &row), (0.0, 0.0));
+        assert_eq!(g::value_y(f64::NAN, 0.0, row.h, 0.0, 0.0), (row.h / 2.0).floor(), "on the middle row");
+        // Drawn: the marks, in the lane's own colour, are there.
+        let marks = h.shapes.iter().filter(|c| matches!(&c.shape, Shape::Mesh(m) if m.vertices.len() == 48 && m.vertices[0].color == FORMULA_INK)).count();
+        assert!(marks > 0, "the marks of the NaN samples");
+        // ... and the line through them: the one-pixel columns of a long run in the lane's colour.
+        let line = h.shapes.iter().any(|c| match &c.shape {
+            Shape::Mesh(m) if m.vertices.len() > 48 && m.vertices.first().is_some_and(|v| v.color == FORMULA_INK) => {
+                let (lo, hi) = m.vertices.iter().fold((f32::MAX, f32::MIN), |(l, r), v| (l.min(v.pos.x), r.max(v.pos.x)));
+                hi - lo > 100.0
+            }
+            _ => false,
+        });
+        assert!(line, "the Polyline through the NaN points");
+    }
+
+    /// #243: a file lane with finite and infinite samples (a hand-set shown series; a finite ratio cannot make one) is
+    /// ranged by its finite samples; one of nothing but infinite and NaN samples keeps the infinite extremes (#170).
+    #[test]
+    fn a_file_lanes_range_is_its_finite_samples_when_it_has_any() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.shown = vec![None; d.osc.analog.len()];
+        let series = |k: usize| match k % 5 {
+            0 => f64::INFINITY,
+            1 => f64::NEG_INFINITY,
+            2 => f64::NAN,
+            3 => 2.5,
+            _ => -7.25,
+        };
+        d.shown[0] = Some((0..n).map(series).collect());
+        d.series_gen += 1;
+        let (lo, hi) = chan_range(h.doc(), 0);
+        assert_eq!((lo, hi), (-7.25, 2.5), "the finite samples' range, not (-inf, inf)");
+        let d = h.app.active_doc_mut().unwrap();
+        d.shown[0] = Some((0..n).map(|k| if k % 2 == 0 { f64::INFINITY } else { f64::NEG_INFINITY }).collect());
+        d.series_gen += 1;
+        assert_eq!(chan_range(h.doc(), 0), (f64::NEG_INFINITY, f64::INFINITY), "none finite: the infinite extremes");
+    }
+
+    /// #243 (clone, #170): a file lane whose samples are all NaN (a 0 / 0 ratio) draws nothing, marks included; the
+    /// same lane with finite samples does.
+    #[test]
+    fn an_all_nan_file_lane_draws_nothing() {
+        let own = |nan: bool| {
+            let mut h = Harness::new();
+            let d = h.app.active_doc_mut().unwrap();
+            let n = d.osc.sample_count();
+            d.shown = vec![None; d.osc.analog.len()];
+            if nan {
+                d.shown[0] = Some(vec![f64::NAN; n]);
+            }
+            d.series_gen += 1;
+            d.xscale = Some(1.0);
+            let color = d.chans[0].color;
+            h.frame(vec![]);
+            h.frame(vec![]);
+            // Marks of the channel's colour inside the first lane (the lanes of one phase share a colour).
+            let (mid, half) = (h.row(0).y, lane_layout(h.doc(), h.app.y_analog)[0].h / 2.0);
+            h.shapes.iter().filter(|c| matches!(&c.shape, Shape::Mesh(m) if m.vertices.len() == 48 && m.vertices[0].color == color && (m.vertices[0].pos.y - mid).abs() < half)).count()
+        };
+        assert!(own(false) > 0, "the lane with finite samples draws");
+        assert_eq!(own(true), 0, "an all-NaN lane draws nothing");
+    }
+
+    /// #244 (clone): the horizontal визиры switched on over a lane none of whose samples is finite (a zero ratio
+    /// field) read minus infinity off it — the window is DBL_MAX .. -DBL_MAX and the span overflows —, both of
+    /// them; the status bar shows «-1.#INF» and the difference «1.#QNAN»; the lines are out of view above the lane,
+    /// so the labels «ГВ1» / «ГВ2» sit at its top.
+    #[test]
+    fn horizontal_visors_on_a_lane_without_a_finite_sample_read_minus_infinity() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.shown = vec![None; d.osc.analog.len()];
+        d.shown[0] = Some((0..n).map(|k| if k % 3 == 0 { f64::NAN } else { f64::INFINITY }).collect());
+        d.series_gen += 1;
+        let unit = d.osc.analog[0].shown_unit().text;
+        h.app.dispatch(Command::ToggleVizir(3));
+        h.app.dispatch(Command::ToggleVizir(4));
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        let d = h.doc();
+        assert_eq!((d.hviz[0].value, d.hviz[1].value), (f64::NEG_INFINITY, f64::NEG_INFINITY), "read off the DBL_MAX window");
+        let s = h.app.cursor_status().unwrap();
+        assert_eq!(s[3], format!("Гор. визир 1: -1.#INF {unit}"));
+        assert_eq!(s[4], format!("Гор. визир 2: -1.#INF {unit}"));
+        assert_eq!(s[5], format!("Разница г. визиров: 1.#QNAN {unit}"));
+        let label = |t: &str| h.shapes.iter().find_map(|c| match &c.shape { Shape::Text(x) if x.galley.text() == t => Some(x.pos), _ => None });
+        let top = h.app.view_rects.unwrap().0.top();
+        for t in ["ГВ1", "ГВ2"] {
+            let at = label(t).unwrap_or_else(|| panic!("the label {t}"));
+            assert!((at.y - top).abs() < 3.0, "{t} at the top of the view: {at:?} (top {top})");
+        }
+        // A lane with finite samples keeps its normal value.
+        let mut h = Harness::new();
+        h.app.dispatch(Command::ToggleVizir(3));
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        assert!(h.doc().hviz[0].value.is_finite());
+    }
+
+    /// #245: with marks shown (above 4 px per sample) the first sample's mark is drawn whole at the plot's left
+    /// edge, its two left columns over the label column; the right edge is the client's own.
+    #[test]
+    fn the_first_samples_mark_is_not_clipped_at_the_plots_left_edge() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().xscale = Some(1.0);
+        h.app.active_doc_mut().unwrap().first = 0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.unwrap();
+        let left = full.left() + h.app.view_left;
+        // A mark is the twelve unit squares of `sample_mark` in one mesh: the first sample's spans x - 2 ..= x + 1.
+        let marks: Vec<(&egui::Mesh, Rect)> = h
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                Shape::Mesh(m) if m.vertices.len() == 48 => Some((m, c.clip_rect)),
+                _ => None,
+            })
+            .collect();
+        assert!(!marks.is_empty(), "marks are drawn at this scale");
+        let first_marks: Vec<_> = marks.iter().filter(|(m, _)| m.vertices.iter().map(|v| v.pos.x).fold(f32::MAX, f32::min) == left - 2.0).collect();
+        assert!(!first_marks.is_empty(), "a mark at the first sample (left {left})");
+        for (_, clip) in first_marks {
+            assert!(clip.left() <= left - 2.0, "its clip {clip:?} leaves the two columns left of the plot");
+        }
+        // The right edge: no mark is let past the client's right edge.
+        for (m, clip) in &marks {
+            assert!(clip.right() <= plot.right(), "the clip {clip:?} stays inside the client ({m:?})", m = m.vertices.len());
+        }
+    }
+
     /// With the whole record in view there is no horizontal bar (seen on
     /// the VM, L9.196): nothing is painted along the bottom.
     #[test]
@@ -3759,6 +4063,59 @@ mod menu_tests {
                 assert!(d.v_shown[k] && got == want, "В{} ({y_analog}): sample {got}, expected {want}", k + 1);
             }
         }
+    }
+
+    /// A harness whose demo record is cut to `n` samples (so the horizontal fit scale can straddle a power of two).
+    fn cut_harness(n: usize) -> Harness {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.osc.time.truncate(n);
+        d.osc.analog.iter_mut().for_each(|a| a.samples.truncate(n));
+        d.osc.digital.iter_mut().for_each(|a| a.samples.truncate(n));
+        d.xscale = None;
+        d.first = 0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        h
+    }
+
+    /// #250: the horizontal zoom's fit scale (`0x45c430`) and the first-sample clamp after a zoom (`0x45c4f0`) read the
+    /// view's client width, without the vertical scroll bar; so does the enabled state of 32802 / 32803 (`0x45c8c0`).
+    /// A record cut so the fit scale of the whole width and of the client width are one power of two apart.
+    #[test]
+    fn the_horizontal_zoom_reads_the_client_width_without_the_vertical_bar() {
+        use crate::oscgeom as g;
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.expect("the view was drawn");
+        assert!(plot.width() < full.width(), "the vertical bar is shown");
+        let n = (50..3000)
+            .find(|&n| g::fit_scale(full.width(), n) != g::fit_scale(plot.width(), n))
+            .expect("a record length where the two fit scales differ");
+        let mut h = cut_harness(n);
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.unwrap();
+        assert!(plot.width() < full.width());
+        let (fit_full, fit_plot) = (g::fit_scale(full.width(), n), g::fit_scale(plot.width(), n));
+        assert_eq!(fit_plot, fit_full / 2.0);
+        // At the whole-width fit scale zoom-out is still allowed (the client's fit scale is one step further) ...
+        h.app.active_doc_mut().unwrap().xscale = Some(fit_full);
+        assert!(h.app.zoom_enabled()[3], "zoom-out is enabled above the client's fit scale");
+        h.app.dispatch(Command::ZoomX(false));
+        assert_eq!(h.doc().xscale, Some(fit_plot), "zoom-out reaches the client's fit scale");
+        // ... and is refused (greyed) there.
+        assert!(!h.app.zoom_enabled()[3]);
+        h.app.dispatch(Command::ZoomX(false));
+        assert_eq!(h.doc().xscale, Some(fit_plot), "not below the fit scale");
+        // The first sample after a zoom-in is clamped to the client's last screen.
+        let left = h.app.view_left;
+        h.app.active_doc_mut().unwrap().first = n;
+        h.app.dispatch(Command::ZoomX(true));
+        let want = g::max_first(n, g::visible_count(plot.width(), left, fit_plot * 2.0));
+        assert_eq!(h.doc().first, want, "the first sample is clamped with the client width");
     }
 
     /// Holding an arrow keeps scrolling after a delay; holding the track

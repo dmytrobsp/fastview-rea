@@ -595,18 +595,10 @@ impl Doc {
     }
 }
 
-#[cfg(test)]
-thread_local! {
-    /// Full recomputes run on this thread (tests count them).
-    pub static RECOMPUTES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
-}
-
 impl App {
     /// A full recompute of document `di`; ОМП is re-run silently when its
     /// result is on this document (`doc+0x690`).
     pub fn recompute_doc(&mut self, di: usize) {
-        #[cfg(test)]
-        RECOMPUTES.with(|c| c.set(c.get() + 1));
         let Some(d) = self.docs.get_mut(di) else { return };
         d.recompute_signals();
         if let Some(m) = d.batch_error.take() {
@@ -679,7 +671,7 @@ impl App {
     pub fn zoom_enabled(&self) -> [bool; 4] {
         let Some(d) = self.active_doc() else { return [false; 4] };
         let y = self.y_analog.round() as i32;
-        let [grow_x, shrink_x] = d.zoom_x_enabled(self.view_width);
+        let [grow_x, shrink_x] = d.zoom_x_enabled(self.client_width());
         [y < 500, y > 70, grow_x, shrink_x]
     }
 

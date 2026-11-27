@@ -519,7 +519,7 @@ pub enum RectZoom {
 
 type ParseResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
 /// A parsed record with its derived arrays, built on the worker.
-type LoadResult = Result<(Box<Doc>, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
+type LoadResult = Result<Box<Doc>, fvb_core::comtrade::ComtradeError>;
 
 /// «Нет» (string 3306): the empty block the library loader `0x40c7e0` puts
 /// first in each diagram's «Тип блока» list.
@@ -559,7 +559,7 @@ pub struct Loading {
     pub shown: (u32, f64),
 }
 
-/// Parse a `.cfg` / `.cff` / `.osc` record.
+/// Parse a `.cfg` / `.cff` record.
 fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> ParseResult {
     let lower = path.to_string_lossy().to_lowercase();
     if lower.ends_with(".sto") {
@@ -570,6 +570,11 @@ fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::com
         // that path (`0x4564cd`–`0x4564fe`); ours stops there.
         let sto = path.with_extension("sto");
         return Err(fvb_core::comtrade::ComtradeError::Plain(format!("Ошибка чтения файла {}", sto.display())));
+    }
+    if lower.ends_with(".osc") {
+        // An OSC2 record (`0x4524b0`) is not supported (#59): an open that
+        // fails like the `.sto` one, never a `.cfg` beside it.
+        return Err(fvb_core::comtrade::ComtradeError::Plain(format!("Ошибка чтения файла {}", path.display())));
     }
     if lower.ends_with(".cff") {
         std::fs::read(path)
@@ -583,13 +588,22 @@ fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::com
 /// Parse a record and build its document on the loader's thread: the
 /// original's phase 2 (`0x428490` through the `.set` apply `0x44f5b0`, the
 /// per-sample recompute) runs there too, under the progress dialog.
-fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
+pub(crate) fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    parse_file(path, enc, prog).map(|(osc, cff)| (Box::new(Doc::new(osc, name)), cff))
+    parse_file(path, enc, prog).map(|(osc, cff)| {
+        let mut doc = Box::new(Doc::new_progress(osc, name, prog));
+        // After «Отмена» the document is thrown away: no `.set` read, no formula batch for it.
+        if prog.is_some_and(|p| p.cancelled()) {
+            return doc;
+        }
+        // The `.set` read and its formula channels too (#32): the UI thread only adds the document.
+        doc.finish_open(path, cff, enc);
+        doc
+    })
 }
 
 /// The progress dialog shows when the `.dat` of a `.cfg` or the `.cff` is
-/// over 200 000 bytes, or the `.osc` over 20 000.
+/// over 200 000 bytes.
 pub fn loading_shown(path: &std::path::Path) -> bool {
     let size = |p: &std::path::Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     let lower = path.to_string_lossy().to_lowercase();
@@ -597,8 +611,6 @@ pub fn loading_shown(path: &std::path::Path) -> bool {
         size(&path.with_extension("dat")).max(size(&path.with_extension("DAT"))) > 200_000
     } else if lower.ends_with(".cff") {
         size(path) > 200_000
-    } else if lower.ends_with(".osc") {
-        size(path) > 20_000
     } else {
         false
     }
@@ -863,9 +875,21 @@ pub struct Doc {
     /// Частотная, Векторная, Круговая, Дифференциальная; kept per document,
     /// also on Отмена, not persisted.
     pub print_ticks: [bool; 5],
+    /// Boxes the open raised on the loader's thread (a failing batch of the `.set`'s formulas), shown by the UI
+    /// thread when it adds the document.
+    pub open_alerts: Vec<String>,
+    /// Full recomputes the open ran on the loader's thread (tests count them).
+    #[cfg(test)]
+    pub open_recomputes: usize,
 }
 
 impl Doc {
+    /// The kept horizontal-bar position of the Shift+wheel step goes (the views' refresh sets the bar from the
+    /// first sample again, `0x45ac60`): a command that opens a dialog does it when the dialog is confirmed (#232).
+    pub fn drop_bar_position(&mut self) {
+        self.hscroll_pos = None;
+    }
+
     /// The document title the tab, the caption and «Окна...» show: MFC's
     /// SetPathName → AfxGetFileTitle, the file name with its extension (seen
     /// on the VM: «WIN_1999.cfg»); a document without a file, its name.
@@ -874,6 +898,19 @@ impl Doc {
     }
 
     pub fn new(osc: Oscillogram, name: String) -> Self {
+        Self::new_progress(osc, name, None)
+    }
+
+    /// [`Doc::new`] on the loader's thread, advancing the open's counter as the derived arrays are built (#32,
+    /// L9.332): the original's recompute phase (`0x428490`) adds its steps while each channel is rebuilt, so the bar
+    /// reaches its last value when the build is done, not when the parse is. Half of the phase's steps are added once
+    /// the shown values and the phasors are in, the rest as each channel's sliding RMS is built; a cancel stops the
+    /// build at the next channel (the document is then thrown away).
+    pub fn new_progress(osc: Oscillogram, name: String, prog: Option<&fvb_core::comtrade::Progress>) -> Self {
+        let steps = prog.map(|p| p.recompute_steps(&osc)).unwrap_or_default();
+        // The 32-bit counter wraps as the original's does.
+        let total = steps.iter().fold(0u32, |a, &s| a.wrapping_add(s));
+        let first_half = total / 2;
         let corr = fvb_core::freqcorr::of(&osc);
         let np = |i: usize| osc.period_of(osc.analog[i].own_rate).max(2);
         let chans: Vec<ChanView> = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
@@ -881,7 +918,24 @@ impl Doc {
         let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, np(i)), shown_factor(&osc.analog[i], &chans[i]))).collect();
         let series: Vec<&[f64]> = (0..osc.analog.len()).map(|i| shown[i].as_deref().unwrap_or(&osc.analog[i].samples)).collect();
         let analysis = Analysis::compute_over(&osc, &series, corr);
-        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i))).collect();
+        if let Some(p) = prog {
+            p.advance(first_half);
+        }
+        let mut left = total - first_half;
+        let mut rms: Vec<Vec<f64>> = Vec::with_capacity(series.len());
+        for (i, x) in series.iter().enumerate() {
+            if prog.is_some_and(|p| p.cancelled()) {
+                rms.resize(series.len(), Vec::new());
+                break;
+            }
+            rms.push(fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i)));
+            if let Some(p) = prog {
+                // This channel's share of the second half; the last takes what is left.
+                let by = if i + 1 == series.len() { left } else { (steps[i] - steps[i] / 2).min(left) };
+                p.advance(by);
+                left -= by;
+            }
+        }
         let dc_mean = osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, np(i)), whole_period_mean(&adc_codes(c), np(i)))).collect();
         let flagged = osc.clone();
         let digital_visible = vec![true; osc.digital.len()];
@@ -944,6 +998,9 @@ impl Doc {
             undo: Vec::new(),
             redo: Vec::new(),
             print_ticks: [true, false, false, false, false],
+            open_alerts: Vec::new(),
+            #[cfg(test)]
+            open_recomputes: 0,
         }
     }
 
@@ -1288,7 +1345,7 @@ impl Doc {
 
     /// Reset the time view to the full record.
     /// CMDUI 155..157: comments can be placed only on records opened from a
-    /// `.cfg` or `.osc` file (our bundled demo record, with no file, too).
+    /// `.cfg` file (our bundled demo record, with no file, too).
     /// Pairs naming a channel the record no longer has go (`0x4554e0` R/X,
     /// `0x455210` differential — the circle / differential painters and
     /// 33027 call them): the analog and computed channels' names, compared
@@ -1324,7 +1381,7 @@ impl Doc {
             Some(p) => p
                 .extension()
                 .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("cfg") || e.eq_ignore_ascii_case("osc")),
+                .is_some_and(|e| e.eq_ignore_ascii_case("cfg")),
         }
     }
 
@@ -1975,7 +2032,65 @@ pub struct CharState {
     pub color: egui::Color32,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Formula batches run on this thread (tests: none on the UI thread during an open, #32).
+    pub static FORMULA_BATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Doc {
+    /// [`App::append_computed`] on the document alone (the `.set`'s formulas run it on the loader's thread, #32):
+    /// the names given, or the text of the box to raise.
+    pub fn append_computed_core(&mut self, batch: &[(String, String)]) -> Result<Vec<String>, String> {
+        #[cfg(test)]
+        FORMULA_BATCHES.with(|c| c.set(c.get() + 1));
+        let show_primary = self.primary_values();
+        let d = self;
+        // The new definitions join the list and `0x415780` evaluates the
+        // whole list: the older formula channels take the current values
+        // and correction too (L9.103); an old one failing aborts the batch
+        // — its box, nothing added (`0x416ed6`–`0x416f69`).
+        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
+        let before = (d.computed.len(), d.loose_defs.clone());
+        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
+            return Err(e.to_string());
+        }
+        let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
+        match d.eval_formulas(&existing, batch, show_primary) {
+            Ok(added) => {
+                let n0 = d.computed.len();
+                let names = added.iter().map(|c| c.name.clone()).collect();
+                for (k, c) in added.into_iter().enumerate() {
+                    let color = channel_color(&c.name, "", d.osc.analog.len() + n0 + k);
+                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), color);
+                    cc.unit = c.unit;
+                    cc.set_values(c.samples, c.phasors);
+                    d.computed.push(cc);
+                }
+                d.channels_changed();
+                Ok(names)
+            }
+            Err(e) => {
+                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
+                if d.computed.len() > before.0 {
+                    d.computed.truncate(before.0);
+                    d.loose_defs = before.1;
+                    d.channels_changed();
+                }
+                Err(e.to_string())
+            }
+        }
+    }
+}
+
 impl App {
+    /// The view window's client width, which leaves out the vertical scroll bar
+    /// (the original's `GetClientRect`): the plot's width. The horizontal zoom's
+    /// fit scale and the визир toggles read it (`0x45c430`, `0x45c4f0`, `0x45c8c0`).
+    pub fn client_width(&self) -> f32 {
+        self.view_rects.map_or(self.view_width, |(_, plot)| plot.width())
+    }
+
     pub fn new() -> Self {
         let (full_library, source_name) = load_libraries();
         let mut app = App {
@@ -2278,8 +2393,23 @@ impl App {
         // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
         // the first sample again (`lanes::hscroll_page`).
         // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
-        // open a dialog or a chooser (Open, Печать, its preview) leave the bar alone.
-        if !matches!(cmd, Command::Copy | Command::Open | Command::Print | Command::PrintPreview) {
+        // open a dialog or a chooser (Open, Печать, its preview, Save without a file of its own, Save As, «Загрузка настроек...», the exports)
+        // leave the bar alone until the dialog is answered (#232): a confirmed one drops the position in its
+        // own continuation ([`Doc::drop_bar_position`]), a cancelled one never does.
+        if !matches!(
+            cmd,
+            Command::Copy
+                | Command::Open
+                | Command::Print
+                | Command::PrintPreview
+                | Command::Save
+                | Command::SaveAs
+                | Command::LoadSettings
+                | Command::ExportCsv
+                | Command::Archive
+                | Command::OpenFvb
+                | Command::ExportImage
+        ) {
             if let Some(d) = self.active_doc_mut() {
                 d.hscroll_pos = None;
             }
@@ -2401,8 +2531,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
-                // The view's client: without the vertical scroll bar (`view_rects.1`, the plot).
-                let w = self.view_rects.map_or(self.view_width, |(_, plot)| plot.width());
+                let w = self.client_width();
                 let left = self.view_left;
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_vizir(k, w, left);
@@ -2461,7 +2590,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ZoomX(zin) => {
-                let (w, left) = (self.view_width, self.view_left);
+                let (w, left) = (self.client_width(), self.view_left);
                 if let Some(d) = self.active_doc_mut() {
                     d.zoom_x(zin, w, left);
                 }
@@ -2903,6 +3032,9 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("FastView library", &["fvb"]);
         self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
             let Some((path, _)) = picked else { return };
+            if let Some(d) = app.active_doc_mut() {
+                d.drop_bar_position();
+            }
             match std::fs::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
@@ -2930,10 +3062,9 @@ impl App {
         // String 328 (`0x447e30` when opening); patterns in both cases for
         // the case-sensitive dialogs off Windows.
         let dlg = crate::dialogs::file_dialog()
-            .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
+            .add_filter("Осциллограммы (*.cfg, *.cff, *.sto)", &["cfg", "cff", "sto", "CFG", "CFF", "STO"])
             .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
             .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
-            .add_filter("Осциллограммы OSC2 (*.osc)", &["osc", "OSC"])
             .add_filter("Осциллограммы Configurator-MT (*.sto)", &["sto", "STO"])
             .add_filter("Все файлы (*.*)", &["*"]);
         self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
@@ -3012,30 +3143,14 @@ impl App {
 
     fn finish_load(&mut self, path: &std::path::Path, loaded: LoadResult) {
         match loaded {
-            Ok((doc, cff)) => {
+            Ok(mut doc) => {
+                let alerts = std::mem::take(&mut doc.open_alerts);
                 self.add_doc(*doc);
-                let enc = self.encoding;
-                if let Some(d) = self.active_doc_mut() {
-                    d.path = Some(path.to_path_buf());
-                    d.rec_path = Some(path.to_path_buf());
-                    d.cff = cff;
-                    d.init_record_text(enc);
-
-                    // Names may have been re-decoded; no flag is set yet.
-                    d.flagged = d.osc.clone();
-                    d.series_gen += 1;
+                // A failing batch of the `.set`'s formulas is its box, raised by the open.
+                for m in alerts {
+                    self.dlg.push_alert(m);
                 }
-                if let Some(di) = self.active {
-                    self.load_record_settings(di);
-                    // OnOpenDocument selects the record's channel 0 once the
-                    // loader is done (`0x44f245`, `.cff` `0x44f358`).
-                    let d = &mut self.docs[di];
-                    if !d.osc.analog.is_empty() {
-                        d.selection.insert(ChanKey::Analog(0));
-                    } else if !d.osc.digital.is_empty() {
-                        d.selection.insert(ChanKey::Digital(0));
-                    }
-                }
+                self.setfile.sync = None;
                 self.remember_recent(path);
             }
             // The reader's exception is posted to the frame (`0x475680`,
@@ -3095,7 +3210,8 @@ impl App {
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
             // The record the command was given for (the dialog ran meanwhile).
-            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get_mut(i)) else { return };
+            d.drop_bar_position();
             let out = Self::csv_string(d);
             match std::fs::write(&path, out) {
                 Ok(()) => app.status = format!("Экспортировано в {}", path.display()),
@@ -3114,7 +3230,8 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("ZIP", &["zip"]).set_file_name(name);
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
-            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get_mut(i)) else { return };
+            d.drop_bar_position();
             let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
             let csv = Self::csv_string(d);
             let zip = crate::util::zip_store(&[
@@ -3139,6 +3256,9 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("PNG", &["png"]).set_file_name("fastview.png");
         self.pick(crate::sysdlg::Job::Save(dlg), |app, _, picked| {
             if let Some((path, _)) = picked {
+                if let Some(d) = app.active_doc_mut() {
+                    d.drop_bar_position();
+                }
                 app.want_screenshot = Some(path);
                 app.status = "Готовится изображение…".into();
             }
@@ -3206,6 +3326,7 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.redo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
     }
 
     /// 57644 (`0x4548d0`), the mirror of [`App::undo`].
@@ -3215,55 +3336,31 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.undo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
+    }
+
+    /// The merge bar stays up through the undo and the redo of a paste (#231): the pasted lanes may be gone
+    /// from the record for the moment, the bar is not.
+    fn keep_merge_bar(&mut self) {
+        if let Some(b) = self.merge.as_mut() {
+            b.kept = true;
+        }
     }
 
     /// Append computed channels to the active record, evaluated in order in
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
     pub fn append_computed(&mut self, batch: &[(String, String)]) -> Option<Vec<String>> {
-        let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let Some(d) = self.active_doc_mut() else {
             self.status = "Сначала загрузите осциллограмму.".into();
             return None;
         };
-        // The new definitions join the list and `0x415780` evaluates the
-        // whole list: the older formula channels take the current values
-        // and correction too (L9.103); an old one failing aborts the batch
-        // — its box, nothing added (`0x416ed6`–`0x416f69`).
-        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
-        let before = (d.computed.len(), d.loose_defs.clone());
-        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
-            self.dlg.push_alert(e.to_string());
-            return None;
-        }
-        let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match d.eval_formulas(&existing, batch, show_primary) {
-            Ok(added) => {
-                let d = self.active_doc_mut()?;
-                let n0 = d.computed.len();
-                let names = added.iter().map(|c| c.name.clone()).collect();
-                for (k, c) in added.into_iter().enumerate() {
-                    let color = channel_color(&c.name, "", d.osc.analog.len() + n0 + k);
-                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), color);
-                    cc.unit = c.unit;
-                    cc.set_values(c.samples, c.phasors);
-                    d.computed.push(cc);
-                }
-                d.channels_changed();
-                Some(names)
-            }
+        match d.append_computed_core(batch) {
+            Ok(names) => Some(names),
             // A computed channel's evaluation failure is a box (`0x415780`
             // → `0x475680`).
-            Err(e) => {
-                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
-                if let Some(d) = self.active_doc_mut() {
-                    if d.computed.len() > before.0 {
-                        d.computed.truncate(before.0);
-                        d.loose_defs = before.1;
-                        d.channels_changed();
-                    }
-                }
-                self.dlg.push_alert(e.to_string());
+            Err(m) => {
+                self.dlg.push_alert(m);
                 None
             }
         }
@@ -4428,6 +4525,65 @@ mod tests {
         assert!(app.docs.is_empty());
     }
 
+    /// #32 / L9.332: the open's counter reaches its last value when the derived arrays are built, not when the
+    /// parse is over: after the parse a fifth of the bar (an ASCII `.dat`), then the build's steps, in order, up to the end.
+    #[test]
+    fn the_progress_bar_ends_with_the_build() {
+        let dir = std::env::temp_dir().join(format!("fv_bar_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("r.cfg");
+        std::fs::write(&cfg, "S,1,1999
+1,1A,0D
+1,Ia,A,,A,1,0,0,-1000,1000
+50
+1
+1250,400
+01/01/2000,00:00:00.000000
+01/01/2000,00:00:00.000000
+ASCII
+").unwrap();
+        let rows: String = (0..400).map(|k| format!("{},{},{}
+", k + 1, k * 800, ((k as f64) * std::f64::consts::PI / 10.0).sin() * 100.0)).collect();
+        std::fs::write(dir.join("r.dat"), rows).unwrap();
+        let p = fvb_core::comtrade::Progress::default();
+        let (osc, _) = parse_file(&cfg, Encoding::Cp1251, Some(&p)).unwrap();
+        let after_parse = (p.pos.load(std::sync::atomic::Ordering::Relaxed), p.percent());
+        assert!(after_parse.1 < 100, "the parse leaves the bar short of its end: {after_parse:?}");
+        let steps: u64 = p.recompute_steps(&osc).iter().map(|&s| u64::from(s)).sum();
+        assert!(steps > 0);
+        let _doc = Doc::new_progress(osc, "r".into(), Some(&p));
+        let pos = p.pos.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(u64::from(pos), u64::from(after_parse.0) + steps, "the build added exactly the recompute steps");
+        assert_eq!(p.percent(), 100);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// An `.osc` (OSC2) record is not supported (#59): the open fails with
+    /// string 124 and never takes the `.cfg` beside it; no progress dialog; no
+    /// comments; no save format.
+    #[test]
+    fn an_osc_record_is_not_opened() {
+        let dir = std::env::temp_dir().join(format!("fv_osc_gone_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("r.cfg"), "S,1,1999
+").unwrap();
+        let osc = dir.join("r.osc");
+        std::fs::write(&osc, vec![0u8; 40_000]).unwrap();
+        let r = open_file(&osc, Encoding::Cp1251, None);
+        let want = format!("Ошибка чтения файла {}", osc.display());
+        assert!(matches!(&r, Err(fvb_core::comtrade::ComtradeError::Plain(m)) if *m == want), "{:?}", r.map(|_| ()));
+        assert!(!loading_shown(&osc), "the 20 000-byte rule of the .osc is gone");
+        let mut app = App::new();
+        let n = app.docs.len();
+        app.finish_load(&osc, open_file(&osc, Encoding::Cp1251, None));
+        assert_eq!(app.docs.len(), n);
+        assert_eq!(app.dlg.alert(), Some(want.as_str()));
+        let mut d = Doc::new(fvb_core::comtrade::parse(include_str!("../../../assets/demo/demo_fault.cfg"), include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap(), "d".into());
+        d.path = Some(osc);
+        assert!(!d.comments_allowed());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Phase 2 of the open (`0x428490` under `0x44f5b0`) runs on the
     /// loader's thread: the worker hands over a document whose derived
     /// arrays are built.
@@ -4439,7 +4595,7 @@ mod tests {
         std::fs::write(&cfg, "S,1,1999\n1,1A,0D\n1,Ia,A,,A,1,0,0,-1000,1000\n50\n1\n1000,40\n01/01/2000,00:00:00.000000\n01/01/2000,00:00:00.000000\nASCII\n").unwrap();
         let rows: String = (0..40).map(|k| format!("{},{},{}\n", k + 1, k * 1000, ((k as f64) * std::f64::consts::PI / 10.0).sin() * 100.0)).collect();
         std::fs::write(dir.join("r.dat"), rows).unwrap();
-        let (doc, _) = open_file(&cfg, Encoding::Cp1251, None).unwrap();
+        let doc = open_file(&cfg, Encoding::Cp1251, None).unwrap();
         std::fs::remove_dir_all(&dir).ok();
         assert_eq!(doc.name, "r");
         assert_eq!(doc.rms.len(), 1);
@@ -4489,7 +4645,7 @@ mod tests {
         assert!(s.iter().all(|x| !x.is_empty()));
     }
 
-    /// `0x49484d`: with a trigger sample (`.osc`) the readouts count from
+    /// `0x49484d`: with a trigger sample (an OSC2 record's; none opens now) the readouts count from
     /// it — a визир on it reads 0 and sample 1.
     #[test]
     fn cursor_status_counts_from_the_trigger() {
@@ -4588,6 +4744,44 @@ mod tests {
         let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
         assert!(!app.show_file_params, "Enter closed the dialog");
         assert!(crate::app::stale_flags::swept(&app));
+    }
+
+    /// #233 / L9.65: «Закрыть» of the file-info dialog stores a changed «Частота для коррекции расчётных значений»
+    /// (`0x44a2c9`), marks the document modified and recomputes every channel, a formula one too; an unchanged choice
+    /// does none of it.
+    #[test]
+    fn the_file_info_correction_choice_is_stored_and_recomputes() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.docs.push(Doc::new(osc, "f".into()));
+        app.active = Some(0);
+        app.docs[0].osc.freq_sel = 0;
+        app.docs[0].recompute_signals();
+        app.append_computed(&[("X".into(), "rms:(Ua)".into())]).unwrap();
+        // Adding a channel turned the correction on; «Не корректировать» again, everything recomputed.
+        app.docs[0].osc.freq_sel = 0;
+        assert!(app.docs[0].recompute_with_batch().is_none());
+        app.docs[0].set.modified = false;
+        let k = 300;
+        let plain = app.docs[0].computed[0].samples[k];
+        app.show_file_params = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        // The choice left as it is: nothing stored, nothing recomputed.
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params, "Enter closed the dialog");
+        assert_eq!((app.docs[0].osc.freq_sel, app.docs[0].set.modified), (0, false));
+        assert_eq!(app.docs[0].computed[0].samples[k], plain);
+        // The Hz channel picked (item 1 after «Не корректировать»).
+        app.show_file_params = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        app.dlg.file_params.as_mut().expect("the dialog's state").correction = 1;
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params);
+        assert_eq!(app.docs[0].osc.freq_sel, 1, "the choice stored");
+        assert!(app.docs[0].set.modified, "the document marked modified");
+        assert_ne!(app.docs[0].computed[0].samples[k], plain, "the formula channel recomputed with the correction");
     }
 
     /// #31 / L9.56: leaving the formula editor (kill-active `0x486d20`) writes the page's list into the record's

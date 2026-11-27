@@ -66,6 +66,13 @@ pub struct MergeBar {
     pub status: String,
     /// The close button as last drawn.
     pub close: Option<egui::Rect>,
+    /// Set by an undo / redo: the bar stays up while no pasted lane is left (the original keeps it through
+    /// the paste's undo, #231). Cleared once the pasted lanes are there again.
+    pub kept: bool,
+    /// What «Канал 2» last showed: after an undo of the paste the combo keeps its text (clone, #231).
+    pub last2: Option<String>,
+    /// The same for «Канал 1».
+    pub last1: Option<String>,
 }
 
 /// COLORREF (0x00BBGGRR) ↔ colour.
@@ -836,15 +843,23 @@ impl App {
     /// «Синхронизация», «Объединить», the status text. Hiding it while
     /// channels are pending undoes the paste.
     pub fn merge_bar_ui(&mut self, ui: &mut egui::Ui) {
-        let Some(ai) = self.active else { return };
-        self.docs[ai].prune_pending();
-        if self.docs[ai].pending.is_empty() {
+        let doc_ai = self.active.filter(|&a| a < self.docs.len());
+        if let Some(ai) = doc_ai {
+            self.docs[ai].prune_pending();
+        }
+        let Some(mut bar) = self.merge.clone() else { return };
+        // The pasted lanes of the active document, if it has any: the combos show them live. Otherwise (the paste
+        // undone, another document in front, none open) a kept bar stays as it was drawn, its combos not refilled
+        // (clone, #231: the original keeps the bar over another document and after the last one closed).
+        let live = doc_ai.filter(|&a| !self.docs[a].pending.is_empty());
+        if live.is_none() && !bar.kept {
             self.merge = None;
             return;
         }
-        let Some(mut bar) = self.merge.clone() else { return };
+        if live.is_some() {
+            bar.kept = false;
+        }
         let (mut sync, mut join) = (false, false);
-        let d = &self.docs[ai];
         // CMergeBar's fixed layout (`0x479aa0`, `0x479db0`, `0x479e80`): the
         // method combo 1088 at (110, 10), 170 wide, the channel combos 1089 /
         // 1090 at (350, 10) / (510, 10), 90 wide; «Синхронизация» (3455)
@@ -874,17 +889,35 @@ impl App {
             bar.method = k as u8;
         }
         let on = bar.method != 0;
-        let base = d.base_channels();
-        let names1: Vec<String> = base.iter().map(|&k| crate::chandlg::row_name(d, k)).collect();
-        let cur1 = bar.ch1.and_then(|c| base.iter().position(|&k| k == c)).unwrap_or(usize::MAX);
+        let (base, names1, cur1) = match live.map(|a| &self.docs[a]) {
+            Some(d) => {
+                let base = d.base_channels();
+                let names1: Vec<String> = base.iter().map(|&k| crate::chandlg::row_name(d, k)).collect();
+                let cur1 = bar.ch1.and_then(|c| base.iter().position(|&k| k == c)).unwrap_or(usize::MAX);
+                bar.last1 = names1.get(cur1).cloned();
+                (base, names1, cur1)
+            }
+            None => (Vec::new(), bar.last1.iter().cloned().collect(), if bar.last1.is_some() { 0 } else { usize::MAX }),
+        };
         if let Some(k) = win_combo_list_in(ui, at(350.0, 10.0, 90.0, 21.0), egui::Id::new("merge_ch1"), &names1, cur1, on, font.clone()) {
-            bar.ch1 = Some(base[k]);
+            if let Some(&c) = base.get(k) {
+                bar.ch1 = Some(c);
+            }
         }
-        let analog: Vec<usize> = d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()).map(|(i, _)| i).collect();
-        let names2: Vec<String> = analog.iter().map(|&i| d.pending[i].name().to_string()).collect();
-        let cur2 = bar.ch2.and_then(|c| analog.iter().position(|&i| i == c)).unwrap_or(usize::MAX);
+        let (analog, names2, cur2) = match live.map(|a| &self.docs[a]) {
+            Some(d) => {
+                let analog: Vec<usize> = d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()).map(|(i, _)| i).collect();
+                let names2: Vec<String> = analog.iter().map(|&i| d.pending[i].name().to_string()).collect();
+                let cur2 = bar.ch2.and_then(|c| analog.iter().position(|&i| i == c)).unwrap_or(usize::MAX);
+                bar.last2 = names2.get(cur2).cloned();
+                (analog, names2, cur2)
+            }
+            None => (Vec::new(), bar.last2.iter().cloned().collect(), if bar.last2.is_some() { 0 } else { usize::MAX }),
+        };
         if let Some(k) = win_combo_list_in(ui, at(510.0, 10.0, 90.0, 21.0), egui::Id::new("merge_ch2"), &names2, cur2, on, font.clone()) {
-            bar.ch2 = Some(analog[k]);
+            if let Some(&i) = analog.get(k) {
+                bar.ch2 = Some(i);
+            }
         }
         let w = r.width() - 20.0;
         // The enabled ones take the focus when pressed (`track_copy_focus`).

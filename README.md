@@ -103,7 +103,7 @@ Ghidra, IDA or rizin / radare2.
 
 ## Features
 
-**Oscillogram** (COMTRADE `.cfg/.dat` ASCII/binary, `.cff`, OSC2 `.osc`):
+**Oscillogram** (COMTRADE `.cfg/.dat` ASCII/binary, `.cff`; `.osc` and `.sto` records are not supported):
 lanes with the original's geometry, value modes per channel (instantaneous /
 RMS / first harmonic), invert / remove-DC / ADC counts reaching every
 consumer, channel groups, discrete channels, comments (moment / level line /
@@ -127,7 +127,7 @@ crates/
   fvb-core/      pure engine, no GUI
     expr.rs        Calculator formula language (tokenizer, grammar, values)
     model.rs parse.rs geom.rs   .fvb library, evaluation, region engine
-    comtrade.rs    .cfg/.dat, .cff, .osc readers/writers, time stamps
+    comtrade.rs    .cfg/.dat, .cff readers/writers, time stamps
     signal.rs channels.rs analysis.rs quick.rs   channel math, quick analysis
     omp.rs omp_params.rs        fault location engine, settings, reports
     merge.rs       oscillogram synchronisation and resampling
