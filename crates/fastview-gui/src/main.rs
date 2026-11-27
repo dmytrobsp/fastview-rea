@@ -108,10 +108,13 @@ const STATUS_GRIP: f32 = 20.0;
 /// between 954 and 958 px; 38 taken); the 100 % value is this constant.
 const STATUS_GRIP_ALONE: f32 = 28.0;
 
+/// The grip's reserve is 20 / 25 / 30 / 37 / 38 px at 100 - 200 % (#246, clone, a first run's frame stepped by 2 px at
+/// 175 %: the original's fifth pane appears at a client 952 px wide, ours 2 px earlier with 35; 125 / 150 / 200 % as
+/// before: panes appear at the same 12-px step in both).
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::measured5([STATUS_GRIP, 25.0, 30.0, 37.0, 38.0]), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
     if ext_hidden {
         (ext, right - alone)
     } else {
@@ -2143,6 +2146,19 @@ mod window_tests {
         assert_eq!(status_pane_left_line_offset(), Some(185.0));
         dpi::set(144);
         assert_eq!(status_pane_left_line_offset(), Some(267.0));
+        dpi::set(96);
+    }
+
+    /// #246 (clone, 175 %): the status bar's grip reserve is 37 px, so the fifth pane appears at the original's client
+    /// width, 2 px later than with 35.
+    #[test]
+    fn the_status_grip_reserve_at_175_percent_is_37() {
+        dpi::set(168);
+        assert_eq!(status_reserve(1000.0, 213.0, false, false), (213.0 + 37.0, 1000.0 - 213.0 - 37.0));
+        dpi::set(96);
+        assert_eq!(status_reserve(1000.0, 135.0, false, false), (155.0, 1000.0 - 155.0));
+        dpi::set(192);
+        assert_eq!(status_reserve(1000.0, 238.0, false, false).0, 238.0 + 38.0);
         dpi::set(96);
     }
 
