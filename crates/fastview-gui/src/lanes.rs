@@ -3761,6 +3761,59 @@ mod menu_tests {
         }
     }
 
+    /// A harness whose demo record is cut to `n` samples (so the horizontal fit scale can straddle a power of two).
+    fn cut_harness(n: usize) -> Harness {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        d.osc.time.truncate(n);
+        d.osc.analog.iter_mut().for_each(|a| a.samples.truncate(n));
+        d.osc.digital.iter_mut().for_each(|a| a.samples.truncate(n));
+        d.xscale = None;
+        d.first = 0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        h
+    }
+
+    /// #250: the horizontal zoom's fit scale (`0x45c430`) and the first-sample clamp after a zoom (`0x45c4f0`) read the
+    /// view's client width, without the vertical scroll bar; so does the enabled state of 32802 / 32803 (`0x45c8c0`).
+    /// A record cut so the fit scale of the whole width and of the client width are one power of two apart.
+    #[test]
+    fn the_horizontal_zoom_reads_the_client_width_without_the_vertical_bar() {
+        use crate::oscgeom as g;
+        let mut h = Harness::new();
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.expect("the view was drawn");
+        assert!(plot.width() < full.width(), "the vertical bar is shown");
+        let n = (50..3000)
+            .find(|&n| g::fit_scale(full.width(), n) != g::fit_scale(plot.width(), n))
+            .expect("a record length where the two fit scales differ");
+        let mut h = cut_harness(n);
+        h.app.y_analog = 400.0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.unwrap();
+        assert!(plot.width() < full.width());
+        let (fit_full, fit_plot) = (g::fit_scale(full.width(), n), g::fit_scale(plot.width(), n));
+        assert_eq!(fit_plot, fit_full / 2.0);
+        // At the whole-width fit scale zoom-out is still allowed (the client's fit scale is one step further) ...
+        h.app.active_doc_mut().unwrap().xscale = Some(fit_full);
+        assert!(h.app.zoom_enabled()[3], "zoom-out is enabled above the client's fit scale");
+        h.app.dispatch(Command::ZoomX(false));
+        assert_eq!(h.doc().xscale, Some(fit_plot), "zoom-out reaches the client's fit scale");
+        // ... and is refused (greyed) there.
+        assert!(!h.app.zoom_enabled()[3]);
+        h.app.dispatch(Command::ZoomX(false));
+        assert_eq!(h.doc().xscale, Some(fit_plot), "not below the fit scale");
+        // The first sample after a zoom-in is clamped to the client's last screen.
+        let left = h.app.view_left;
+        h.app.active_doc_mut().unwrap().first = n;
+        h.app.dispatch(Command::ZoomX(true));
+        let want = g::max_first(n, g::visible_count(plot.width(), left, fit_plot * 2.0));
+        assert_eq!(h.doc().first, want, "the first sample is clamped with the client width");
+    }
+
     /// Holding an arrow keeps scrolling after a delay; holding the track
     /// pages until the thumb reaches the pointer.
     #[test]

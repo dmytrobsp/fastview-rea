@@ -679,7 +679,7 @@ impl App {
     pub fn zoom_enabled(&self) -> [bool; 4] {
         let Some(d) = self.active_doc() else { return [false; 4] };
         let y = self.y_analog.round() as i32;
-        let [grow_x, shrink_x] = d.zoom_x_enabled(self.view_width);
+        let [grow_x, shrink_x] = d.zoom_x_enabled(self.client_width());
         [y < 500, y > 70, grow_x, shrink_x]
     }
 

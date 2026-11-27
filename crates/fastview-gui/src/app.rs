@@ -1976,6 +1976,13 @@ pub struct CharState {
 }
 
 impl App {
+    /// The view window's client width, which leaves out the vertical scroll bar
+    /// (the original's `GetClientRect`): the plot's width. The horizontal zoom's
+    /// fit scale and the визир toggles read it (`0x45c430`, `0x45c4f0`, `0x45c8c0`).
+    pub fn client_width(&self) -> f32 {
+        self.view_rects.map_or(self.view_width, |(_, plot)| plot.width())
+    }
+
     pub fn new() -> Self {
         let (full_library, source_name) = load_libraries();
         let mut app = App {
@@ -2401,8 +2408,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
-                // The view's client: without the vertical scroll bar (`view_rects.1`, the plot).
-                let w = self.view_rects.map_or(self.view_width, |(_, plot)| plot.width());
+                let w = self.client_width();
                 let left = self.view_left;
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_vizir(k, w, left);
@@ -2461,7 +2467,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ZoomX(zin) => {
-                let (w, left) = (self.view_width, self.view_left);
+                let (w, left) = (self.client_width(), self.view_left);
                 if let Some(d) = self.active_doc_mut() {
                     d.zoom_x(zin, w, left);
                 }
