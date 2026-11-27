@@ -50,6 +50,24 @@ pub struct SetupDlg {
     /// The four margin edits' texts (left, top, right, bottom); a changed
     /// one is read into `mm`.
     pub mm_text: [String; 4],
+    /// The margins just entered overlap or leave the paper: the message box is up (OK was refused).
+    pub invalid: bool,
+}
+
+/// What comdlg32 says when the margins overlap or leave the paper: its string 1108 in the system's language (the
+/// check is comdlg32's own PageSetupDlg, not the program's or MFC's; English: «The margins overlap or they are off
+/// the paper. Enter a different margin size.»), the two sentences on two lines. The box's caption is the dialog's.
+const MARGINS_REFUSED: &str = "Поля перекрываются или выходят за пределы страницы.\nУкажите другие размеры полей.";
+
+/// Whether margins (left, top, right, bottom mm) overlap or leave the paper of `sheet` mm: comdlg32 refuses them
+/// (`MARGINS_REFUSED`). On a clone (A4): left + right 210 and top + bottom 296 are taken, 298 is refused, so a page
+/// may keep no printable area at all. comdlg32 works in hundredths of a millimetre on the form's own size: the sheet
+/// here is the measured one (a printer's pixels over its dpi, 209.97 mm for a 4960-px A4), so a sum within 0.1 mm of
+/// it counts as equal, and a sum equal to the paper is taken.
+pub fn margins_invalid(mm: [f32; 4], sheet: (f32, f32)) -> bool {
+    let hundredths = |v: f32| (v * 100.0).round() as i64;
+    let paper = |v: f32| hundredths(v) + 10;
+    hundredths(mm[0]) + hundredths(mm[2]) > paper(sheet.0) || hundredths(mm[1]) + hundredths(mm[3]) > paper(sheet.1)
 }
 
 /// A margin as the page-setup edits show it: whole millimetres plain,
@@ -206,7 +224,7 @@ impl App {
         let s = self.print.setup;
         let (_, default) = spool::printers();
         let paper = default.as_deref().and_then(spool::paper).unwrap_or(spool::Paper::whole("A4", crate::printout::A4_MM));
-        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper, default, mm_text: s.margins.map(|m| mm_text(m as f32 / 100.0)) });
+        self.print.setup_dlg = Some(SetupDlg { mm: s.margins.map(|m| m as f32 / 100.0), portrait: s.portrait, paper, default, mm_text: s.margins.map(|m| mm_text(m as f32 / 100.0)), invalid: false });
     }
 
     /// Render and send a job for document `di` (`printer` None = PDF file).
@@ -410,7 +428,7 @@ impl App {
                 win_label(ui, at(lx, ly, 44.0, 14.0), label, false, true);
                 if win_edit(ui, at(lx + 46.0, ly - 3.0, 48.0, 20.0), egui::Id::new(("fv_ps_mm", k)), &mut dlg.mm_text[k], false).changed() {
                     if let Ok(v) = dlg.mm_text[k].trim().replace(',', ".").parse::<f32>() {
-                        dlg.mm[k] = v.clamp(0.0, 100.0);
+                        dlg.mm[k] = v.max(0.0);
                     }
                 }
             }
@@ -422,6 +440,23 @@ impl App {
         // Enter is OK, Esc Отмена (the common dialog's).
         let keys = self.dialog_keys(ctx);
         let (ok, cancel) = (ok || keys == Some(true), cancel || keys == Some(false));
+        // The paper as the sample page shows it (oriented).
+        let sheet = if dlg.portrait { dlg.paper.mm } else { (dlg.paper.mm.1, dlg.paper.mm.0) };
+        if dlg.invalid {
+            // The refusal's box; OK closes it and the dialog stays.
+            crate::dialogs::dlg(ctx, "Параметры страницы").order(egui::Order::Tooltip).show(ctx, |ui| {
+                if crate::dialogs::message_box(ui, crate::dialogs::MsgIcon::Exclamation, MARGINS_REFUSED, &["OK"]).is_some() {
+                    dlg.invalid = false;
+                }
+            });
+            self.print.setup_dlg = Some(dlg);
+            return;
+        }
+        if ok && margins_invalid(dlg.mm, sheet) {
+            dlg.invalid = true;
+            self.print.setup_dlg = Some(dlg);
+            return;
+        }
         if ok {
             self.print.setup = PageSetup { margins: dlg.mm.map(|m| (m * 100.0).round() as i32), portrait: dlg.portrait };
             self.print.setup.store(&mut self.store.view);
@@ -620,6 +655,41 @@ mod tests {
             }
             app.print_windows(ctx);
         });
+    }
+
+    /// #229 (clone): the common Page Setup takes margins up to the paper (A4: left + right 210 and top + bottom 296
+    /// taken, 298 refused with a message box and the dialog stays), not a clamp of each at 100 mm as ours did.
+    #[test]
+    fn the_margins_may_leave_no_printable_area_but_not_overlap() {
+        let a4 = (210.0, 297.0);
+        assert!(!margins_invalid([105.0, 20.0, 105.0, 20.0], a4));
+        assert!(!margins_invalid([20.0, 148.0, 20.0, 148.0], a4));
+        assert!(margins_invalid([20.0, 149.0, 20.0, 149.0], a4));
+        assert!(margins_invalid([106.0, 20.0, 105.0, 20.0], a4));
+        // A printer's measured A4 (4960 x 7014 px at 600 dpi: 209.97 x 296.92 mm) is the form's A4 to comdlg32.
+        assert!(!margins_invalid([105.0, 20.0, 105.0, 20.0], (209.97, 296.92)));
+        assert!(!margins_invalid([20.0, 148.5, 20.0, 148.5], (209.97, 296.92)), "a sum equal to the paper is taken");
+        // comdlg32's own string 1108, ru-RU.
+        assert_eq!(MARGINS_REFUSED, "Поля перекрываются или выходят за пределы страницы.\nУкажите другие размеры полей.");
+        let enter = || vec![egui::Event::Key { key: egui::Key::Enter, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }];
+        let mut app = App::new();
+        app.persist = false;
+        app.dispatch(Command::Demo);
+        let ctx = egui::Context::default();
+        // Beyond the old clamp, still on the paper: OK stores them as typed.
+        app.page_setup_open();
+        app.print.setup_dlg.as_mut().unwrap().mm = [120.0, 20.0, 50.0, 20.0];
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, enter());
+        assert!(app.print.setup_dlg.is_none(), "OK closes the dialog");
+        assert_eq!(app.print.setup.margins, [12000, 2000, 5000, 2000]);
+        // Overlapping: refused, the dialog and the old margins stay.
+        app.page_setup_open();
+        app.print.setup_dlg.as_mut().unwrap().mm = [20.0, 149.0, 20.0, 149.0];
+        frame(&ctx, &mut app, vec![]);
+        frame(&ctx, &mut app, enter());
+        assert!(app.print.setup_dlg.as_ref().is_some_and(|d| d.invalid), "the message box is up");
+        assert_eq!(app.print.setup.margins, [12000, 2000, 5000, 2000]);
     }
 
     #[test]
