@@ -57,6 +57,69 @@ pub fn max_hot() -> bool {
     MAX_HOT.with(Cell::get)
 }
 
+/// How many device pixels of the window's outermost ring Windows 11's DWM paints its border over, when the window's
+/// frame is extended into the client area (`win::extend`) and the window is neither maximised nor full screen: the
+/// ring is the DWM border's, not ours. It is one logical pixel at the window's scale, rounded as Windows rounds a
+/// metric (1 / 1 / 2 / 2 / 2 px at 100 / 125 / 150 / 175 / 200 %: clone-measured, #241). Windows before 11 were not seen
+/// to draw one over the client (not measurable here): no inset there.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub fn border_ring_px(native: f32, windows_11: bool, maximised: bool, fullscreen: bool) -> f32 {
+    if windows_11 && !maximised && !fullscreen && native > 0.0 {
+        native.round().max(1.0)
+    } else {
+        0.0
+    }
+}
+
+/// Whether this system has the DWM border over the window's outer ring (Windows 11; the platforms with no such
+/// frame are treated as having it, so that the sizes agree where they are computed in tests).
+pub fn ring_wanted() -> bool {
+    UNDECORATED.load(std::sync::atomic::Ordering::Relaxed) && {
+        #[cfg(windows)]
+        {
+            win::windows_11()
+        }
+        #[cfg(not(windows))]
+        {
+            true
+        }
+    }
+}
+
+/// Whether the window is the undecorated one (the ribbon draws the caption row); `FV_SYSTEM_TITLEBAR` gives the
+/// window the system's frame, which has no ring to leave out. Set once at start-up.
+static UNDECORATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_undecorated(undecorated: bool) {
+    UNDECORATED.store(undecorated, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The input's screen with the DWM border's ring left out at the left, right and bottom (#241): the layout of an
+/// undecorated normal window of ours is the visible client the original's frame also gives its views (its sizing
+/// border lies outside the client there), not the window's whole rectangle with its outer pixels hidden under the
+/// border. The top keeps its row: the original's client begins at the window's top edge too (its caption row is the
+/// ribbon's), and the border covers the first row there as it does here. The window's pixels per point come with
+/// the viewport info, `zoom` is the context's zoom factor.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub fn inset_screen(raw: &mut egui::RawInput, zoom: f32) {
+    #[cfg(windows)]
+    inset_screen_on(raw, zoom, win::windows_11());
+    #[cfg(not(windows))]
+    let _ = (raw, zoom);
+}
+
+/// [`inset_screen`] on a system that is (or is not) Windows 11.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn inset_screen_on(raw: &mut egui::RawInput, zoom: f32, windows_11: bool) {
+    let Some(info) = raw.viewports.get(&egui::ViewportId::ROOT) else { return };
+    let Some(native) = info.native_pixels_per_point else { return };
+    let ring = border_ring_px(native, windows_11, info.maximized == Some(true), info.fullscreen == Some(true));
+    if let (true, Some(r)) = (ring > 0.0, raw.screen_rect) {
+        let pt = ring / (native * zoom);
+        raw.screen_rect = Some(egui::Rect::from_min_max(egui::pos2(r.left() + pt, r.top()), egui::pos2(r.right() - pt, r.bottom() - pt)));
+    }
+}
+
 /// The top band of a restored window that stays the resize edge (`App::resize_edges`), in pixels.
 const RESIZE_BAND: i32 = 5;
 
@@ -107,6 +170,35 @@ mod win {
             SetWindowSubclass(hwnd, Some(proc_), 2, 0);
         }
         extend(1);
+    }
+
+    /// Windows 11 (build 22000 or later) is the system that paints the border over the extended frame; asked once.
+    pub fn windows_11() -> bool {
+        static W11: OnceLock<bool> = OnceLock::new();
+        *W11.get_or_init(|| {
+            #[repr(C)]
+            struct OsVersionInfo {
+                size: u32,
+                major: u32,
+                minor: u32,
+                build: u32,
+                platform: u32,
+                csd: [u16; 128],
+            }
+            type RtlGetVersion = unsafe extern "system" fn(*mut OsVersionInfo) -> i32;
+            use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
+            // SAFETY: NUL-terminated names; ntdll is always loaded; the documented signature and a local struct.
+            unsafe {
+                let m = LoadLibraryA(c"ntdll.dll".as_ptr().cast());
+                if m.is_null() {
+                    return false;
+                }
+                let Some(f) = GetProcAddress(m, c"RtlGetVersion".as_ptr().cast()) else { return false };
+                let f: RtlGetVersion = std::mem::transmute(f);
+                let mut v = OsVersionInfo { size: std::mem::size_of::<OsVersionInfo>() as u32, major: 0, minor: 0, build: 0, platform: 0, csd: [0; 128] };
+                f(&mut v) == 0 && (v.major, v.build) >= (10, 22000)
+            }
+        })
     }
 
     static HWND_OURS: AtomicIsize = AtomicIsize::new(0);
@@ -211,5 +303,25 @@ mod tests {
         MAX_HOT.with(|h| h.set(true));
         publish_max_button(None, 1.0);
         assert!(!max_hot(), "unpublished: no hover");
+    }
+
+    /// #241 (clone): Windows 11 paints its border over 1 / 1 / 2 / 2 / 2 device px of a normal undecorated window's
+    /// outer ring at 100 / 125 / 150 / 175 / 200 %, so the layout's screen is the window less that ring at the left,
+    /// right and bottom (the top row is covered in the original too); a maximised or full-screen window has none,
+    /// nor has an older Windows.
+    #[test]
+    fn the_layout_screen_leaves_out_the_dwm_border_ring() {
+        for (native, ring) in [(1.0, 1.0), (1.25, 1.0), (1.5, 2.0), (1.75, 2.0), (2.0, 2.0)] {
+            assert_eq!(border_ring_px(native, true, false, false), ring, "{native}");
+            let mut raw = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(900.0, 600.0))), ..Default::default() };
+            let info = egui::ViewportInfo { native_pixels_per_point: Some(native), ..Default::default() };
+            raw.viewports.insert(egui::ViewportId::ROOT, info);
+            inset_screen_on(&mut raw, 1.0 / native, true);
+            let want = egui::Rect::from_min_max(egui::pos2(ring, 0.0), egui::pos2(900.0 - ring, 600.0 - ring));
+            assert_eq!(raw.screen_rect, Some(want), "{native}");
+        }
+        assert_eq!(border_ring_px(1.0, false, false, false), 0.0, "before Windows 11");
+        assert_eq!(border_ring_px(1.0, true, true, false), 0.0, "maximised");
+        assert_eq!(border_ring_px(1.0, true, false, true), 0.0, "full screen");
     }
 }
