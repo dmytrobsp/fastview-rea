@@ -1562,6 +1562,12 @@ fn measure_id() -> egui::Id {
     egui::Id::new("fv_ribbon_measure")
 }
 
+/// Whether a collapsed panel's button draws the arrow under its name: the blank-titled last panel of «Главная»
+/// collapses to its small image alone (150 % clone, the original: no name and no arrow, #225).
+fn collapsed_shows_arrow(title: &str) -> bool {
+    !title.trim().is_empty()
+}
+
 /// A collapsed panel's button width plus the divider: the default panel
 /// button (`0x10120c93`: a 16 px image, the 9 px arrow always counted) is
 /// max(16 + 2 + 10, T + 5) + 2, T its balanced bottom text.
@@ -1627,7 +1633,9 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
         // The arrow after the last line (on line 2 when the text is one line).
         let last = lines.last().map(|l| ui.fonts(|f| f.layout_no_wrap(l.clone(), font.clone(), p.text).size().x)).unwrap_or(0.0);
         let (ax, ay) = if lines.len() > 1 { (cx + last / 2.0 + 5.0, text_top + line_h() + 2.0) } else { (cx, text_top + line_h() + 2.0) };
-        painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(crate::dpi::font(9.0)), p.text);
+        if collapsed_shows_arrow(title) {
+            painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(crate::dpi::font(9.0)), p.text);
+        }
         let popup = egui::Id::new(("fv_ribbon_group_popup", title));
         if resp.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -2631,6 +2639,13 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #225 (150 % clone): the blank-titled last panel collapses to its image alone, without a name or an arrow.
+    #[test]
+    fn the_blank_panel_collapses_to_its_image_alone() {
+        assert!(!collapsed_shows_arrow(" "));
+        assert!(collapsed_shows_arrow("Вычисления"));
+    }
 
     /// The maximise button is published as live only while no modal dialog is up (the original's frame is
     /// disabled by one): a bare context, no backdrop, only the modal flag decides.
