@@ -1124,6 +1124,103 @@ fn analog_at(y: f32, geo: &RowGeo, ranges: &[(f64, f64)]) -> Option<(usize, f64)
     Some((ch, g::y_value(y, geo.tops[li], r.h, lo, hi)))
 }
 
+/// The arrows a Windows 11 scroll bar shows while the pointer is over it (no
+/// box; the thumb's gray (133); L9.438, #227): in each end of the bar `rect`,
+/// six px long and eight wide, a flat tip 1.4 px across, the sides opening to
+/// the full width in 4.4 px and straight on to the base. Rows and columns as
+/// measured on a clone, the lanes' 17 px bar and the planes' 16 px bars at
+/// 100 %: the glyph is centred on the bar's `⌊thickness / 2⌋`, its tip end 6
+/// (vertical bar) or 5 px (horizontal) from the start, and from the end 6 px
+/// (a horizontal bar, an even vertical one) or 5 (an odd vertical one); at
+/// other system scales it grows with the dpi, unmeasured.
+pub(crate) fn paint_hot_arrows(p: &egui::Painter, rect: Rect, horizontal: bool, enabled: bool) {
+    let glyph = Color32::from_gray(if enabled { 133 } else { 180 });
+    let k = crate::dpi::dpi() as f32 / 96.0;
+    let thick = if horizontal { rect.height() } else { rect.width() };
+    let mid = (thick / 2.0).floor();
+    let (start, end) = match (horizontal, thick % 2.0 == 1.0) {
+        (true, _) => (5.0, 6.0),
+        (false, false) => (6.0, 6.0),
+        (false, true) => (6.0, 5.0),
+    };
+    // (across the bar from its middle, along it from the glyph's tip end)
+    let shape = [(-0.7, 0.0), (0.7, 0.0), (4.0, 4.4), (4.0, 6.0), (-4.0, 6.0), (-4.0, 4.4)];
+    for at_start in [true, false] {
+        let pts: Vec<Pos2> = shape
+            .iter()
+            .map(|&(across, along)| {
+                let d = ((if at_start { start } else { end }) + along) * k;
+                let u = across * k;
+                match (horizontal, at_start) {
+                    (true, true) => Pos2::new(rect.left() + d, rect.top() + mid + u),
+                    (true, false) => Pos2::new(rect.right() - d, rect.top() + mid + u),
+                    (false, true) => Pos2::new(rect.left() + mid + u, rect.top() + d),
+                    (false, false) => Pos2::new(rect.left() + mid + u, rect.bottom() - d),
+                }
+            })
+            .collect();
+        p.add(Shape::convex_polygon(pts, glyph, Stroke::NONE));
+    }
+}
+
+/// What the system's scroll-bar menu is doing for a bar: not shown, or shown
+/// (`chosen` once an item is picked, with the click's offset along the bar).
+pub(crate) struct ScrollMenu {
+    pub open: bool,
+    /// The item picked (the order of the menu: Scroll Here, the two ends, the
+    /// two pages, the two lines) and the offset of the right-click along the bar.
+    pub chosen: Option<(usize, f32)>,
+}
+
+/// The items of the system's context menu of a window scroll bar (Windows' own
+/// resource: «Scroll Here», a rule, the two ends, a rule, the two pages, a
+/// rule, the two lines), in the system's English here: the vertical bar's and
+/// the horizontal one's.
+pub(crate) const SCROLL_MENU_EN: ([&str; 7], [&str; 7]) = (
+    ["Scroll Here", "Top", "Bottom", "Page Up", "Page Down", "Scroll Up", "Scroll Down"],
+    ["Scroll Here", "Left Edge", "Right Edge", "Page Left", "Page Right", "Scroll Left", "Scroll Right"],
+);
+
+/// The same in Russian, as a Russian Windows words them (until the interface
+/// language decides the menu's, #88).
+pub(crate) const SCROLL_MENU_RU: ([&str; 7], [&str; 7]) = (
+    ["Прокрутить сюда", "Верх", "Низ", "Страница вверх", "Страница вниз", "Прокрутка вверх", "Прокрутка вниз"],
+    ["Прокрутить сюда", "К левому краю", "К правому краю", "Страница влево", "Страница вправо", "Прокрутка влево", "Прокрутка вправо"],
+);
+
+/// The system's own context menu of a window scroll bar (seen on the VM:
+/// «Scroll Here», …, in the system's language), opened by a right-click on the
+/// bar `rect` (the response `r`) at the pointer, with `names` in its order. The
+/// caller applies the item it returns to its own bar.
+pub(crate) fn scroll_menu(ui: &mut egui::Ui, id: egui::Id, r: &egui::Response, rect: Rect, horizontal: bool, names: [&str; 7]) -> ScrollMenu {
+    let menu_id = id.with("menu");
+    let along_of = |p: Pos2| if horizontal { p.x - rect.left() } else { p.y - rect.top() };
+    if r.secondary_clicked() {
+        if let Some(q) = r.interact_pointer_pos() {
+            let menu = crate::popmenu::PopMenu::new(ui.ctx().cumulative_pass_nr(), q);
+            ui.data_mut(|d| d.insert_temp(menu_id, (menu, along_of(q))));
+        }
+    }
+    let Some((mut menu, at_click)) = ui.data(|d| d.get_temp::<(crate::popmenu::PopMenu, f32)>(menu_id)) else {
+        return ScrollMenu { open: false, chosen: None };
+    };
+    use crate::popmenu::{Entry, Mark};
+    let mut entries = Vec::new();
+    for (k, name) in names.into_iter().enumerate() {
+        if matches!(k, 1 | 3 | 5) {
+            entries.push(Entry::Sep);
+        }
+        entries.push(Entry::item(name, true, Mark::None, k));
+    }
+    let out = crate::popmenu::show(ui.ctx(), "fv_scroll_menu", &mut menu, &entries);
+    if out.close {
+        ui.data_mut(|d| d.remove::<(crate::popmenu::PopMenu, f32)>(menu_id));
+    } else {
+        ui.data_mut(|d| d.insert_temp(menu_id, (menu, at_click)));
+    }
+    ScrollMenu { open: true, chosen: out.chosen.map(|k| (k, at_click)) }
+}
+
 /// A window scroll bar (the view's own `SB_HORZ` / `SB_VERT`, `0x45d4a0`)
 /// over `[0, max]` with a page of `page`: arrow buttons step by `line`, the
 /// track by one page, the thumb drags. Shown disabled (no thumb, inert) when
@@ -1156,16 +1253,8 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
         }
     };
     let (dec, inc) = (along(0.0, arrow), along(len - arrow, len));
-    let glyph = Color32::from_gray(if enabled { 96 } else { 180 });
-    for (r, back) in [(dec, true), (inc, false)].into_iter().filter(|_| hot) {
-        let (c, s) = (r.center(), (arrow / 4.0).min(4.0));
-        let tri = match (horizontal, back) {
-            (true, true) => [c + Vec2::new(-s, 0.0), c + Vec2::new(s, -s), c + Vec2::new(s, s)],
-            (true, false) => [c + Vec2::new(s, 0.0), c + Vec2::new(-s, -s), c + Vec2::new(-s, s)],
-            (false, true) => [c + Vec2::new(0.0, -s), c + Vec2::new(-s, s), c + Vec2::new(s, s)],
-            (false, false) => [c + Vec2::new(0.0, s), c + Vec2::new(-s, -s), c + Vec2::new(s, -s)],
-        };
-        p.add(Shape::convex_polygon(tri.to_vec(), glyph, Stroke::NONE));
+    if hot {
+        paint_hot_arrows(&p, rect, horizontal, enabled);
     }
     if !enabled {
         return None;
@@ -1197,48 +1286,22 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
     let id = ui.id().with(("fv_scroll", horizontal));
     let r = ui.interact(rect, id, Sense::click_and_drag());
     let along_of = |p: Pos2| if horizontal { p.x - rect.left() } else { p.y - rect.top() };
-    // The system's own context menu of a window scroll bar (seen on the VM:
-    // «Scroll Here», …, in the system's language). Its commands reach the
+    // The system's own context menu of a window scroll bar. Its commands reach the
     // view's handlers: WM_HSCROLL `0x45d6d0` ignores SB_LEFT / SB_RIGHT
     // (`0x45d81a`); WM_VSCROLL `0x45d870` takes nPos for SB_TOP and
     // SB_BOTTOM too (`0x45d917`) — 0, so both go to the top; the page items
     // step as the arrows (`0x45d848`, `0x45d97c`).
-    let menu_id = id.with("menu");
-    if r.secondary_clicked() {
-        if let Some(q) = r.interact_pointer_pos() {
-            let menu = crate::popmenu::PopMenu::new(ui.ctx().cumulative_pass_nr(), q);
-            ui.data_mut(|d| d.insert_temp(menu_id, (menu, along_of(q))));
-        }
-    }
-    if let Some((mut menu, at_click)) = ui.data(|d| d.get_temp::<(crate::popmenu::PopMenu, f32)>(menu_id)) {
-        use crate::popmenu::{Entry, Mark};
-        let names = if horizontal {
-            ["Scroll Here", "Left Edge", "Right Edge", "Page Left", "Page Right", "Scroll Left", "Scroll Right"]
-        } else {
-            ["Scroll Here", "Top", "Bottom", "Page Up", "Page Down", "Scroll Up", "Scroll Down"]
-        };
-        let mut entries = Vec::new();
-        for (k, name) in names.into_iter().enumerate() {
-            if matches!(k, 1 | 3 | 5) {
-                entries.push(Entry::Sep);
-            }
-            entries.push(Entry::item(name, true, Mark::None, k));
-        }
-        let out = crate::popmenu::show(ui.ctx(), "fv_scroll_menu", &mut menu, &entries);
-        if out.close {
-            ui.data_mut(|d| d.remove::<(crate::popmenu::PopMenu, f32)>(menu_id));
-        } else {
-            ui.data_mut(|d| d.insert_temp(menu_id, (menu, at_click)));
-        }
+    let menu = scroll_menu(ui, id, &r, rect, horizontal, if horizontal { SCROLL_MENU_EN.1 } else { SCROLL_MENU_EN.0 });
+    if menu.open {
         let track = len - 2.0 * arrow;
         let thumb_len = (track * page / (max + page)).max(8.0_f32.min(track)).min(track).max(0.0);
         let travel = track - thumb_len;
-        return match out.chosen {
+        return match menu.chosen {
             // SB_THUMBPOSITION for the thumb centred on the click.
-            Some(0) if travel > 0.0 => Some(((at_click - arrow - thumb_len / 2.0) / travel * max).clamp(0.0, max)),
-            Some(1 | 2) if !horizontal => Some(0.0),
-            Some(3 | 5) => Some((value - if horizontal { jump } else { line }).clamp(0.0, max)),
-            Some(4 | 6) => Some((value + if horizontal { jump } else { line }).clamp(0.0, max)),
+            Some((0, at_click)) if travel > 0.0 => Some(((at_click - arrow - thumb_len / 2.0) / travel * max).clamp(0.0, max)),
+            Some((1 | 2, _)) if !horizontal => Some(0.0),
+            Some((3 | 5, _)) => Some((value - if horizontal { jump } else { line }).clamp(0.0, max)),
+            Some((4 | 6, _)) => Some((value + if horizontal { jump } else { line }).clamp(0.0, max)),
             _ => None,
         };
     }

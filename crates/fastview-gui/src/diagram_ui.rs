@@ -2152,7 +2152,12 @@ fn readout_table(p: &egui::Painter, ui: &egui::Ui, rect: Rect, text_h: f32, loci
 }
 
 /// A plane scroll bar (range 0..10000, page `round(10000/z)`): a click on
-/// the track steps ±100, the thumb drags. Returns a new position.
+/// the track steps ±100, the thumb drags, and under the pointer the bar shows
+/// its arrows (the lanes' bar, `lanes::scrollbar`) and a right-click opens the
+/// system's scroll-bar menu: «Scroll Here» (the thumb centred on the click),
+/// the ends (the handlers `0x437f00` / `0x437ff0` take SB_TOP / SB_BOTTOM's nPos,
+/// 0, both ways: both go to 0; clone), the pages and lines (±100 as a click on
+/// the track). Returns a new position.
 fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i32, m: i32, id: impl std::hash::Hash) -> Option<i32> {
     let resp = ui.interact(track, egui::Id::new(id), egui::Sense::click_and_drag());
     let p = ui.painter();
@@ -2170,6 +2175,9 @@ fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i
     let pos = pos.clamp(0, m.max(0));
     let start = lo + free * pos as f32 / m.max(1) as f32;
     let hot = resp.hovered() || resp.dragged();
+    if hot {
+        crate::lanes::paint_hot_arrows(p, track, horizontal, true);
+    }
     let w = if hot { 6.0 } else { 2.0 };
     let mid = (thick - w) / 2.0;
     let thumb = if horizontal {
@@ -2180,6 +2188,17 @@ fn scrollbar(ui: &mut egui::Ui, track: Rect, horizontal: bool, pos: i32, page: i
     p.rect_filled(thumb, if hot { 3.0 } else { 0.0 }, Color32::from_gray(133));
     let (thumb_len, start) = (thumb_len, start - lo);
     let at = |q: Pos2| if horizontal { q.x - track.left() - lo } else { q.y - track.top() - lo };
+    let names = if horizontal { crate::lanes::SCROLL_MENU_RU.1 } else { crate::lanes::SCROLL_MENU_RU.0 };
+    let menu = crate::lanes::scroll_menu(ui, resp.id, &resp, track, horizontal, names);
+    if menu.open {
+        return match menu.chosen {
+            Some((0, at_click)) => Some((((at_click - lo - thumb_len / 2.0) / free * m as f32).round() as i32).clamp(0, m.max(0))),
+            Some((1 | 2, _)) => Some(0),
+            Some((3 | 5, _)) => Some(dg::scroll_step(pos, false, m)),
+            Some((4 | 6, _)) => Some(dg::scroll_step(pos, true, m)),
+            _ => None,
+        };
+    }
     if resp.dragged() {
         let q = resp.interact_pointer_pos()?;
         let v = ((at(q) - thumb_len / 2.0) / free * m as f32).round() as i32;
@@ -2989,5 +3008,133 @@ mod tests {
         let labels = |m: f64| -> Vec<String> { sp.iter().enumerate().map(|(k, &v)| fvb_core::views::freq_label(fvb_core::views::percent_bar_value(v, sp[periods], k == periods, m)).trim().to_string()).collect() };
         assert_eq!(labels(magnitude), vec!["0"; k_max + 1]);
         assert_ne!(labels(0.0), vec!["0"; k_max + 1], "without the magnitude the noise is printed");
+    }
+    /// One plane scroll bar driven frame by frame over a fixed track (range 0..5000, page 5000, as a plane
+    /// zoomed twice): what each frame returned and the shapes it painted.
+    struct Bar {
+        ctx: egui::Context,
+        t: f64,
+        horizontal: bool,
+        pos: i32,
+    }
+
+    impl Bar {
+        fn new(horizontal: bool, pos: i32) -> Bar {
+            Bar { ctx: egui::Context::default(), t: 0.0, horizontal, pos }
+        }
+
+        /// The bar's track: 16 px thick, 300 px long.
+        fn track(&self) -> Rect {
+            if self.horizontal {
+                Rect::from_min_size(Pos2::new(100.0, 500.0), Vec2::new(300.0, 16.0))
+            } else {
+                Rect::from_min_size(Pos2::new(400.0, 100.0), Vec2::new(16.0, 300.0))
+            }
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>) -> (Option<i32>, Vec<egui::epaint::ClippedShape>) {
+            self.t += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(self.t), events, ..Default::default() };
+            let (track, horizontal, pos) = (self.track(), self.horizontal, self.pos);
+            let mut got = None;
+            let out = self.ctx.run(raw, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| got = scrollbar(ui, track, horizontal, pos, 5000, 5000, "bar"));
+            });
+            (got, out.shapes)
+        }
+
+        fn at(&self, along: f32) -> Pos2 {
+            let t = self.track();
+            if self.horizontal {
+                Pos2::new(t.left() + along, t.center().y)
+            } else {
+                Pos2::new(t.center().x, t.top() + along)
+            }
+        }
+
+        fn hover(&mut self, along: f32) -> Vec<egui::epaint::ClippedShape> {
+            let at = self.at(along);
+            self.frame(vec![egui::Event::PointerMoved(at)]);
+            self.frame(vec![]).1
+        }
+
+        fn right_click(&mut self, along: f32) {
+            let at = self.at(along);
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+            // The bar is laid out once before the pointer can hit it.
+            self.frame(vec![]);
+            self.frame(vec![egui::Event::PointerMoved(at)]);
+            self.frame(vec![ev(true)]);
+            self.frame(vec![ev(false)]);
+            self.frame(vec![]);
+        }
+
+        /// Picks the menu's `n`th selectable item by the keys (↓ n + 1 times, Enter).
+        fn pick(&mut self, n: usize) -> Option<i32> {
+            let key = |key| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() };
+            for _ in 0..=n {
+                self.frame(vec![key(egui::Key::ArrowDown)]);
+            }
+            self.frame(vec![key(egui::Key::Enter)]).0
+        }
+    }
+
+    fn texts(shapes: &[egui::epaint::ClippedShape]) -> Vec<String> {
+        shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect()
+    }
+
+    /// The little triangles of a bar's end buttons (the thumb's gray, 133).
+    fn arrows(shapes: &[egui::epaint::ClippedShape]) -> usize {
+        shapes.iter().filter(|c| matches!(&c.shape, egui::Shape::Path(p) if p.fill == Color32::from_gray(133))).count()
+    }
+
+    /// #227 (clone): the planes' scroll bars show their arrows while the pointer is over them, as the
+    /// oscillogram's bars and Windows 11's do, and not otherwise.
+    #[test]
+    fn a_plane_scroll_bar_shows_its_arrows_under_the_pointer() {
+        for horizontal in [false, true] {
+            let mut bar = Bar::new(horizontal, 2500);
+            let (_, idle) = bar.frame(vec![]);
+            assert_eq!(arrows(&idle), 0, "idle, horizontal {horizontal}");
+            assert_eq!(arrows(&bar.hover(150.0)), 2, "the pointer over the thumb, horizontal {horizontal}");
+            assert_eq!(arrows(&bar.hover(5.0)), 2, "over an arrow, horizontal {horizontal}");
+            let away = bar.frame(vec![egui::Event::PointerMoved(Pos2::new(5.0, 5.0))]).1;
+            let away = if arrows(&away) == 0 { away } else { bar.frame(vec![]).1 };
+            assert_eq!(arrows(&away), 0, "away again, horizontal {horizontal}");
+        }
+    }
+
+    /// #227 (clone): a right-click on a plane's scroll bar opens the system's scroll-bar menu, its items in the
+    /// system's order with its rules (Windows' own resource: Scroll Here, the two ends, the two pages, the two
+    /// lines), here in Russian until the interface language decides (#88).
+    #[test]
+    fn a_right_click_on_a_plane_scroll_bar_opens_the_systems_menu() {
+        let vertical = ["Прокрутить сюда", "Верх", "Низ", "Страница вверх", "Страница вниз", "Прокрутка вверх", "Прокрутка вниз"];
+        let horizontal = ["Прокрутить сюда", "К левому краю", "К правому краю", "Страница влево", "Страница вправо", "Прокрутка влево", "Прокрутка вправо"];
+        for (h, names) in [(false, vertical), (true, horizontal)] {
+            let mut bar = Bar::new(h, 2500);
+            bar.right_click(150.0);
+            let shown = texts(&bar.frame(vec![]).1);
+            assert_eq!(shown, names, "horizontal {h}");
+        }
+    }
+
+    /// #227: each item does what the view's handlers do (`0x437f00`, `0x437ff0`): Scroll Here puts the thumb's
+    /// middle where the click was (the drag's rule), both ends send nPos 0 so both go to 0, the pages and the
+    /// lines step ±100 as a click on the track.
+    #[test]
+    fn the_items_of_a_plane_scroll_bars_menu_scroll_as_the_handlers_do() {
+        for horizontal in [false, true] {
+            let picks: Vec<Option<i32>> = (0..7)
+                .map(|n| {
+                    let mut bar = Bar::new(horizontal, 3000);
+                    bar.right_click(166.0);
+                    bar.pick(n)
+                })
+                .collect();
+            // 300 px less two 16 px arrows is 268, the thumb 134 of it: the click 166 from the track's start is
+            // 150 past the first arrow, 83 from the thumb's start when the thumb is centred on it: 5000 · 83 / 134.
+            assert_eq!(picks, [Some(3097), Some(0), Some(0), Some(2900), Some(3100), Some(2900), Some(3100)], "horizontal {horizontal}");
+        }
     }
 }
