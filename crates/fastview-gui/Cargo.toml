@@ -9,6 +9,11 @@ description = "FastView — relay-protection characteristic viewer (cross-platfo
 name = "fastview"
 path = "src/main.rs"
 
+[build-dependencies]
+# The exe's icon resource (build.rs): a resource compiler driver for MSVC's rc.exe and MinGW's windres, a PNG encoder for the .ico.
+embed-resource = "2.5"
+flate2 = "1"
+
 [dependencies]
 fvb-core = { path = "../fvb-core" }
 eframe = "0.29"
