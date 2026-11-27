@@ -69,6 +69,8 @@ pub struct MergeBar {
     /// Set by an undo / redo: the bar stays up while no pasted lane is left (the original keeps it through
     /// the paste's undo, #231). Cleared once the pasted lanes are there again.
     pub kept: bool,
+    /// What «Канал 2» last showed: after an undo of the paste the combo keeps its text (clone, #231).
+    pub last2: Option<String>,
 }
 
 /// COLORREF (0x00BBGGRR) ↔ colour.
@@ -888,10 +890,20 @@ impl App {
             bar.ch1 = Some(base[k]);
         }
         let analog: Vec<usize> = d.pending.iter().enumerate().filter(|(_, p)| p.pasted.channel.is_ok()).map(|(i, _)| i).collect();
-        let names2: Vec<String> = analog.iter().map(|&i| d.pending[i].name().to_string()).collect();
-        let cur2 = bar.ch2.and_then(|c| analog.iter().position(|&i| i == c)).unwrap_or(usize::MAX);
+        let mut names2: Vec<String> = analog.iter().map(|&i| d.pending[i].name().to_string()).collect();
+        let mut cur2 = bar.ch2.and_then(|c| analog.iter().position(|&i| i == c)).unwrap_or(usize::MAX);
+        if d.pending.is_empty() {
+            // The paste was undone: the combo is not refilled, it shows the lane it showed (disabled or not).
+            if let Some(t) = &bar.last2 {
+                (names2, cur2) = (vec![t.clone()], 0);
+            }
+        } else {
+            bar.last2 = names2.get(cur2).cloned();
+        }
         if let Some(k) = win_combo_list_in(ui, at(510.0, 10.0, 90.0, 21.0), egui::Id::new("merge_ch2"), &names2, cur2, on, font.clone()) {
-            bar.ch2 = Some(analog[k]);
+            if let Some(&i) = analog.get(k) {
+                bar.ch2 = Some(i);
+            }
         }
         let w = r.width() - 20.0;
         // The enabled ones take the focus when pressed (`track_copy_focus`).

@@ -5400,10 +5400,13 @@ mod window_tests {
         w.app.paste_channels_for_merge();
         w.idle(3);
         assert!(w.app.merge.is_some() && !w.app.docs[ai].pending.is_empty());
+        let pasted = w.app.docs[ai].pending[0].name().to_string();
         w.app.dispatch(app::Command::Undo);
         w.idle(3);
         assert!(w.app.docs[ai].pending.is_empty(), "the paste is undone");
         assert!(w.app.merge.is_some(), "the merge bar stays through the undo");
+        // «Канал 2» keeps the text of the lane it showed, as the original's combo does.
+        assert_eq!(w.app.merge.as_ref().unwrap().last2.as_deref(), Some(pasted.as_str()), "«Канал 2» keeps its lane's name");
         w.app.dispatch(app::Command::Redo);
         w.idle(3);
         assert!(!w.app.docs[ai].pending.is_empty(), "the paste is back");
