@@ -291,3 +291,16 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
   the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
   and its line points at no sample it reports; the decision of the 2026-11-27 triage.
+- **«Коэффициенты трансформации»: the cells are selected the spreadsheet way (#214).** The original selects cells
+  only by a Shift + double-click (a rectangle from the anchor, `0x47b020`); a single click selects nothing, the edit's
+  commit (`0x47b3d0`) writes the typed text into every selected cell and then clears the selection unless Ctrl is
+  held, and Enter / Esc in the edit are the dialog's OK / Cancel. Ours works as Excel does: a click selects one cell
+  (the anchor), press and drag selects the cells the pointer spans (a drag over the name column takes the whole rows'
+  value cells), Shift + click extends the rectangle from the anchor, Ctrl + click toggles a cell and Ctrl + drag adds
+  a rectangle; a double-click opens the edit (the first click of it does not reset a selection it lands in), and the
+  value typed goes into every selected cell when the edit commits (Enter, or a click elsewhere), the selection staying;
+  Esc cancels the edit and keeps the selection (neither closes the dialog); a click elsewhere resets the selection to
+  that cell. With the list focused the arrows move the selection (Shift extends it), F2 or Enter edit the anchor cell
+  and a typed digit starts an edit replacing the text. The drawing of the selected cells and the data rules (a commit
+  dirties only a text that differs, the `%g` formatting, OK / Cancel) are the original's. Reason: the user's request
+  (2026-11-27): the familiar spreadsheet way instead of a double-click scheme nobody finds.
