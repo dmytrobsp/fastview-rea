@@ -246,3 +246,15 @@ maintainer), **issue**.
 - **Why it isn't fixed**: a transient look with no effect on behaviour; not worth a clone measurement.
 - **Decided**: 2026-11-27, the controller (triage of open issues).
 - **Issue**: [#253](https://github.com/dmytrobsp/fastview-rea/issues/253).
+
+## `.osc` records can't be opened or saved
+
+- **What differs**: the original opens and saves OSC2 `.osc` oscillograms (recorders of some protection devices: the
+  reader `0x4524b0`, Save As with the OSC2 filter writing the record's own bytes `0x44ca80`, the finder listing them);
+  ours reads and writes none — an `.osc` given by the open dialog, a drop, the command line or the recent-files list
+  fails with the box a failed record gives (string 124 with the path as given).
+- **Where it shows**: only for users with `.osc` records, a proprietary format of rare protection devices.
+- **Why it isn't fixed**: the project doesn't use these devices and no sample record is available to verify the format
+  against.
+- **Decided**: 2026-11-27, the controller (triage of open issues).
+- **Issue**: [#59](https://github.com/dmytrobsp/fastview-rea/issues/59).

@@ -39,8 +39,7 @@ Last rewritten: 2026-11-26 (milestone 0.7.1 merged and released as v0.7.1; no mi
   waveforms keeping every sample exact (#89), and — designed
   together, `size:l` — light / dark themes replacing the nine «Стиль» skins (#91) with a simpler modern look (#92);
   #19 / #20 (per-skin fidelity) are on hold for them.
-- **Waiting for samples:** #59 (an OSC2 record, for the `.osc` Save As comparison). `.sto` is not supported — an
-  accepted difference (#49); #72 needs no more samples (the users' records, at their own rates, were enough).
+- **Formats not supported** (accepted differences): `.sto` (#49) and `.osc` (#59); #72 needs no more samples (the users' records, at their own rates, were enough).
 - The rest of the queue: the `later` milestone (`gh issue list -m later -S '-label:triage'`).
 
 ## Where things live
