@@ -360,6 +360,11 @@ impl OscView<'_> {
                 let zoomed = |m: ChanKey| matches!(m, Lane::Analog(i) if doc.chans.get(i).is_some_and(|c| c.window.is_some()));
                 let lane_clip = pp.with_clip_rect(pp.clip_rect().intersect(Rect::from_min_max(Pos2::new(left, top + 5.0), Pos2::new(plot_right, top + h))));
                 let painter_for = |m: Option<ChanKey>| if m.is_some_and(zoomed) { &lane_clip } else { pp };
+                // The curves of the file and formula lanes (`0x429490`) are cut by the lane's own region only for
+                // a window-zoomed channel; any other goes to the view's client, so the first sample's mark shows
+                // whole at the plot's left edge, over the label column (clone, #245). The right edge is the
+                // client's own, as here.
+                let series_painter = |m: Option<ChanKey>| if m.is_some_and(zoomed) { &lane_clip } else { lp };
                 // A group's curves in member-set order (`0x4311e0`); the
                 // first draws the zero line.
                 let order = doc.group_paint_order(&r.members);
@@ -381,14 +386,14 @@ impl OscView<'_> {
                             // A lane of nothing but NaN (a 0 / 0 ratio) shows nothing: clone-measured (the binary's range
                             // read at `0x42955a` does not say why).
                             if !doc.shown_samples(i).iter().all(|v| v.is_nan()) {
-                                draw_series(painter_for(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
+                                draw_series(series_painter(Some(m)), (first, last), &|k| mode_disp(doc, i, k), &x_of, top, h, (lo, hi), c, f);
                             }
                         }
                         Lane::Computed(j) if doc.pending_of(j).is_some() => self.pasted_analog(pp, j, top, h, (lo, hi), doc.computed[j].color),
                         Lane::Computed(j) => {
                             // The display cache (`0x429490` reads ch+0x2c).
                             let c = &doc.computed[j];
-                            draw_series(pp, (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f);
+                            draw_series(series_painter(None), (first, last.min(c.samples.len().saturating_sub(1))), &|k| c.shown(k), &x_of, top, h, (lo, hi), c.color, f);
                         }
                         Lane::Digital(_) => {}
                     }
@@ -3666,6 +3671,38 @@ mod menu_tests {
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #245: with marks shown (above 4 px per sample) the first sample's mark is drawn whole at the plot's left
+    /// edge, its two left columns over the label column; the right edge is the client's own.
+    #[test]
+    fn the_first_samples_mark_is_not_clipped_at_the_plots_left_edge() {
+        let mut h = Harness::new();
+        h.app.active_doc_mut().unwrap().xscale = Some(1.0);
+        h.app.active_doc_mut().unwrap().first = 0;
+        h.frame(vec![]);
+        h.frame(vec![]);
+        let (full, plot) = h.app.view_rects.unwrap();
+        let left = full.left() + h.app.view_left;
+        // A mark is the twelve unit squares of `sample_mark` in one mesh: the first sample's spans x - 2 ..= x + 1.
+        let marks: Vec<(&egui::Mesh, Rect)> = h
+            .shapes
+            .iter()
+            .filter_map(|c| match &c.shape {
+                Shape::Mesh(m) if m.vertices.len() == 48 => Some((m, c.clip_rect)),
+                _ => None,
+            })
+            .collect();
+        assert!(!marks.is_empty(), "marks are drawn at this scale");
+        let first_marks: Vec<_> = marks.iter().filter(|(m, _)| m.vertices.iter().map(|v| v.pos.x).fold(f32::MAX, f32::min) == left - 2.0).collect();
+        assert!(!first_marks.is_empty(), "a mark at the first sample (left {left})");
+        for (_, clip) in first_marks {
+            assert!(clip.left() <= left - 2.0, "its clip {clip:?} leaves the two columns left of the plot");
+        }
+        // The right edge: no mark is let past the client's right edge.
+        for (m, clip) in &marks {
+            assert!(clip.right() <= plot.right(), "the clip {clip:?} stays inside the client ({m:?})", m = m.vertices.len());
+        }
     }
 
     /// With the whole record in view there is no horizontal bar (seen on
