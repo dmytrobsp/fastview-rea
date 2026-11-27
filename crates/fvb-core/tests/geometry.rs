@@ -97,6 +97,106 @@ fn characteristic_extent_in_whole_units() {
     assert_eq!(ext(r#"<ellipse mode="on" xcenter="0" ycenter="11" width="20" height="82" angle="0"/>"#), 51.0);
 }
 
+/// The plane extent of one figure body (`geom::integer_extent`).
+fn extent_of(body: &str) -> f64 {
+    let ch = one_char(body);
+    let cx = ch.context(&HashMap::new()).unwrap();
+    let mut figs = Vec::new();
+    fvb_core::geom::evaluate_figures(&ch, &cx, &mut figs).unwrap();
+    fvb_core::geom::integer_extent(&ch, &figs)
+}
+
+fn polypoint(pts: &[(f64, f64)]) -> String {
+    let lines: String = pts.iter().map(|(x, y)| format!(r#"<line x="{x}" y="{y}"/>"#)).collect();
+    format!(r#"<polypoint mode="on">{lines}</polypoint>"#)
+}
+
+fn polygon(lines: &[(f64, f64, u8)]) -> String {
+    let lines: String = lines.iter().map(|(k, b, t)| format!(r#"<line k="{k}" b="{b}" type="{t}"/>"#)).collect();
+    format!(r#"<polygon mode="on">{lines}</polygon>"#)
+}
+
+/// #226 (clones, a plane scale that steps between a 50 and a 51 unit
+/// extent): GDI's path-to-region conversion loses a polygon's lone top
+/// vertex row, as the circle's. A flat top edge, a left, right or bottom apex
+/// and a thin apex's second row stay; a slanting top edge's first row is its
+/// lone vertex's too.
+#[test]
+fn a_polygons_lone_top_vertex_row_is_lost_in_the_plane_extent() {
+    // The flat top edge keeps its row at 51 and at 50.
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 51.0), (5.0, 40.0), (-5.0, 40.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 50.0), (5.0, 50.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    // A diamond whose apex reaches 51 scales as 50; at 52 one row is lost.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 51.0), (6.0, 45.0), (0.0, 39.0), (-6.0, 45.0)])), 50.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, 52.0), (6.0, 46.0), (0.0, 40.0), (-6.0, 46.0)])), 51.0);
+    // A thin triangle (0.2 across per row) loses the apex row only: its next
+    // row, 0.4 wide, still holds a lattice point.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 52.0), (2.0, 42.0), (-2.0, 42.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, 54.0), (2.0, 44.0), (-2.0, 44.0)])), 53.0);
+    // A wide shallow apex, and a sector's: polygons of lines, an apex rounded
+    // from 50.6.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 51.0), (30.0, 45.0), (-30.0, 45.0)])), 50.0);
+    assert_eq!(extent_of(&polygon(&[(1.0, 51.0, 1), (-1.0, 51.0, 1), (0.0, 40.0, 1)])), 50.0);
+    assert_eq!(extent_of(&polygon(&[(1.7, 50.6, 1), (-1.7, 50.6, 1), (0.0, 40.0, 1)])), 50.0);
+    // A top edge that slants starts at its lone left vertex: its first row has
+    // no pixel (one row, and with two rows' slant still one).
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 50.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 49.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    // A left, right and bottom apex keep their pixels (the right and bottom
+    // edges are the box's open sides), also a thin one.
+    assert_eq!(extent_of(&polypoint(&[(-51.0, 0.0), (-45.0, 6.0), (-39.0, 0.0), (-45.0, -6.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(-51.0, 0.0), (-41.0, 2.0), (-41.0, -2.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(51.0, 0.0), (45.0, 6.0), (39.0, 0.0), (45.0, -6.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, -51.0), (6.0, -45.0), (0.0, -39.0), (-6.0, -45.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, -52.0), (2.0, -42.0), (-2.0, -42.0)])), 52.0);
+    assert_eq!(extent_of(&polygon(&[(0.5, 25.5, 1), (0.0, -40.0, 2), (-0.5, -25.5, 1)])), 51.0);
+}
+
+/// #242 (clones, 94 turned ellipses at the edge of the 50 | 51 step): the
+/// original draws the ellipse into a path, turns the points and converts the
+/// turned path to a region, so the row GDI loses is the turned shape's top
+/// row, in device space. At 90° the box's left, right and bottom edges stay
+/// and its top row (the unturned left side) goes.
+#[test]
+fn a_turned_ellipses_top_row_is_lost_after_the_turn() {
+    let e = |cx: f64, cy: f64, w: u32, h: u32, angle: i32| {
+        extent_of(&format!(r#"<ellipse mode="on" xcenter="{cx}" ycenter="{cy}" width="{w}" height="{h}" angle="{angle}"/>"#))
+    };
+    // 90°: 82 × 20 stands up; its extreme edge is the extent's, at each side.
+    assert_eq!((e(0.0, 11.0, 82, 20, 90), e(0.0, 12.0, 82, 20, 90)), (50.0, 51.0), "top");
+    assert_eq!((e(0.0, -9.0, 82, 20, 90), e(0.0, -10.0, 82, 20, 90)), (50.0, 51.0), "bottom");
+    assert_eq!((e(-9.0, 0.0, 20, 82, 90), e(-10.0, 0.0, 20, 82, 90)), (50.0, 51.0), "left");
+    assert_eq!((e(10.0, 0.0, 20, 82, 90), e(11.0, 0.0, 20, 82, 90)), (50.0, 51.0), "right");
+    // The same with a half-unit centre (rounded up after the sign flip).
+    assert_eq!((e(0.0, 11.5, 82, 20, 90), e(0.0, 12.5, 82, 20, 90)), (50.0, 51.0), "top, half unit");
+    // 45°.
+    assert_eq!((e(0.0, 21.0, 82, 20, 45), e(0.0, 22.0, 82, 20, 45)), (50.0, 51.0), "45 top");
+    assert_eq!((e(0.0, -20.0, 82, 20, 45), e(0.0, -21.0, 82, 20, 45)), (50.0, 51.0), "45 bottom");
+    assert_eq!((e(21.0, 0.0, 82, 20, 45), e(22.0, 0.0, 82, 20, 45)), (50.0, 51.0), "45 right");
+    assert_eq!((e(-21.0, 0.0, 82, 20, 45), e(-22.0, 0.0, 82, 20, 45)), (50.0, 51.0), "45 left");
+    // Other angles and sizes, as measured.
+    assert_eq!((e(0.0, 28.0, 80, 24, 30), e(0.0, 29.0, 80, 24, 30)), (50.0, 51.0), "30 top");
+    assert_eq!((e(28.0, 0.0, 80, 24, 60), e(29.0, 0.0, 80, 24, 60)), (50.0, 51.0), "60 right");
+    assert_eq!((e(0.0, 22.0, 82, 20, 135), e(0.0, 23.0, 82, 20, 135)), (50.0, 51.0), "135 top");
+    assert_eq!((e(0.0, 28.0, 82, 20, -30), e(0.0, 29.0, 82, 20, -30)), (50.0, 51.0), "-30 top");
+    assert_eq!((e(0.0, 36.0, 83, 19, 15), e(0.0, 37.0, 83, 19, 15)), (50.0, 51.0), "15 top");
+    assert_eq!((e(-26.0, 0.0, 66, 26, 225), e(-27.0, 0.0, 66, 26, 225)), (50.0, 51.0), "225 left");
+}
+
+/// #242: the Bezier flattening's step count is not fixed. Four clone probes (a 50 extent in the original,
+/// each at a different size and angle) that a fixed 8 or 16 steps per curve push to 51: the fitted law
+/// (a power of two from the second differences) gives 50.
+#[test]
+fn the_flattening_of_a_turned_ellipse_is_not_a_fixed_step_count() {
+    let e = |cx: f64, cy: f64, w: u32, h: u32, angle: i32| {
+        extent_of(&format!(r#"<ellipse mode="on" xcenter="{cx}" ycenter="{cy}" width="{w}" height="{h}" angle="{angle}"/>"#))
+    };
+    assert_eq!(e(0.0, 33.0, 47, 10, 50), 50.0);
+    assert_eq!(e(0.0, 31.0, 31, 48, 45), 50.0);
+    assert_eq!(e(34.0, 0.0, 33, 21, 12), 50.0);
+    assert_eq!(e(0.0, 31.0, 35, 41, 325), 50.0);
+}
+
 /// Figures fold in document order: A, then `not` B, then `or` C gives
 /// (A − B) ∪ C — C survives inside the cut-out. Grouping all unions before
 /// the differences would erase it.

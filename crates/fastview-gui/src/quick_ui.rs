@@ -480,6 +480,12 @@ impl App {
                     } else {
                         self.quick_tab_ui(ui, origin);
                     }
+                    // The page list (the Outlook bar) is the last window of the sheet's page area with no
+                    // WS_GROUP of its own: it ends the last span of the page, so ↓ from the last control of
+                    // that span reaches it and ↑ from it goes back (clone, 536 / 537 / 340; it has no tab stop,
+                    // and a press on it gives it no focus).
+                    crate::dialogs::group_continue(ui);
+                    crate::dialogs::arrow_only_stop(ui, ui.id().with("fv_quick_bar"), bar, true);
                     let ok = page_index(self.analysis_tab).is_none_or(|i| self.quick[i].ok_enabled(self.analysis_tab));
                     ok_now = ok;
                     let (bw, bh, by) = (dx(75.0), dy(23.0), page_h + dy(6.0));

@@ -297,6 +297,30 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
   the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
   and its line points at no sample it reports; the decision of the 2026-11-27 triage.
+- **Keys in a popup menu cut to the work area reach every row (#216).** In the original (CMFCPopupMenu, a work area
+  smaller than the menu; the ribbon's «Стиль» menu walked on a clone, a context menu not walked by keys) ↓ keeps the highlighted row in view by
+  scrolling, but once the list is scrolled the rows above the window are out of the keys' reach: ↑ from the first
+  visible row wraps to the last row, ↓ from the last row wraps to the first row still in view without scrolling, Home
+  lights the first row in view (not the first of the menu), End goes to the real last row (↓ from the top reaches it too). The rows above can
+  then be reached only with the wheel or the arrow band. Ours walks the whole list: ↑ / ↓ / Home / End go to the
+  menu's real rows and scroll them into view. Reason: a key that cannot reach the first rows of a menu, and Home that
+  does not go to the first row, is a visible failure; the decision of the 2026-11-27 triage (keep ours if the
+  original's keys are worse).
+- **«Коэффициенты трансформации»: the cells are selected the spreadsheet way (#214).** The original selects cells
+  only by a Shift + double-click (a rectangle from the anchor, `0x47b020`); a single click selects nothing, the edit's
+  commit (`0x47b3d0`) writes the typed text into every selected cell and then clears the selection unless Ctrl is
+  held, and Enter / Esc in the edit are the dialog's OK / Cancel. Ours works as Excel does: a click selects one cell
+  (the anchor), press and drag selects the cells the pointer spans (a drag over the name column takes the whole rows'
+  value cells), Shift + click extends the rectangle from the anchor, Ctrl + click toggles a cell and Ctrl + drag adds
+  a rectangle; a double-click opens the edit (the first click of it does not reset a selection it lands in), and the
+  value typed goes into every selected cell whose own text differs from it when the edit commits — Enter, losing the
+  focus or a press on no cell commit and keep the selection, a click on another cell commits and resets the selection
+  to that cell; Esc cancels the edit and keeps the selection (neither closes the dialog). Dragging a selection past the
+  list's view scrolls it. With the list focused the arrows move the selection (Shift extends it), F2 or Enter edit the anchor cell
+  and a typed digit starts an edit replacing the text. The drawing of the selected cells, the `%g` formatting and OK / Cancel
+  are the original's; a commit changes only the selected cells whose text differs (the original compares the edited
+  cell's text only, so a group whose edited cell already holds the value is left as it is). Reason: the user's request
+  (2026-11-27): the familiar spreadsheet way instead of a double-click scheme nobody finds.
 - **A sampling rate whose quotient by the network frequency is 0 in «Настройки частотной диаграммы» (#43).** The
   dialog's exchange (`0x46ee70`) bounds the periods by N div (R div trunc f), R the record's sampling rate and f the
   network frequency; for a record whose R div trunc(f) is 0 the original divides by zero. Ours takes that quotient
