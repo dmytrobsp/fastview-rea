@@ -753,7 +753,8 @@ pub(crate) struct SettingsPass {
 
 impl Doc {
     /// The first half of the read of the settings tree into the document (`0x44f5b0`): everything up to the
-    /// recompute. Document-only, so it can run on the loader's thread (#32).
+    /// recompute. `fresh`: the document holds exactly what `Doc::new` computed from the record as read (an open),
+    /// so the recompute may be spared when the settings change nothing it reads. Document-only, so it can run on the loader's thread (#32).
     pub(crate) fn settings_read(&mut self, from_command: bool, fresh: bool) -> SettingsPass {
         let d = self;
         let as_read = if fresh { recompute_inputs(d) } else { None };
@@ -957,16 +958,10 @@ impl Doc {
 impl App {
     /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
     /// 32860 (comments are not re-read).
+    /// (An open reads them on the loader's thread, [`Doc::finish_open`].)
     pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
-        self.apply_settings(di, from_command, false);
-    }
-
-    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
-    /// what `Doc::new` computed from the record as read (an open, on the
-    /// loader's thread), so the recompute may be spared.
-    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
         let Some(d) = self.docs.get_mut(di) else { return };
-        let pass = d.settings_read(from_command, fresh);
+        let pass = d.settings_read(from_command, false);
         if pass.unchanged {
             let d = &mut self.docs[di];
             d.flagged = d.osc.clone();

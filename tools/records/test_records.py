@@ -63,22 +63,28 @@ def osc_bytes(version, texts, cal, ratios, trigger, pretrig, n, rows_by_block, c
 
 def src_h(d, variant=0):
     """An OSC2 oscillogram (.osc): version 2.4, cp1251 names, three analog channels (one with a ccbm field),
-    sixteen digital in two text blocks, 14 samples per block, six data blocks with two timing codes."""
+    sixteen digital in two text blocks, 14 samples per block, six data blocks with two timing codes.
+    `variant` 1: the same layout with every name, calibration number, ratio, trigger field, timing code and
+    sample different (a record that shares nothing with variant 0)."""
     import math
-    CR = "\r\n"
+    CR = chr(13) + chr(10)
+    v = variant
+    n = ("Грім Лука", "Напор Верин", "Грім Мера", "Ск", "Ск") if v else ("Потік Орса", "Вольтаж Нерун", "Потік Кала", "Ка", "Ко")
     texts = [
-        ("nnA,003" + CR + "1,Потік Орса,A,А" + CR + "2,Вольтаж Нерун,B,Т7,кВ" + CR + "3,Потік Кала,C,А" + CR).encode("cp1251"),
-        ("nnD,008" + CR + "".join(f"{i},Рл Ка{i},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
-        ("nnD,008" + CR + "".join(f"{i},Рл Ко{i},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
+        ("nnA,003" + CR + f"1,{n[0]},A,А" + CR + f"2,{n[1]},B,{'Х9' if v else 'Т7'},кВ" + CR + f"3,{n[2]},C,А" + CR).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл {n[3]}{i}{'х' if v else ''},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл {n[4]}{i}{'х' if v else ''},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
         b"nnF,14" + CR.encode(),
     ]
-    cal = [(1357.3, 238, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
+    cal = [(1043.9, 517, 0.5231, -291), (3127.1, -619, 0.2917, 347), (1561.3, 733, 0.6119, 811)] if v else         [(1357.3, 238, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
     rows = []
     for b in range(6):
-        rows.append([([int(7000 * math.sin((b * 14 + s) / 4.0 + k)) for k in range(3)], ((b * 14 + s) * 37 + (s % 5)) & 0xFFFF)
+        rows.append([([int((5300 if v else 7000) * math.sin((b * 14 + s) / (3.0 if v else 4.0) + k * (0.7 if v else 1.0))) for k in range(3)],
+                      ((b * 14 + s) * (53 if v else 37) + (s % (3 if v else 5)) + (11 if v else 0)) & 0xFFFF)
                      for s in range(14)])
-    data = osc_bytes((2, 4), texts, cal, [1478.0, 87.5, 342.5], (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
-                     [9421, 9421, 9421, 9421, 4711, 4711])
+    data = osc_bytes((2, 4), texts, cal, [2117.0, 63.5, 489.5] if v else [1478.0, 87.5, 342.5],
+                     (23, 9, 15, 8, 22, 6, 17) if v else (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
+                     [8737, 8737, 8737, 8737, 5123, 5123] if v else [9421, 9421, 9421, 9421, 4711, 4711])
     with open(os.path.join(d, "h.osc"), "wb") as f:
         f.write(data)
 
@@ -482,6 +488,8 @@ class Check(Base):
         src_h(d2, variant=1)
         out = recfmt.open_record(os.path.join(d2, "h.osc"))
         B = 128
+        self.assertNotEqual(out.raw, src.raw)
+        self.assertEqual(sum(self.hits(src, out).values()), 0, "the baseline shares nothing with the source")
 
         def altered(name, edit):
             raw = bytearray(out.raw)

@@ -383,7 +383,7 @@ class _Lines:
 
 
 class OscRecord:
-    """An OSC2 oscillogram, read for the generator and the check (layout: docs/original/specs/formats.md).
+    """An OSC2 oscillogram, read for the user-data check (the project no longer opens or generates `.osc`, #59; layout: docs/original/specs/formats.md).
 
     Big-endian 128-byte blocks: a header (version, the number H of header blocks, K calibration blocks), the
     calibration (four numbers per analog channel), text blocks (`nnA` analog / `nnD` digital / `nnF` samples

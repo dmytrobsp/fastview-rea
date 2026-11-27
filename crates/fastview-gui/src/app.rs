@@ -592,6 +592,10 @@ pub(crate) fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     parse_file(path, enc, prog).map(|(osc, cff)| {
         let mut doc = Box::new(Doc::new_progress(osc, name, prog));
+        // After «Отмена» the document is thrown away: no `.set` read, no formula batch for it.
+        if prog.is_some_and(|p| p.cancelled()) {
+            return doc;
+        }
         // The `.set` read and its formula channels too (#32): the UI thread only adds the document.
         doc.finish_open(path, cff, enc);
         doc

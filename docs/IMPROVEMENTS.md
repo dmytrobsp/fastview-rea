@@ -98,7 +98,8 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **One compute at open.** The original recomputes every channel when
   applying the `.set` (`0x44f5b0`); ours spares that pass at an open when
   the settings change nothing it reads (the result is the same, tested).
-  Reason: about 2 s less on the UI thread for a big record.
+  Reason: a shorter open for a big record (the `.set` apply runs on the loader's thread, so the gain is the
+  progress dialog's wait).
 
 - **ASCII times past 2³¹ µs (#212).** The original's ASCII loader converts a row's rounded µs time to 32 bits
   (`0x4518b7` via `0x411bf0`): in a record longer than about 35.8 minutes every later row's time saturates at the
