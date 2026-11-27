@@ -3619,6 +3619,55 @@ mod menu_tests {
         assert_ne!(hscroll_page(k.0, n, v, true, None).0, hscroll_page(k.0, n, v, true, Some(k.3)).0);
     }
 
+    /// #232: the commands that only open a dialog keep the Shift+wheel position while the dialog is up and when it
+    /// is cancelled (L9.434); a confirmed one is the views' refresh and drops it. One run per command: Save As,
+    /// «Загрузка настроек...» and the exports.
+    #[test]
+    fn the_kept_bar_position_waits_for_the_dialog_of_save_as_load_settings_and_the_exports() {
+        let dir = std::env::temp_dir().join(format!("fv_kept_bar_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (_guard, _unused) = crate::sysdlg::testing::gate();
+        let ctx = egui::Context::default();
+        let cmds = [
+            (Command::SaveAs, "rec_a.cfg"),
+            (Command::LoadSettings, "rec_b.set"),
+            (Command::ExportCsv, "rec_c.csv"),
+            (Command::Archive, "rec_d.zip"),
+            (Command::OpenFvb, "lib_e.fvb"),
+            (Command::ExportImage, "img_f.png"),
+        ];
+        for (cmd, file) in cmds {
+            for confirmed in [false, true] {
+                let mut h = Harness::new();
+                let at = Pos2::new(600.0, h.row(0).y);
+                h.button(at, egui::PointerButton::Primary);
+                for _ in 0..3 {
+                    h.wheel(at, 1.0, egui::Modifiers::CTRL);
+                }
+                h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                h.wheel(at, -1.0, egui::Modifiers::SHIFT);
+                assert!(h.doc().hscroll_pos.is_some(), "kept by the wheel");
+                // The gate (held for the whole test) hands this answer to the next dialog.
+                let (tx, rx) = std::sync::mpsc::channel();
+                *crate::sysdlg::testing::ANSWER.lock().unwrap() = Some(rx);
+                h.app.dispatch(cmd.clone());
+                assert!(h.app.sysdlg_busy(), "{cmd:?}: the dialog is up");
+                assert!(h.doc().hscroll_pos.is_some(), "{cmd:?}: kept while the dialog is up");
+                tx.send(confirmed.then(|| (dir.join(file), None))).unwrap();
+                for _ in 0..400 {
+                    h.app.poll_sysdlg(&ctx);
+                    if !h.app.sysdlg_busy() {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                assert!(!h.app.sysdlg_busy(), "{cmd:?}: the dialog answered");
+                assert_eq!(h.doc().hscroll_pos.is_none(), confirmed, "{cmd:?} (confirmed {confirmed}): the position after the dialog");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// With the whole record in view there is no horizontal bar (seen on
     /// the VM, L9.196): nothing is painted along the bottom.
     #[test]

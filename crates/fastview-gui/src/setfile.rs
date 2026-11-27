@@ -933,6 +933,7 @@ impl App {
     }
 
     pub fn load_settings_from(&mut self, di: usize, path: &std::path::Path) {
+        self.docs[di].drop_bar_position();
         self.docs[di].set.tree.load_path(path);
         self.apply_record_settings(di, true);
         self.docs[di].set.modified = true;
@@ -1075,6 +1076,7 @@ impl App {
                 }
                 _ => path,
             };
+            app.docs[ai].drop_bar_position();
             let ok = app.report_save(ai, &path);
             then(app, ctx, ok);
         });
