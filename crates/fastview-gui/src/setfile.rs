@@ -515,6 +515,14 @@ impl Doc {
         ours | (old & !known)
     }
 
+    /// A digital or formula channel's ratios and a formula channel's alias as the last read of the `.set` left them:
+    /// the original's constructors give 1 / 1 and an empty alias, only the `.set` reader changes them, and the writer
+    /// `0x427bc0` writes them back as they are (L9.143; a hand-edited file's keys survive a save, #212, #215).
+    fn kept_ratios(t: &SetTree, key: &str) -> (f64, f64) {
+        let sec = t.section(key);
+        (sec.map_or(1.0, |s| s.get_dbl("PrimaryMul", 1.0)), sec.map_or(1.0, |s| s.get_dbl("SecondaryMul", 1.0)))
+    }
+
     /// `0x44cbc0` minus the serialisation: update the tree in place from the
     /// document. `print` = the change detector's variant (visibility, which
     /// 32845–32848 change without marking the document, and ОМП / pending
@@ -556,10 +564,11 @@ impl Doc {
             }
             let key = self.file_key(na + k);
             let known_d = flag::VISIBLE | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
+            let (primary_mul, secondary_mul) = Self::kept_ratios(t, &key);
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
-                primary_mul: 1.0,
-                secondary_mul: 1.0,
+                primary_mul,
+                secondary_mul,
                 // The ОМП's flags show their stored names: no alias, in any
                 // code page (#66).
                 // A flag the run made has none (#66); one that took over a
@@ -597,13 +606,22 @@ impl Doc {
             // ratios are the source's (a clone run).
             let (primary_mul, secondary_mul) = match pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
                 Some(Ok(a)) => (a.primary, a.secondary),
-                _ => (1.0, 1.0),
+                _ if pending => (1.0, 1.0),
+                // A formula channel: whatever the file's section held.
+                _ => Self::kept_ratios(t, &key),
+            };
+            // A renamed pasted lane shows its new name as an alias (`0x425a30`), the section keeping the raw name; a
+            // formula channel's alias is the file's own.
+            let alias = if pending {
+                c.name_raw.as_ref().filter(|r| r.alias).map_or_else(String::new, |_| c.name.clone())
+            } else {
+                t.section(&key).map_or_else(String::new, |s| s.get_str("AliasName", ""))
             };
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, flags, known) & mask,
                 primary_mul,
                 secondary_mul,
-                alias: String::new(),
+                alias,
                 // `ch+0x140` as it is (a VM run, L9.213): a place colour
                 // writes CustomColorSet 0, colorCustom 0.
                 custom_color: c.custom_color.then(|| colorref(c.color)),
@@ -1727,6 +1745,87 @@ mod tests {
         let raw = comtrade::decode_bytes(&d.computed[j].name_raw.as_ref().unwrap().bytes, Encoding::Cp1251);
         assert!(raw.ends_with("(ўбв.)"), "{raw}");
         assert!(t.section(&raw).is_some(), "under the bytes read as 1251");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #215 / L9.404, L9.143: a renamed pasted lane's new name is its `AliasName` (`0x427bc0` writes every channel's
+    /// alias, `0x425a30` sets it on a rename), the section still named by the raw name; an unrenamed lane writes none.
+    /// The saved `.set` reads back the alias.
+    #[test]
+    fn a_renamed_pasted_lane_writes_its_alias() {
+        let dir = temp_dir("pendalias");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &mut app.docs[di];
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let raw = comtrade::decode_bytes(&d.computed[j].name_raw.as_ref().unwrap().bytes, Encoding::Cp1251);
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        assert_eq!(t.section(&raw).expect("the lane's section").get_str("AliasName", "-"), "", "no rename, no alias");
+        crate::chandlg::rename(d, ChanKey::Computed(j), "Лінія 7").unwrap();
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let sec = t.section(&raw).expect("the section keeps the raw name");
+        assert_eq!(sec.get_str("AliasName", ""), "Лінія 7");
+        // The file written and read again.
+        let mut again = recset::SetTree::default();
+        again.load_bytes(&t.to_file_bytes());
+        let r = recset::read_channel(again.section(&raw).unwrap(), &recset::ChannelRec { show_flags: 0, primary_mul: 1.0, secondary_mul: 1.0, alias: String::new(), custom_color: None });
+        assert_eq!(r.alias, "Лінія 7");
+        // An empty name shows the file's name again: no alias.
+        crate::chandlg::rename(d, ChanKey::Computed(j), "").unwrap();
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        assert_eq!(t.section(&raw).unwrap().get_str("AliasName", "-"), "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #212 / #215, L9.143: ratios a hand-edited `.set` put into a digital or a formula channel's section (and an
+    /// alias into a formula channel's) are kept by the original and written back by `0x427bc0`; they survive a save.
+    #[test]
+    fn a_hand_edited_digital_or_formula_sections_ratios_survive_a_save() {
+        let dir = temp_dir("keptmul");
+        let cfg = write_record(&dir);
+        let key = {
+            let mut app = App::new();
+            app.persist = false;
+            let di = open(&mut app, &cfg);
+            let d = &app.docs[di];
+            d.file_key(d.osc.analog.len())
+        };
+        let xml = format!(
+            "<settings><category name=\"CalculatedChannels\" Channel0=\"X,Ua+Ub\"/>             <category name=\"{key}\" PrimaryMul=\"1234.5\" SecondaryMul=\"7.25\"/>             <category name=\"X\" PrimaryMul=\"1234.5\" SecondaryMul=\"7.25\" AliasName=\"Хт\"/></settings>"
+        );
+        std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert_eq!(app.docs[di].computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        let mut t = app.docs[di].set.tree.clone();
+        app.docs[di].store_settings(&mut t, false);
+        for k in [key.as_str(), "X"] {
+            let sec = t.section(k).unwrap();
+            assert_eq!((sec.get_dbl("PrimaryMul", 0.0), sec.get_dbl("SecondaryMul", 0.0)), (1234.5, 7.25), "{k}");
+        }
+        assert_eq!(t.section("X").unwrap().get_str("AliasName", ""), "Хт");
+        // Through a real save and the file read again.
+        app.docs[di].set.modified = true;
+        assert!(app.save_active());
+        let mut again = recset::SetTree::default();
+        again.load_bytes(&std::fs::read(dir.join("rec.set")).unwrap());
+        assert_eq!(again.section(&key).unwrap().get_dbl("PrimaryMul", 0.0), 1234.5);
+        assert_eq!(again.section("X").unwrap().get_dbl("SecondaryMul", 0.0), 7.25);
+        // A section that never held any writes 1 / 1 and no alias, as the constructors give.
+        let mut t2 = app.docs[di].set.tree.clone();
+        t2.sections.remove("X");
+        app.docs[di].store_settings(&mut t2, false);
+        let x = t2.section("X").unwrap();
+        assert_eq!((x.get_dbl("PrimaryMul", 0.0), x.get_dbl("SecondaryMul", 0.0), x.get_str("AliasName", "-")), (1.0, 1.0, String::new()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
