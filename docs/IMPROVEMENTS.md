@@ -109,6 +109,12 @@ misbehaves and the better behaviour is obvious (the maintainer,
   disagrees with its sampling rate (a synthetic 5-row record on a clone) the original labels every tick of the time
   axis 0; ours labels the ticks by its rule (0 / 3 / 7 / 10 ms there). Normal records' axes are the same. Reason: a
   row of zeros says nothing; the decision of the 2026-11-27 triage.
+- **A start time without «:» (#43).** The absolute-time labels and the date / time bands read the record's start
+  time token by `_wtoi` of the hours and minutes and `_wtof` of the seconds (`0x464350`, `0x4222d0`); on a token
+  without a «:» the original takes the later fields from uninitialised stack, so the labels depend on whatever the
+  stack held. Ours counts a missing field as 0, so a time
+  «12» is 12:00:00. Reason: a label built from uninitialised memory is undefined; a stable, defined reading
+  beats it (the record: L9.18).
 
 ## Behaviour
 
@@ -291,3 +297,34 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
   the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
   and its line points at no sample it reports; the decision of the 2026-11-27 triage.
+- **A sampling rate smaller than the network frequency in «Настройки частотной диаграммы» (#43).** The dialog's
+  exchange (`0x46ee70`) bounds the periods by N div (R div trunc f), R the record's sampling rate and f the network
+  frequency; for a record whose R div trunc(f) is 0 the original divides by zero. Ours takes that quotient as 1, so
+  OK validates against N instead of faulting. Reason: a division by zero is no behaviour to keep, and the record
+  is valid; the record: L9.133.
+- **The window stays alive while a record loads (#43).** In the original the load's progress dialog (DIALOG 492,
+  timer `0x471870`) freezes the frame (the record's «UI freeze») until the load, including the per-sample
+  recompute (`0x428490`) and the `.set` apply (`0x44f5b0`), ends; after «Отмена» it freezes until the next cancel
+  poll. Ours reads the record, builds its derived arrays and applies the `.set` (its formula channels too) on a
+  loader thread; the frame keeps being drawn, the bar moves and «Отмена» answers at once. The counters, the 500 ms
+  bar steps and the cancel rules are the original's. Reason: a frozen window looks like a hang and gains nothing;
+  the record: L9.31, L9.268, L9.332, L9.441.
+- **Alt+F4 right after a pane's caption ✕ (#43).** In the original, with the vector diagram's pane hidden by its
+  caption ✕, an Alt+F4 does nothing (the window stays, nothing is saved); on its own Alt+F4 closes the window. The
+  cause was not read (most likely the keyboard focus left on the hidden pane). Ours closes the window as it does
+  always. Reason: an ignored close request is a focus slip, not a designed behaviour; the record: L9.278.
+- **«Участок» in «Параметры ОМП» after it disables itself (#43).** After the toolbar's «Участок» is pressed and the
+  command disables itself, the original's button stays in its hot face, not
+  refreshed, under the pointer until the pointer moves. Ours repaints at once: a disabled button is never hot. Reason:
+  a repaint lag, not a feature; the record: L9.333.
+- **The «Каналы» rename with pair rows (#43).** The original's in-place rename (`0x435ac0`, the commit `0x435c80`)
+  maps the edited row to a record by its row index (`0x435da1`, from a reading of the code); with a differential or
+  an R/X pair row in the list, which has no record of its own, the row and the record indices no longer agree. Ours
+  acts on the record the edited row stands for, whatever pair rows precede it. Reason: renaming the channel that
+  is shown is the only sensible result; the record: L9.199.
+- **Parallel consecutive lines of a characteristic polygon (#43).** The original takes vertex i of a `<polygon>` as
+  the intersection of line i−1 and line i with no check (`0x409860`, fed to GDI by `0x409c00`); for two parallel
+  lines the division by zero gives infinity, which becomes 0x80000000 in device space and the GDI call fails, so the
+  figure is not painted. Ours drops that vertex (and any beyond 10^6 units) and fills the rest, painting nothing only
+  when fewer than three vertices remain. Reason: invalid input in a hand-made `.fvb` should degrade, not blank the
+  figure; the shipped library has no such polygon; the record: L4.
