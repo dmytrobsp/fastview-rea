@@ -519,7 +519,7 @@ pub enum RectZoom {
 
 type ParseResult = Result<(Oscillogram, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
 /// A parsed record with its derived arrays, built on the worker.
-type LoadResult = Result<(Box<Doc>, fvb_core::comtrade::CffSections), fvb_core::comtrade::ComtradeError>;
+type LoadResult = Result<Box<Doc>, fvb_core::comtrade::ComtradeError>;
 
 /// «Нет» (string 3306): the empty block the library loader `0x40c7e0` puts
 /// first in each diagram's «Тип блока» list.
@@ -588,9 +588,14 @@ fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::com
 /// Parse a record and build its document on the loader's thread: the
 /// original's phase 2 (`0x428490` through the `.set` apply `0x44f5b0`, the
 /// per-sample recompute) runs there too, under the progress dialog.
-fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
+pub(crate) fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> LoadResult {
     let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    parse_file(path, enc, prog).map(|(osc, cff)| (Box::new(Doc::new(osc, name)), cff))
+    parse_file(path, enc, prog).map(|(osc, cff)| {
+        let mut doc = Box::new(Doc::new_progress(osc, name, prog));
+        // The `.set` read and its formula channels too (#32): the UI thread only adds the document.
+        doc.finish_open(path, cff, enc);
+        doc
+    })
 }
 
 /// The progress dialog shows when the `.dat` of a `.cfg` or the `.cff` is
@@ -866,6 +871,12 @@ pub struct Doc {
     /// Частотная, Векторная, Круговая, Дифференциальная; kept per document,
     /// also on Отмена, not persisted.
     pub print_ticks: [bool; 5],
+    /// Boxes the open raised on the loader's thread (a failing batch of the `.set`'s formulas), shown by the UI
+    /// thread when it adds the document.
+    pub open_alerts: Vec<String>,
+    /// Full recomputes the open ran on the loader's thread (tests count them).
+    #[cfg(test)]
+    pub open_recomputes: usize,
 }
 
 impl Doc {
@@ -877,6 +888,19 @@ impl Doc {
     }
 
     pub fn new(osc: Oscillogram, name: String) -> Self {
+        Self::new_progress(osc, name, None)
+    }
+
+    /// [`Doc::new`] on the loader's thread, advancing the open's counter as the derived arrays are built (#32,
+    /// L9.332): the original's recompute phase (`0x428490`) adds its steps while each channel is rebuilt, so the bar
+    /// reaches its last value when the build is done, not when the parse is. Half of the phase's steps are added once
+    /// the shown values and the phasors are in, the rest as each channel's sliding RMS is built; a cancel stops the
+    /// build at the next channel (the document is then thrown away).
+    pub fn new_progress(osc: Oscillogram, name: String, prog: Option<&fvb_core::comtrade::Progress>) -> Self {
+        let steps = prog.map(|p| p.recompute_steps(&osc)).unwrap_or_default();
+        // The 32-bit counter wraps as the original's does.
+        let total = steps.iter().fold(0u32, |a, &s| a.wrapping_add(s));
+        let first_half = total / 2;
         let corr = fvb_core::freqcorr::of(&osc);
         let np = |i: usize| osc.period_of(osc.analog[i].own_rate).max(2);
         let chans: Vec<ChanView> = (0..osc.analog.len()).map(|i| ChanView::new(&osc.analog[i], i)).collect();
@@ -884,7 +908,24 @@ impl Doc {
         let shown: Vec<Option<Vec<f64>>> = (0..osc.analog.len()).map(|i| shown_series(&osc.analog[i], &chans[i], whole_period_mean(&osc.analog[i].samples, np(i)), shown_factor(&osc.analog[i], &chans[i]))).collect();
         let series: Vec<&[f64]> = (0..osc.analog.len()).map(|i| shown[i].as_deref().unwrap_or(&osc.analog[i].samples)).collect();
         let analysis = Analysis::compute_over(&osc, &series, corr);
-        let rms: Vec<Vec<f64>> = series.iter().enumerate().map(|(i, x)| fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i))).collect();
+        if let Some(p) = prog {
+            p.advance(first_half);
+        }
+        let mut left = total - first_half;
+        let mut rms: Vec<Vec<f64>> = Vec::with_capacity(series.len());
+        for (i, x) in series.iter().enumerate() {
+            if prog.is_some_and(|p| p.cancelled()) {
+                rms.resize(series.len(), Vec::new());
+                break;
+            }
+            rms.push(fvb_core::freqcorr::sliding_rms(corr.map(|c| c.at_rate(osc.analog[i].own_rate)), i, x, np(i)));
+            if let Some(p) = prog {
+                // This channel's share of the second half; the last takes what is left.
+                let by = if i + 1 == series.len() { left } else { (steps[i] - steps[i] / 2).min(left) };
+                p.advance(by);
+                left -= by;
+            }
+        }
         let dc_mean = osc.analog.iter().enumerate().map(|(i, c)| (whole_period_mean(&c.samples, np(i)), whole_period_mean(&adc_codes(c), np(i)))).collect();
         let flagged = osc.clone();
         let digital_visible = vec![true; osc.digital.len()];
@@ -947,6 +988,9 @@ impl Doc {
             undo: Vec::new(),
             redo: Vec::new(),
             print_ticks: [true, false, false, false, false],
+            open_alerts: Vec::new(),
+            #[cfg(test)]
+            open_recomputes: 0,
         }
     }
 
@@ -1976,6 +2020,57 @@ pub struct CharState {
     /// kept with the geometry.
     pub extent: f64,
     pub color: egui::Color32,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Formula batches run on this thread (tests: none on the UI thread during an open, #32).
+    pub static FORMULA_BATCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Doc {
+    /// [`App::append_computed`] on the document alone (the `.set`'s formulas run it on the loader's thread, #32):
+    /// the names given, or the text of the box to raise.
+    pub fn append_computed_core(&mut self, batch: &[(String, String)]) -> Result<Vec<String>, String> {
+        #[cfg(test)]
+        FORMULA_BATCHES.with(|c| c.set(c.get() + 1));
+        let show_primary = self.primary_values();
+        let d = self;
+        // The new definitions join the list and `0x415780` evaluates the
+        // whole list: the older formula channels take the current values
+        // and correction too (L9.103); an old one failing aborts the batch
+        // — its box, nothing added (`0x416ed6`–`0x416f69`).
+        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
+        let before = (d.computed.len(), d.loose_defs.clone());
+        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
+            return Err(e.to_string());
+        }
+        let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
+        match d.eval_formulas(&existing, batch, show_primary) {
+            Ok(added) => {
+                let n0 = d.computed.len();
+                let names = added.iter().map(|c| c.name.clone()).collect();
+                for (k, c) in added.into_iter().enumerate() {
+                    let color = channel_color(&c.name, "", d.osc.analog.len() + n0 + k);
+                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), color);
+                    cc.unit = c.unit;
+                    cc.set_values(c.samples, c.phasors);
+                    d.computed.push(cc);
+                }
+                d.channels_changed();
+                Ok(names)
+            }
+            Err(e) => {
+                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
+                if d.computed.len() > before.0 {
+                    d.computed.truncate(before.0);
+                    d.loose_defs = before.1;
+                    d.channels_changed();
+                }
+                Err(e.to_string())
+            }
+        }
+    }
 }
 
 impl App {
@@ -3014,30 +3109,14 @@ impl App {
 
     fn finish_load(&mut self, path: &std::path::Path, loaded: LoadResult) {
         match loaded {
-            Ok((doc, cff)) => {
+            Ok(mut doc) => {
+                let alerts = std::mem::take(&mut doc.open_alerts);
                 self.add_doc(*doc);
-                let enc = self.encoding;
-                if let Some(d) = self.active_doc_mut() {
-                    d.path = Some(path.to_path_buf());
-                    d.rec_path = Some(path.to_path_buf());
-                    d.cff = cff;
-                    d.init_record_text(enc);
-
-                    // Names may have been re-decoded; no flag is set yet.
-                    d.flagged = d.osc.clone();
-                    d.series_gen += 1;
+                // A failing batch of the `.set`'s formulas is its box, raised by the open.
+                for m in alerts {
+                    self.dlg.push_alert(m);
                 }
-                if let Some(di) = self.active {
-                    self.load_record_settings(di);
-                    // OnOpenDocument selects the record's channel 0 once the
-                    // loader is done (`0x44f245`, `.cff` `0x44f358`).
-                    let d = &mut self.docs[di];
-                    if !d.osc.analog.is_empty() {
-                        d.selection.insert(ChanKey::Analog(0));
-                    } else if !d.osc.digital.is_empty() {
-                        d.selection.insert(ChanKey::Digital(0));
-                    }
-                }
+                self.setfile.sync = None;
                 self.remember_recent(path);
             }
             // The reader's exception is posted to the frame (`0x475680`,
@@ -3223,49 +3302,16 @@ impl App {
     /// channel mode (`fvb_core::quick::evaluate_batch`); all or nothing.
     /// Returns the names given to them.
     pub fn append_computed(&mut self, batch: &[(String, String)]) -> Option<Vec<String>> {
-        let show_primary = self.active_doc().is_some_and(Doc::primary_values);
         let Some(d) = self.active_doc_mut() else {
             self.status = "Сначала загрузите осциллограмму.".into();
             return None;
         };
-        // The new definitions join the list and `0x415780` evaluates the
-        // whole list: the older formula channels take the current values
-        // and correction too (L9.103); an old one failing aborts the batch
-        // — its box, nothing added (`0x416ed6`–`0x416f69`).
-        let new_names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), batch);
-        let before = (d.computed.len(), d.loose_defs.clone());
-        if let Err(e) = d.try_reevaluate_formulas_before(show_primary, &new_names) {
-            self.dlg.push_alert(e.to_string());
-            return None;
-        }
-        let existing: Vec<_> = d.computed.iter().map(Computed::as_core).collect();
-        match d.eval_formulas(&existing, batch, show_primary) {
-            Ok(added) => {
-                let d = self.active_doc_mut()?;
-                let n0 = d.computed.len();
-                let names = added.iter().map(|c| c.name.clone()).collect();
-                for (k, c) in added.into_iter().enumerate() {
-                    let color = channel_color(&c.name, "", d.osc.analog.len() + n0 + k);
-                    let mut cc = Computed::new(c.name, c.formula, Vec::new(), color);
-                    cc.unit = c.unit;
-                    cc.set_values(c.samples, c.phasors);
-                    d.computed.push(cc);
-                }
-                d.channels_changed();
-                Some(names)
-            }
+        match d.append_computed_core(batch) {
+            Ok(names) => Some(names),
             // A computed channel's evaluation failure is a box (`0x415780`
             // → `0x475680`).
-            Err(e) => {
-                // The rows made into channels by the walk go again with the batch (`0x416f1b`).
-                if let Some(d) = self.active_doc_mut() {
-                    if d.computed.len() > before.0 {
-                        d.computed.truncate(before.0);
-                        d.loose_defs = before.1;
-                        d.channels_changed();
-                    }
-                }
-                self.dlg.push_alert(e.to_string());
+            Err(m) => {
+                self.dlg.push_alert(m);
                 None
             }
         }
@@ -4430,6 +4476,39 @@ mod tests {
         assert!(app.docs.is_empty());
     }
 
+    /// #32 / L9.332: the open's counter reaches its last value when the derived arrays are built, not when the
+    /// parse is over: after the parse a fifth of the bar (an ASCII `.dat`), then the build's steps, in order, up to the end.
+    #[test]
+    fn the_progress_bar_ends_with_the_build() {
+        let dir = std::env::temp_dir().join(format!("fv_bar_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg = dir.join("r.cfg");
+        std::fs::write(&cfg, "S,1,1999
+1,1A,0D
+1,Ia,A,,A,1,0,0,-1000,1000
+50
+1
+1250,400
+01/01/2000,00:00:00.000000
+01/01/2000,00:00:00.000000
+ASCII
+").unwrap();
+        let rows: String = (0..400).map(|k| format!("{},{},{}
+", k + 1, k * 800, ((k as f64) * std::f64::consts::PI / 10.0).sin() * 100.0)).collect();
+        std::fs::write(dir.join("r.dat"), rows).unwrap();
+        let p = fvb_core::comtrade::Progress::default();
+        let (osc, _) = parse_file(&cfg, Encoding::Cp1251, Some(&p)).unwrap();
+        let after_parse = (p.pos.load(std::sync::atomic::Ordering::Relaxed), p.percent());
+        assert!(after_parse.1 < 100, "the parse leaves the bar short of its end: {after_parse:?}");
+        let steps: u64 = p.recompute_steps(&osc).iter().map(|&s| u64::from(s)).sum();
+        assert!(steps > 0);
+        let _doc = Doc::new_progress(osc, "r".into(), Some(&p));
+        let pos = p.pos.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(u64::from(pos), u64::from(after_parse.0) + steps, "the build added exactly the recompute steps");
+        assert_eq!(p.percent(), 100);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     /// An `.osc` (OSC2) record is not supported (#59): the open fails with
     /// string 124 and never takes the `.cfg` beside it; no progress dialog; no
     /// comments; no save format.
@@ -4467,7 +4546,7 @@ mod tests {
         std::fs::write(&cfg, "S,1,1999\n1,1A,0D\n1,Ia,A,,A,1,0,0,-1000,1000\n50\n1\n1000,40\n01/01/2000,00:00:00.000000\n01/01/2000,00:00:00.000000\nASCII\n").unwrap();
         let rows: String = (0..40).map(|k| format!("{},{},{}\n", k + 1, k * 1000, ((k as f64) * std::f64::consts::PI / 10.0).sin() * 100.0)).collect();
         std::fs::write(dir.join("r.dat"), rows).unwrap();
-        let (doc, _) = open_file(&cfg, Encoding::Cp1251, None).unwrap();
+        let doc = open_file(&cfg, Encoding::Cp1251, None).unwrap();
         std::fs::remove_dir_all(&dir).ok();
         assert_eq!(doc.name, "r");
         assert_eq!(doc.rms.len(), 1);

@@ -743,18 +743,19 @@ fn recompute_inputs(d: &Doc) -> Option<(usize, f64, f64, i32, Vec<fvb_core::comt
     Some((o.samples_per_cycle(), o.rate_r, o.line_freq, o.freq_sel, o.extra_freq.clone(), o.harmonic1_gain, chans))
 }
 
-impl App {
-    /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
-    /// 32860 (comments are not re-read).
-    pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
-        self.apply_settings(di, from_command, false);
-    }
+/// What [`Doc::settings_read`] leaves for the rest of the read.
+pub(crate) struct SettingsPass {
+    comment_recs: Option<Vec<CommentRec>>,
+    calc: Vec<(String, String)>,
+    /// The settings changed nothing a recompute reads: the open's values stand.
+    unchanged: bool,
+}
 
-    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
-    /// what `Doc::new` computed from the record as read (an open, on the
-    /// loader's thread), so the recompute may be spared.
-    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
-        let Some(d) = self.docs.get_mut(di) else { return };
+impl Doc {
+    /// The first half of the read of the settings tree into the document (`0x44f5b0`): everything up to the
+    /// recompute. Document-only, so it can run on the loader's thread (#32).
+    pub(crate) fn settings_read(&mut self, from_command: bool, fresh: bool) -> SettingsPass {
+        let d = self;
         let as_read = if fresh { recompute_inputs(d) } else { None };
         // The review elements name their channels; the painters resolve
         // those names among the shown ones (aliases included) — bound here
@@ -865,29 +866,26 @@ impl App {
         // what the open computed: ours keeps that (2 × the time on the UI
         // thread for a big record otherwise) and only takes the flagged
         // copy anew, for the names.
-        let d = &mut self.docs[di];
-        if as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown {
-            d.flagged = d.osc.clone();
-            d.series_gen += 1;
-        } else {
-            self.recompute_doc(di);
-        }
+        let unchanged = as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown;
+        SettingsPass { comment_recs, calc, unchanged }
+    }
+
+    /// The second half: the formula channels (the batch, `0x415780`), then the new channels' own sections and the
+    /// comments. The alerts it raises (a failing batch) are returned for the caller to show.
+    pub(crate) fn settings_formulas(&mut self, pass: SettingsPass) -> Vec<String> {
+        let d = self;
+        let SettingsPass { comment_recs, calc, .. } = pass;
+        let mut alerts = Vec::new();
         if !calc.is_empty() {
-            let (active, status) = (self.active, self.status.clone());
-            self.active = Some(di);
             let batch: Vec<(String, String)> = calc;
             // A failing batch is its box; the rows stay in the definition list like any kept row, so the next
             // command that runs the batch shows the box again (clone, #174).
-            if self.append_computed(&batch).is_none() {
-                if let Some(d) = self.docs.get_mut(di) {
-                    let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
-                    d.loose_defs.extend(fresh);
-                }
+            if let Err(m) = d.append_computed_core(&batch) {
+                alerts.push(m);
+                let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
+                d.loose_defs.extend(fresh);
             }
-            self.active = active;
-            self.status = status;
         }
-        let d = &mut self.docs[di];
         for j in 0..d.computed.len() {
             let Some(sec) = d.set.tree.section(&d.computed[j].name).cloned() else { continue };
             let cur = ChannelRec { show_flags: d.computed_flags(j), primary_mul: 1.0, secondary_mul: 1.0, alias: String::new(), custom_color: None };
@@ -911,24 +909,76 @@ impl App {
             d.reflag_computed(j);
         }
         if let Some(recs) = comment_recs {
-            let d = &mut self.docs[di];
             d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
+        }
+        d.set.print = d.settings_print();
+        alerts
+    }
+
+    /// Everything of an open that needs the document only, run on the loader's thread (`LoadingDlg`, #32): the
+    /// record's path and files, the text encodings, then the `<base>.set` read — the `.set` file, its settings and
+    /// the formula channels it defines, evaluated off the UI thread — and channel 0 selected (`0x44f245`). The
+    /// alerts it raises are left in [`Doc::open_alerts`].
+    pub(crate) fn finish_open(&mut self, path: &std::path::Path, cff: fvb_core::comtrade::CffSections, enc: Encoding) {
+        self.path = Some(path.to_path_buf());
+        self.rec_path = Some(path.to_path_buf());
+        self.cff = cff;
+        self.init_record_text(enc);
+        // Names may have been re-decoded; no flag is set yet.
+        self.flagged = self.osc.clone();
+        self.series_gen += 1;
+        self.init_set_keys();
+        self.set.tree.load_path(&recset::set_path(path));
+        let pass = self.settings_read(false, true);
+        let mut alerts = Vec::new();
+        if pass.unchanged {
+            self.flagged = self.osc.clone();
+            self.series_gen += 1;
+        } else {
+            // The ОМП is not shown in a document just opened: no re-run to do.
+            #[cfg(test)]
+            {
+                self.open_recomputes += 1;
+            }
+            self.recompute_signals();
+            alerts.extend(self.batch_error.take());
+        }
+        alerts.extend(self.settings_formulas(pass));
+        self.set.modified = false;
+        if !self.osc.analog.is_empty() {
+            self.selection.insert(ChanKey::Analog(0));
+        } else if !self.osc.digital.is_empty() {
+            self.selection.insert(ChanKey::Digital(0));
+        }
+        self.open_alerts = alerts;
+    }
+}
+
+impl App {
+    /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
+    /// 32860 (comments are not re-read).
+    pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
+        self.apply_settings(di, from_command, false);
+    }
+
+    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
+    /// what `Doc::new` computed from the record as read (an open, on the
+    /// loader's thread), so the recompute may be spared.
+    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
+        let Some(d) = self.docs.get_mut(di) else { return };
+        let pass = d.settings_read(from_command, fresh);
+        if pass.unchanged {
+            let d = &mut self.docs[di];
+            d.flagged = d.osc.clone();
+            d.series_gen += 1;
+        } else {
+            self.recompute_doc(di);
+        }
+        for m in self.docs[di].settings_formulas(pass) {
+            self.dlg.push_alert(m);
         }
         // The diagram windows and the view re-read their sections.
         self.setfile.sync = None;
-        let d = &mut self.docs[di];
-        d.set.print = d.settings_print();
-    }
-
-    /// After a record was opened: read `<base>.set` (or the legacy `ini`).
-    pub fn load_record_settings(&mut self, di: usize) {
-        let Some(d) = self.docs.get_mut(di) else { return };
-        d.init_set_keys();
-        if let Some(p) = d.path.clone() {
-            d.set.tree.load_path(&recset::set_path(&p));
-        }
-        self.apply_settings(di, false, true);
-        self.docs[di].set.modified = false;
     }
 
     /// 32860 «Загрузка настроек...» (`0x44fd10`): pick a `.set`, read it
@@ -1917,9 +1967,8 @@ mod tests {
     fn open_and_recompute(cfg: &Path) -> (usize, String, String) {
         let mut app = App::new();
         app.persist = false;
-        crate::recdlg::RECOMPUTES.with(|c| c.set(0));
         let di = open(&mut app, cfg);
-        let runs = crate::recdlg::RECOMPUTES.with(|c| c.get());
+        let runs = app.docs[di].open_recomputes;
         let opened = computed_state(&app.docs[di]);
         app.recompute_doc(di);
         (runs, opened, computed_state(&app.docs[di]))
@@ -1960,6 +2009,39 @@ mod tests {
         let (runs, opened, again) = open_and_recompute(&cfg);
         assert_eq!(runs, 1);
         assert_eq!(opened, again);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #32 / L9.332: the `.set`'s formula channels are evaluated on the loader's thread (with the `.set` read), not on
+    /// the UI thread that adds the document; a failing batch's box travels with the document.
+    #[test]
+    fn the_sets_formula_channels_are_evaluated_off_the_ui_thread() {
+        let dir = temp_dir("offui");
+        let cfg = write_record(&dir);
+        let set = |calc: &str| {
+            let xml = format!("<settings><category name=\"CalculatedChannels\" {calc}/></settings>");
+            std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        };
+        set("Channel0=\"X,Ua+Ub\"");
+        // The loader's own function hands over the finished document.
+        let doc = crate::app::open_file(&cfg, Encoding::Cp1251, None).unwrap();
+        assert_eq!(doc.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        assert_eq!(doc.computed[0].samples.len(), doc.osc.sample_count());
+        assert!(doc.selection.contains(&ChanKey::Analog(0)) && !doc.set.modified && doc.open_alerts.is_empty());
+        // Through the application: this (the UI) thread runs no formula batch.
+        crate::app::FORMULA_BATCHES.with(|c| c.set(0));
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert_eq!(app.docs[di].computed.len(), 1, "the channel is there");
+        assert_eq!(crate::app::FORMULA_BATCHES.with(|c| c.get()), 0, "evaluated by the loader, not by the UI thread");
+        // A formula that fails: its box comes with the document, the row stays in the definition list.
+        set("Channel0=\"Y,Ua+\"");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert!(app.dlg.alert().is_some(), "the batch's box");
+        assert!(app.docs[di].computed.is_empty() && app.docs[di].loose_defs.iter().any(|l| l.0 == "Y"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

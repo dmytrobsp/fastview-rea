@@ -126,7 +126,8 @@ fn temp_record(tag: &str, cfg: &str, dat: &[u8]) -> std::path::PathBuf {
 /// The «Загрузка» counters (DIALOG 492, `0x471870`; ledger L9.31): total
 /// 5·S; ASCII position = bytes consumed (the parse fills 20 %), BINARY
 /// `T − remaining` (100 % already), binary32 no total (0 % throughout);
-/// then ⌊T/(N·C)⌋ per sample of every analog channel; the bar shows
+/// then ⌊T/(N·C)⌋ per sample of every analog channel, added by the build of the document's derived arrays
+/// ([`Progress::recompute_steps`] / [`Progress::advance`], #32), not by the parse; the bar shows
 /// `((pos·100) mod 2³²)/T`, clamped to 100. A cancel stops the reader.
 #[test]
 fn loading_progress_follows_the_original_counters() {
@@ -147,14 +148,21 @@ fn loading_progress_follows_the_original_counters() {
     // The cursor after the last row: past its last value's delimiter, so
     // short of a CR LF's LF (a checkout with CR LF line ends).
     let end = s - u32::from(DAT.ends_with(b"\r\n"));
-    assert_eq!(p.pos.load(Relaxed), end + a * n * (t / (n * c)), "the cursor after the parse, then the steps");
+    assert_eq!(p.pos.load(Relaxed), end, "the cursor after the parse: the steps are the build's");
+    assert_eq!(p.percent(), end * 100 / t, "the parse fills only a fifth of the bar");
+    let steps = p.recompute_steps(&rec);
+    assert_eq!(steps, vec![n * (t / (n * c)); a as usize], "each analog channel's share");
+    steps.iter().for_each(|&x| p.advance(x));
+    assert_eq!(p.pos.load(Relaxed), end + a * n * (t / (n * c)), "then the steps");
     assert_eq!(p.percent(), ((end + a * n * (t / (n * c))) * 100 / t).min(100));
     // BINARY: 8 + 6·2 + 2 bytes a record.
     let numbered = |size: usize| -> Vec<u8> { (0..n as usize).flat_map(|k| { let mut r = vec![0u8; size]; r[..4].copy_from_slice(&(k as u32 + 1).to_le_bytes()); r }).collect() };
     let bin = numbered(22);
-    let (p, _) = run("binary", &CFG.replacen("\nASCII", "\nBINARY", 1), &bin);
+    let (p, rec) = run("binary", &CFG.replacen("\nASCII", "\nBINARY", 1), &bin);
     let t = 5 * bin.len() as u32;
-    assert_eq!(p.pos.load(Relaxed), t + a * n * (t / (n * c)), "T − 0 after the last record");
+    assert_eq!(p.pos.load(Relaxed), t, "T − 0 after the last record");
+    p.recompute_steps(&rec).iter().for_each(|&x| p.advance(x));
+    assert_eq!(p.pos.load(Relaxed), t + a * n * (t / (n * c)));
     assert_eq!(p.percent(), 100);
     // binary32: the total is never set.
     let bin32 = numbered(34);

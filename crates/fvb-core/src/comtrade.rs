@@ -298,26 +298,25 @@ impl Progress {
         self.pos.store(self.total.load(Ordering::Relaxed).wrapping_sub(remaining as u32), Ordering::Relaxed);
     }
 
-    /// The recompute phase (`0x428490`, `0x428809`): `step` added per sample
-    /// of every analog channel, cancel polled per sample. `step` =
-    /// ⌊T / (N·C)⌋ (`0x450c17`), N the first
-    /// channel's samples, C all analog + digital channels.
-    fn recompute_phase(&self, rec: &Oscillogram) {
+    /// The recompute phase's counter (`0x428490`, `0x428809`): the original adds `step` per sample of every analog
+    /// channel while its values are rebuilt, `step` = ⌊T / (N·C)⌋ (`0x450c17`), N the first channel's samples, C all
+    /// analog + digital channels. Per analog channel, what it adds; the caller adds each with [`Progress::advance`]
+    /// as it builds that channel's derived values (#32), so the bar reaches its last value when the build does, not
+    /// at the end of the parse.
+    pub fn recompute_steps(&self, rec: &Oscillogram) -> Vec<u32> {
         let n = rec.analog.first().map(|c| c.samples.len()).or_else(|| rec.digital.first().map(|c| c.samples.len())).unwrap_or(0);
         let c = rec.analog.len() + rec.digital.len();
         let nc = (n as u64 * c as u64) as u32;
         if nc == 0 {
-            return;
+            return vec![0; rec.analog.len()];
         }
         let step = self.total.load(Ordering::Relaxed) / nc;
-        for ch in &rec.analog {
-            for chunk in ch.samples.chunks(1024) {
-                if self.cancelled() {
-                    return;
-                }
-                self.pos.fetch_add(step.wrapping_mul(chunk.len() as u32), Ordering::Relaxed);
-            }
-        }
+        rec.analog.iter().map(|ch| step.wrapping_mul(ch.samples.len() as u32)).collect()
+    }
+
+    /// Add `by` to the position (wrapping, as the original's 32-bit counter).
+    pub fn advance(&self, by: u32) {
+        self.pos.fetch_add(by, Ordering::Relaxed);
     }
 }
 
@@ -359,9 +358,6 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
     check_samples(&rec, || crate::recset::record_base(path))?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec);
-    }
     Ok(rec)
 }
 
@@ -555,9 +551,6 @@ pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
 fn parse_progress(cfg_text: &str, dat: &[u8], prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     let (mut rec, fmt) = parse_cfg(cfg_text)?;
     parse_dat(&mut rec, fmt, dat, prog)?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec);
-    }
     Ok(rec)
 }
 
@@ -649,9 +642,6 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     }
     parse_dat(&mut rec, fmt, dat, prog)?;
     check_samples(&rec, cff_temp_base)?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec);
-    }
     Ok((rec, sections))
 }
 
