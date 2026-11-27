@@ -28,7 +28,7 @@ pub struct OscChannels {
     digital_from: usize,
     /// The record's nominal-frequency track (`rec+0x1fc`).
     freq: Vec<f64>,
-    /// The record's harmonic-1 gain (`rec+0x278`, set by OSC2 files).
+    /// The record's harmonic-1 gain (`rec+0x278`; 1 for every record we open, the OSC2 reader that set it is gone, #59).
     gain1: f64,
     /// The frequency correction: the frequency channel, its stored samples
     /// and the rate (ledger L9.65).

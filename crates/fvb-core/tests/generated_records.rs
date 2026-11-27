@@ -1,10 +1,10 @@
-//! Records made by `tools/records/synth_record.py` from seven hand-written sources
+//! Records made by `tools/records/synth_record.py` from six hand-written sources
 //! (`tools/records/make_fixtures.py`): every name, number and sample in them is invented, and
 //! the structure of each source is kept. They pin that our readers take the features a real
 //! recorder's files have: a UTF-8 BOM with a name cut by U+FFFD, the float32 range with a tiny
 //! factor `a`, int16 and int32 data with two rate segments and twenty digital channels, a name cut
 //! mid-character (invalid UTF-8) at a byte limit, a revision-1991 layout, a timestamp-only record, a
-//! single-file `.cff` with INF and HDR sections, and an OSC2 `.osc`.
+//! single-file `.cff` with INF and HDR sections.
 
 use fvb_core::comtrade::{self, Encoding};
 use std::hash::{Hash, Hasher};
@@ -29,7 +29,6 @@ const FIXTURES: &[(&str, &str, &[u8])] = &[
     ("f", "f.cfg", include_bytes!("data/generated/f/f.cfg")),
     ("f", "f.dat", include_bytes!("data/generated/f/f.dat")),
     ("g", "g.cff", include_bytes!("data/generated/g/g.cff")),
-    ("h", "h.osc", include_bytes!("data/generated/h/h.osc")),
 ];
 
 fn fixture(dir: &str, file: &str) -> PathBuf {
@@ -148,25 +147,6 @@ fn single_file_record_with_inf_and_hdr_sections() {
     let (_, sections) = comtrade::parse_cff(&raw, Encoding::Cp1251).unwrap();
     assert!(sections.inf.is_some_and(|t| !t.trim().is_empty()) && sections.hdr.is_some_and(|t| !t.trim().is_empty()));
     assert!(sections.set.is_none());
-}
-
-/// An OSC2 oscillogram (`.osc`): cp1251 names, one ccbm field, sixteen digital channels in two text blocks, 14
-/// samples per data block, two timing codes.
-#[test]
-fn osc2_oscillogram_with_two_timing_codes() {
-    let rec = comtrade::load_with(fixture("h", "h.osc"), Encoding::Cp1251).unwrap();
-    assert_eq!((rec.analog.len(), rec.digital.len(), rec.sample_count()), (3, 16, 7 * 14));
-    assert!(rec.device.starts_with("OSC") && rec.device.contains("2.4"), "{}", rec.device);
-    assert!(rec.analog.iter().all(|c| c.samples.len() == 98 && c.samples.iter().any(|v| *v != 0.0)));
-    assert!(rec.analog.iter().all(|c| c.a > 0.0 && c.a.is_finite()), "the calibration gives a positive scale");
-    assert!(!rec.analog[1].ccbm.is_empty() && rec.analog[0].ccbm.is_empty(), "the second analog line has five fields");
-    assert!(rec.analog.iter().all(|c| !c.id.is_empty() && c.id != "Резерв."));
-    // The first block's rate is snapped to a standard one, the later blocks' are not, so the first block is a
-    // segment of its own; then one segment per timing code.
-    let ends: Vec<usize> = rec.rate_segs.iter().map(|s| s.1).collect();
-    assert_eq!(ends, vec![14, 5 * 14, 7 * 14]);
-    assert!(rec.rate_segs[1].0 > rec.rate_segs[2].0, "the second code is the slower rate");
-    assert!(!rec.stamps.trigger_date.is_empty(), "the trigger moment is read");
 }
 
 /// The reader's own writer reproduces the structure it was given (names are invented, kept).

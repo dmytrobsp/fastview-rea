@@ -13,7 +13,7 @@ holds this machine's specifics — the shared test boxes and the claim tool, the
 
 | Path | What |
 |---|---|
-| `crates/fvb-core` | the engine: readers / writers (COMTRADE, `.cff`, `.osc`), formulas, signal maths, ОМП, `.fvb` characteristics |
+| `crates/fvb-core` | the engine: readers / writers (COMTRADE, `.cff`), formulas, signal maths, ОМП, `.fvb` characteristics |
 | `crates/fastview-gui` | the egui application (`fastview`): views, ribbon, panes, dialogs, printing, the software runner |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | where the project stands now: latest release, the milestone in flight, next topics |
 | [docs/original/](docs/original/README.md) | the record of what the original does, item by item (`L1`–`L9.x`), and the distilled specs |
