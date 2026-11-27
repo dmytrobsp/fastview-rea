@@ -113,3 +113,59 @@ maintainer), **issue**.
   Copy / Paste moves channels between records in both programs.
 - **Decided**: 2026-10-31, the maintainer.
 - **Issue**: [#75](https://github.com/dmytrobsp/fastview-rea/issues/75).
+
+## Small pixel offsets in the main window
+
+- **What differs**: a few parts of the main window sit 1–2 px off the original's: the «ОМП» category tab is 2 px
+  narrower (Segoe UI label width, L9.397); «Частотная» is 1 px taller; the plane's centre is 2 px lower (L9.236); the
+  circle grid starts 1 px lower (L9.280); after the same splitter drag ours ends 1 px lower (MFC moves by the drag
+  distance, egui to the pointer; L9.284); the merge bar's controls sit a few px lower (L9.315); the outer frame lines'
+  colour (L9.232). The first-run frame, the size grip and the scroll bands were matched in milestone 0.7.1 (L9.437,
+  L9.439); the window's own 1–2 px cut at its right and bottom is still open (#241).
+- **Where it shows**: only when the two programs are compared pixel by pixel; layout and behaviour are the same.
+- **Why it isn't fixed**: each is a pixel with no visible effect, and several come from fonts and egui's pointer model;
+  the project rule accepts small visual differences.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#18](https://github.com/dmytrobsp/fastview-rea/issues/18).
+
+## An edited text value in «Параметры ОМП» is not bold
+
+- **What differs**: in the ОМП parameters grid the original draws a modified text value bold also inside its edit
+  field while it is being edited; ours draws it bold in the cell but in the normal font in the edit field (L9.215). The
+  toolbar's height and the bold rule itself were matched (L9.209).
+- **Where it shows**: only while a modified text value is being edited.
+- **Why it isn't fixed**: egui's text edit takes one font per field; the value's boldness is shown as soon as the edit
+  ends.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#29](https://github.com/dmytrobsp/fastview-rea/issues/29).
+
+## A printer driver that resets the DC at StartPage
+
+- **What differs**: not known. Ours sets its print DC's attributes once per job; whether the original's output changes
+  with a driver that resets DC attributes at StartPage was never observed (L9.121).
+- **Where it shows**: at most on paper, with such a driver.
+- **Why it isn't fixed**: neither Microsoft Print to PDF nor the clones' drivers reset the DC, so the case can't be
+  produced or compared.
+- **Decided**: 2026-11-27, the controller (triage of old issues): out of reach.
+- **Issue**: [#195](https://github.com/dmytrobsp/fastview-rea/issues/195).
+
+## A `.cfg` line missing a field
+
+- **What differs**: the original reads a `.cfg` through a token stream (`0x477050` / `0x4771f0`), so a field missing
+  from a line, or empty after a trailing comma, takes the next line's first token. Ours reads line by line: a missing
+  field keeps its default, an empty one reads 0 (atof of an empty token, #170).
+- **Where it shows**: only with malformed `.cfg` files; well-formed records read the same.
+- **Why it isn't fixed**: the original's result there is a misread record; ours keeps the line structure.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#204](https://github.com/dmytrobsp/fastview-rea/issues/204).
+
+## «Объединить» after a key press
+
+- **What differs**: with «Объединить» focused, Space or Enter do nothing at once in the original, but the merge then
+  happens when the pointer next moves off the button (clone, milestone 0.7.1); no cause was found in the binary. Ours
+  merges on a click only (#182).
+- **Where it shows**: only after a key press on the focused button, then a pointer move.
+- **Why it isn't fixed**: the cause isn't known, and the delayed merge looks like an accident of the original rather
+  than a behaviour a user relies on.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#206](https://github.com/dmytrobsp/fastview-rea/issues/206).
