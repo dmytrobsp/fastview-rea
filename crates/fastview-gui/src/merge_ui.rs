@@ -1056,7 +1056,7 @@ mod tests {
         assert_eq!(g.keys[n], (ChanKey::Computed(j), n + 1));
         assert_eq!(g.cells[n], [String::new(), String::new()]);
         assert_eq!(g.cells[0], ["1".to_string(), "1".to_string()]);
-        g.double_click((0, 0), false);
+        g.double_click((0, 0));
         g.edit.as_mut().unwrap().1 = "2".into();
         let changed = g.apply(d).unwrap();
         assert_eq!(changed, [ChanKey::Analog(0), ChanKey::Computed(j)]);
