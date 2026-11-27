@@ -16,6 +16,7 @@ mod dialogs;
 mod fontfix;
 mod docking;
 mod dragcursor;
+mod eyedrop;
 mod dpi;
 mod finder;
 mod formula_dlg;

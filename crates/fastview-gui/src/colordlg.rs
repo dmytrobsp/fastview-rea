@@ -5,6 +5,7 @@
 
 use crate::app::App;
 use crate::dialogs::{dlu, win_button, win_button_en, win_edit, dlg_font};
+use crate::eyedrop::{self, Eyedrop, Step};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 /// The 127 cells of the colour hexagon, row by row from the top (7, 8,
@@ -72,6 +73,11 @@ fn hexagon(l: f32, t: f32, r: f32, b: f32, tip: f32) -> Vec<Pos2> {
 struct ColorState {
     new: Color32,
     spectrum: bool,
+    /// «Выбор...»'s pick mode, while it runs.
+    pick: Option<Eyedrop>,
+    /// Frames still to leave Enter / Esc alone after the pick mode ended
+    /// by one (the key's event may reach the dialog a frame later).
+    quiet: u8,
 }
 
 impl App {
@@ -81,7 +87,36 @@ impl App {
     pub fn color_window(&mut self, ctx: &egui::Context) {
         let Some(current) = self.color_dialog else { return };
         let key = egui::Id::new("fv_color_state");
-        let mut st: ColorState = ctx.data(|d| d.get_temp(key)).unwrap_or(ColorState { new: current, spectrum: false });
+        let mut st: ColorState = ctx.data(|d| d.get_temp(key)).unwrap_or(ColorState { new: current, spectrum: false, pick: None, quiet: 0 });
+        // «Выбор...»'s pick mode (L9.258): the new colour follows the screen
+        // pixel under the pointer until a click, Enter or Esc.
+        let mut screen = eyedrop::system();
+        if let Some(mut e) = st.pick {
+            screen.show_cursor();
+            ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+            ctx.request_repaint();
+            match e.step(screen.sample(), st.new) {
+                Step::Preview(c) => {
+                    st.new = c;
+                    st.pick = Some(e);
+                }
+                Step::Done(c) | Step::Restore(c) => {
+                    st.new = c;
+                    st.pick = None;
+                    st.quiet = 1;
+                }
+            }
+        }
+        // The keys that steer the pick mode are not the dialog's.
+        if st.pick.is_some() || st.quiet > 0 {
+            ctx.input_mut(|i| {
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
+                i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+            });
+            if st.pick.is_none() {
+                st.quiet -= 1;
+            }
+        }
         let mut open = true;
         let mut done: Option<bool> = None;
         // The «Цвета» template: 252 × 180 DLU (378 × 293 px).
@@ -201,9 +236,11 @@ impl App {
             if win_button(ui, dlu(client, 194, 34, 53, 14), "Отмена", false).clicked() {
                 done = Some(false);
             }
-            // «Выбор...» picks a colour off the screen in the original; ours
-            // cannot read the screen: greyed.
-            win_button_en(ui, dlu(client, 194, 65, 53, 14), "Выбор...", false, false);
+            // «Выбор...» picks a colour off the screen (eyedrop.rs); greyed
+            // where the platform has no screen read.
+            if win_button_en(ui, dlu(client, 194, 65, 53, 14), "Выбор...", false, screen.available() && st.pick.is_none()).clicked() {
+                st.pick = Some(Eyedrop::new(st.new));
+            }
             let new_l = dlu(client, 194, 110, 53, 9);
             p.text(Pos2::new(new_l.center().x, new_l.top()), egui::Align2::CENTER_TOP, "Новый", dlg_font(), Color32::BLACK);
             let sw = dlu(client, 194, 122, 53, 41);
