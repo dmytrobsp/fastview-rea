@@ -214,13 +214,14 @@ mod centre {
             if win.is_null() || owner.is_null() {
                 return;
             }
+            // Taken first, so the created size never outlives this dialog.
+            let created = CREATED.swap(0, Ordering::AcqRel);
             let empty = RECT { left: 0, top: 0, right: 0, bottom: 0 };
             let (mut o, mut d) = (empty, empty);
             if GetWindowRect(owner, &mut o) != 0 && GetWindowRect(win, &mut d) != 0 {
                 let mut mi: MONITORINFO = std::mem::zeroed();
                 mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
                 let work = if GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut mi) != 0 { (mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom) } else { (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2) };
-                let created = CREATED.swap(0, Ordering::AcqRel);
                 let size = super::dialog_size((created != 0).then_some(((created >> 32) as i32, created as u32 as i32)), (d.right - d.left, d.bottom - d.top));
                 let (x, y) = super::centred_over((o.left, o.top, o.right, o.bottom), size, work);
                 SetWindowPos(win, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -233,6 +234,7 @@ mod centre {
         if owner == 0 {
             return f();
         }
+        clear();
         OWNER.store(owner, Ordering::Release);
         // SAFETY: a thread hook on this thread, removed before returning.
         let h = unsafe { SetWindowsHookExW(WH_CBT, Some(hook), std::ptr::null_mut(), GetCurrentThreadId()) };
@@ -241,8 +243,17 @@ mod centre {
             // SAFETY: the hook set above.
             unsafe { UnhookWindowsHookEx(h) };
         }
-        OWNER.store(0, Ordering::Release);
+        clear();
         r
+    }
+
+    /// Nothing of an earlier print stays for the next one: a created size no dialog used, a dialog the timer
+    /// never moved.
+    fn clear() {
+        OWNER.store(0, Ordering::Release);
+        CREATED.store(0, Ordering::Release);
+        DIALOG.store(0, Ordering::Release);
+        OWNER_OF_DIALOG.store(0, Ordering::Release);
     }
 }
 
