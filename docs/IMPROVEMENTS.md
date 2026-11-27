@@ -298,9 +298,10 @@ misbehaves and the better behaviour is obvious (the maintainer,
   (the anchor), press and drag selects the cells the pointer spans (a drag over the name column takes the whole rows'
   value cells), Shift + click extends the rectangle from the anchor, Ctrl + click toggles a cell and Ctrl + drag adds
   a rectangle; a double-click opens the edit (the first click of it does not reset a selection it lands in), and the
-  value typed goes into every selected cell when the edit commits (Enter, or a click elsewhere), the selection staying;
-  Esc cancels the edit and keeps the selection (neither closes the dialog); a click elsewhere resets the selection to
-  that cell. With the list focused the arrows move the selection (Shift extends it), F2 or Enter edit the anchor cell
+  value typed goes into every selected cell whose own text differs from it when the edit commits — Enter, losing the
+  focus or a press on no cell commit and keep the selection, a click on another cell commits and resets the selection
+  to that cell; Esc cancels the edit and keeps the selection (neither closes the dialog). Dragging a selection past the
+  list's view scrolls it. With the list focused the arrows move the selection (Shift extends it), F2 or Enter edit the anchor cell
   and a typed digit starts an edit replacing the text. The drawing of the selected cells and the data rules (a commit
   dirties only a text that differs, the `%g` formatting, OK / Cancel) are the original's. Reason: the user's request
   (2026-11-27): the familiar spreadsheet way instead of a double-click scheme nobody finds.

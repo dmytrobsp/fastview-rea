@@ -528,6 +528,11 @@ struct Drag {
     base: BTreeSet<Cell>,
     /// The hit of the press.
     press: Hit,
+    /// What the pointer dragged back onto the press cell leaves: the cell itself
+    /// for a press inside a group, otherwise what the press made.
+    back: BTreeSet<Cell>,
+    /// The pointer has left the press cell.
+    left: bool,
 }
 
 /// The coefficient grid (`CMultiplierDlg`): one row per analog-kind record
@@ -561,6 +566,8 @@ pub struct CoefDlg {
     pub edit_rect: Option<Rect>,
     /// A cell the keyboard moved to: scrolled into view at the next draw.
     pub scroll_to: Option<Cell>,
+    /// The rows' visible area at the last frame (for tests and hit-testing).
+    pub list_rect: Option<Rect>,
 }
 
 impl CoefDlg {
@@ -596,39 +603,59 @@ impl CoefDlg {
             let start = Hit { row: a.0, col: Some(a.1) };
             self.sel = span(start, hit);
             self.cursor = Some(cell);
-            self.drag = Some(Drag { start, first: self.sel.clone(), base: BTreeSet::new(), press: hit });
+            self.drag = Some(Drag { start, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: self.sel.clone(), left: false });
+            return;
+        }
+        if ctrl {
+            let base = self.sel.clone();
+            if own.iter().all(|c| base.contains(c)) {
+                // Toggled off: the anchor never rests on an unselected cell.
+                self.sel.retain(|c| !own.contains(c));
+                if self.anchor.is_some_and(|a| !self.sel.contains(&a)) {
+                    self.anchor = self.sel.iter().next().copied();
+                }
+                self.cursor = self.anchor;
+            } else {
+                self.sel.extend(own);
+                self.anchor = Some(cell);
+                self.cursor = Some(cell);
+            }
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base, press: hit, back: self.sel.clone(), left: false });
             return;
         }
         self.anchor = Some(cell);
         self.cursor = Some(cell);
-        if ctrl {
-            let base = self.sel.clone();
-            if own.iter().all(|c| base.contains(c)) {
-                self.sel.retain(|c| !own.contains(c));
-            } else {
-                self.sel.extend(own);
-            }
-            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base, press: hit });
-        } else if self.sel.len() > 1 && own.iter().all(|c| self.sel.contains(c)) {
+        if self.sel.len() > 1 && own.iter().all(|c| self.sel.contains(c)) {
             self.pending = Some((hit, f64::MAX));
-            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit });
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: own, left: false });
         } else {
             self.sel = own;
-            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit });
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: self.sel.clone(), left: false });
         }
     }
 
     /// The pointer moved with the button down: the selection is the rectangle
     /// from the press (added to the kept cells under Ctrl).
     pub fn drag_to(&mut self, hit: Hit) {
-        let Some(d) = &self.drag else { return };
+        let Some(d) = &mut self.drag else { return };
         if hit == d.press {
-            self.sel = d.first.clone();
+            self.sel = if d.left { d.back.clone() } else { d.first.clone() };
         } else {
+            d.left = true;
             self.sel = d.base.union(&span(d.start, hit)).copied().collect();
             self.pending = None;
         }
         self.cursor = Some(hit.cell());
+    }
+
+    /// Whether a press is being dragged.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Whether a lone click's reset is waiting for the double-click delay.
+    pub fn reset_pending(&self) -> bool {
+        self.pending.is_some()
     }
 
     /// The button released at `now`.
@@ -695,18 +722,21 @@ impl CoefDlg {
         }
     }
 
-    /// Commit the edit (`0x47b3d0`): a text that differs from the cell's makes
-    /// the grid dirty and goes into every selected cell, the edited one among
-    /// them. Unlike the original (which clears the selection unless Ctrl is
-    /// held) the selection stays (#214).
+    /// Commit the edit (`0x47b3d0`): the text goes into the edited cell and
+    /// every selected cell whose own text differs from it (the dirty rule per
+    /// cell, so a group of mixed values is filled even when the edited cell
+    /// already held the value); any write makes the grid dirty. Unlike the
+    /// original (which clears the selection unless Ctrl is held) the
+    /// selection stays (#214).
     pub fn commit(&mut self) {
         let Some(((r, c), text)) = self.edit.take() else { return };
-        if text != self.cells[r][c] {
-            self.cells[r][c] = text.clone();
-            for &(sr, sc) in &self.sel {
-                self.cells[sr][sc] = text.clone();
+        let mut targets = self.sel.clone();
+        targets.insert((r, c));
+        for (tr, tc) in targets {
+            if self.cells[tr][tc] != text {
+                self.cells[tr][tc] = text.clone();
+                self.dirty = true;
             }
-            self.dirty = true;
         }
     }
 
@@ -1139,7 +1169,17 @@ impl App {
                 }
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rows), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                egui::ScrollArea::vertical().max_height(rows.height()).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height(rows.height()).drag_to_scroll(false).show(ui, |ui| {
+                    // Dragging a selection past the view scrolls the list (Excel's).
+                    if st.dragging() && ui.input(|i| i.pointer.primary_down()) {
+                        if let Some(p) = ui.input(|i| i.pointer.latest_pos()) {
+                            let beyond = if p.y < rows.top() { p.y - rows.top() } else if p.y > rows.bottom() { p.y - rows.bottom() } else { 0.0 };
+                            if beyond != 0.0 {
+                                ui.scroll_with_delta(Vec2::new(0.0, -beyond.signum() * (beyond.abs() * 0.4).clamp(3.0, 40.0)));
+                                ui.ctx().request_repaint();
+                            }
+                        }
+                    }
                     for row in 0..st.cells.len() {
                         let (rr, _) = ui.allocate_exact_size(Vec2::new(rows.width(), row_h), Sense::hover());
                         let nr = Rect::from_min_size(rr.min, Vec2::new(cols[0].1 - 1.0, row_h - 1.0));
@@ -1195,6 +1235,7 @@ impl App {
                 });
                 });
                 st.scroll_to = None;
+                st.list_rect = Some(rows);
                 // The pointer: a press on a cell or a name selects (Shift
                 // extends, Ctrl adds), the button held drags the rectangle,
                 // the release ends it (#214). The cells' places are this
@@ -1202,10 +1243,12 @@ impl App {
                 let hit_at = |st: &CoefDlg, p: Pos2, clamp: bool| -> Option<Hit> {
                     let tops: Vec<(usize, Rect)> = st.cell_rects.iter().filter(|(c, _)| c.1 == 0).map(|(c, r)| (c.0, *r)).collect();
                     let (first, last) = (tops.first()?, tops.last()?);
-                    let row = match tops.iter().find(|(_, r)| p.y >= r.top() && p.y < r.bottom() + 1.0) {
+                    // Only the visible rows: a drag past the view clamps to its edge rows.
+                    let y = if clamp { p.y.clamp(rows.top(), rows.bottom() - 1.0) } else { p.y };
+                    let row = match tops.iter().find(|(_, r)| y >= r.top() && y < r.bottom() + 1.0) {
                         Some(t) => t.0,
                         None if !clamp => return None,
-                        None if p.y < first.1.top() => first.0,
+                        None if y < first.1.top() => first.0,
                         None => last.0,
                     };
                     let col = if p.x < inner.left() + cols[1].0 {
@@ -1217,7 +1260,7 @@ impl App {
                     };
                     Some(Hit { row, col })
                 };
-                let on_list = |p: Pos2| rows.contains(p) && ui.ctx().layer_id_at(p) == Some(ui.layer_id());
+                let on_list = |p: Pos2| rows.contains(p) && p.x < inner.left() + cols[2].0 + cols[2].1 && ui.ctx().layer_id_at(p) == Some(ui.layer_id());
                 if let Some(p) = pressed.filter(|p| on_list(*p) && !st.edit_rect.is_some_and(|er| er.contains(*p))) {
                     match hit_at(&st, p, false) {
                         Some(h) => st.press_cell(h, shift, ctrl),
@@ -1233,6 +1276,9 @@ impl App {
                 }
                 if ui.input(|i| i.pointer.primary_released()) {
                     st.release(now);
+                }
+                if st.reset_pending() {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(delay + 0.05));
                 }
                 let btn = |x: f32| crate::dialogs::dp(client, x, 380.0, 110.0, 23.0);
                 // No WS_GROUP on the buttons: with the control before them they make one span for the arrows (clone, 477: ↑ from ОК focuses the list).
@@ -1864,6 +1910,150 @@ mod ui_tests {
         let st = h.app.dlg.coef.as_ref().unwrap();
         assert!(st.edit.is_none());
         assert_eq!((2..5).map(|r| (st.cells[r][0].as_str(), st.cells[r][1].as_str())).collect::<Vec<_>>(), [("7", "7"); 3]);
+    }
+
+    /// A list of 40 rows (taller than its view), opened and settled.
+    fn long_list() -> Harness {
+        let mut h = Harness::coef_open();
+        let st = h.app.dlg.coef.as_mut().unwrap();
+        for i in st.cells.len()..40 {
+            st.keys.push((ChanKey::Analog(0), i));
+            st.names.push(format!("Ch{i}"));
+            st.cells.push(["1".into(), "1".into()]);
+        }
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        h
+    }
+
+    /// The rows drawn inside the list's view, from the cells' places.
+    fn visible_rows(h: &Harness) -> Vec<usize> {
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        let view = st.list_rect.unwrap();
+        st.cell_rects.iter().filter(|((_, c), r)| *c == 0 && r.top() >= view.top() && r.bottom() <= view.bottom()).map(|((r, _), _)| *r).collect()
+    }
+
+    /// #268 review: on a list taller than its view a drag upwards selects the rows spanned
+    /// (egui's drag-to-scroll must not move the list under the pointer).
+    #[test]
+    fn a_drag_up_on_a_long_list_selects_the_rows_spanned() {
+        let mut h = long_list();
+        let (a, b) = (h.at(8, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), (2..=8).map(|r| (r, 0)).collect::<Vec<_>>());
+    }
+
+    /// After the list scrolled, a drag between two visible rows spans exactly those.
+    #[test]
+    fn a_drag_on_a_scrolled_long_list_selects_the_rows_spanned() {
+        let mut h = long_list();
+        let at = h.at(1, 0);
+        h.click(at);
+        for _ in 0..28 {
+            h.key(egui::Key::ArrowDown);
+        }
+        for _ in 0..6 {
+            h.frame(vec![]);
+        }
+        let vis = visible_rows(&h);
+        assert!(vis[0] > 3, "the list scrolled: {vis:?}");
+        let (r0, r1) = (vis[2], vis[6]);
+        let (a, b) = (h.at(r0, 1), h.at(r1, 1));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), (r0..=r1).map(|r| (r, 1)).collect::<Vec<_>>());
+    }
+
+    /// A press on the scroll bar selects nothing and a drag of its thumb leaves the selection.
+    #[test]
+    fn the_scroll_bar_does_not_select_cells() {
+        let mut h = long_list();
+        let at = h.at(1, 0);
+        h.click(at);
+        let view = h.app.dlg.coef.as_ref().unwrap().list_rect.unwrap();
+        let (a, b) = (Pos2::new(view.right() - 4.0, view.top() + 30.0), Pos2::new(view.right() - 4.0, view.top() + 150.0));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(1, 0)]);
+    }
+
+    /// Dragging past the bottom of the view scrolls the list and the rectangle grows into rows the
+    /// user then sees; the rows hidden below are not taken in unseen.
+    #[test]
+    fn a_drag_past_the_view_autoscrolls_the_list() {
+        let mut h = long_list();
+        let vis = visible_rows(&h);
+        let last = *vis.last().unwrap();
+        let (a, view) = (h.at(2, 0), h.app.dlg.coef.as_ref().unwrap().list_rect.unwrap());
+        let below = Pos2::new(a.x, view.bottom() + 30.0);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.ptr(a, None, NONE);
+        h.ptr(a, Some(true), NONE);
+        h.ptr(Pos2::new(a.x, view.bottom() - 5.0), None, NONE);
+        let early = h.sel().iter().map(|c| c.0).max().unwrap();
+        assert!(early <= last + 1, "hidden rows are not selected by geometry");
+        for _ in 0..30 {
+            h.ptr(below, None, NONE);
+        }
+        let max = h.sel().iter().map(|c| c.0).max().unwrap();
+        assert!(max > last + 3, "the rectangle grew into rows scrolled into view: {max} vs {last}");
+        h.ptr(below, Some(false), NONE);
+        assert!(visible_rows(&h).contains(&max) || visible_rows(&h).iter().any(|r| *r + 2 >= max));
+    }
+
+    /// Dragging back onto the press cell inside a group leaves the single cell.
+    #[test]
+    fn dragging_back_onto_the_press_cell_in_a_group_leaves_the_cell() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(3, 0));
+        h.drag_mod(a, b, NONE);
+        let (p, away) = (h.at(1, 0), h.at(1, 1));
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.ptr(p, None, NONE);
+        h.ptr(p, Some(true), NONE);
+        h.ptr(away, None, NONE);
+        h.ptr(p, None, NONE);
+        h.ptr(p, Some(false), NONE);
+        assert_eq!(h.sel(), [(1, 0)]);
+    }
+
+    /// A Ctrl toggle-off leaves the anchor on a selected cell: F2 edits it, the selection stays.
+    #[test]
+    fn a_ctrl_toggle_off_does_not_leave_the_anchor_on_an_unselected_cell() {
+        let mut h = Harness::coef_open();
+        let at = h.at(0, 0);
+        h.click(at);
+        let at = h.at(2, 1);
+        h.click_mod(at, CTRL);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.click_mod(at, CTRL);
+        assert_eq!(h.sel(), [(0, 0)]);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!(st.anchor, Some((0, 0)));
+    }
+
+    /// With several cells selected the typed value goes into every one whose own text differs,
+    /// also when the edited cell already holds it.
+    #[test]
+    fn a_group_commit_fills_the_cells_that_differ_even_if_the_edited_one_has_the_value() {
+        let mut h = Harness::coef_open();
+        h.app.dlg.coef.as_mut().unwrap().cells[1][0] = "5".into();
+        let (a, b) = (h.at(0, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        let at = h.at(1, 0);
+        h.double_click(at);
+        h.key(egui::Key::Enter);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!((0..3).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["5", "5", "5"]);
+        assert!(st.dirty);
     }
 
     /// The edit opens with its caret at the start; a press below the rows
