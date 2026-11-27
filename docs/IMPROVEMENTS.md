@@ -98,7 +98,8 @@ misbehaves and the better behaviour is obvious (the maintainer,
 - **One compute at open.** The original recomputes every channel when
   applying the `.set` (`0x44f5b0`); ours spares that pass at an open when
   the settings change nothing it reads (the result is the same, tested).
-  Reason: about 2 s less on the UI thread for a big record.
+  Reason: a shorter open for a big record (the `.set` apply runs on the loader's thread, so the gain is the
+  progress dialog's wait).
 
 - **ASCII times past 2³¹ µs (#212).** The original's ASCII loader converts a row's rounded µs time to 32 bits
   (`0x4518b7` via `0x411bf0`): in a record longer than about 35.8 minutes every later row's time saturates at the
@@ -252,9 +253,10 @@ misbehaves and the better behaviour is obvious (the maintainer,
   Such a file cannot be read back correctly — inferred for a record labelled BINARY; an ASCII-labelled one reopens
   as garbage in both programs. Ours writes the DAT part of the channels the CFG part declares. Reason: the
   original's file is internally inconsistent; the controller's ruling (2026-11-01).
-- **Quick analysis on crafted input: a header-only `.osc` with a formula, and page 539 with two stored reduction methods (#193).**
-  (1) The original's `.osc` reader (`0x4524b0`) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
-  `0x450bc1`), so a header-only `.osc` loads with no samples. A formula over it runs the batch (`0x415780`) with zero
+- **Quick analysis on crafted input: a record without samples with a formula, and page 539 with two stored reduction methods (#193).**
+  (1) The original's `.osc` reader (`0x4524b0`; we no longer read `.osc`, #59) has no zero-sample check (only the `.cfg` / `.cff` loader has one,
+  `0x450bc1`), so a header-only `.osc` loads with no samples; ours has no such record from a file, but a record built in
+  memory can be one. A formula over it runs the batch (`0x415780`) with zero
   samples: the evaluator never runs, and the unit walk (`0x415bd0`) reads the token at the position an earlier
   evaluation left (only the per-sample evaluate resets it, `0x419997`; the tokenizer does not). The token getter
   (`0x419800`) is bounds-checked: a position past the formula's tokens throws string 343 «Синтаксическая ошибка в
@@ -264,7 +266,7 @@ misbehaves and the better behaviour is obvious (the maintainer,
   (2) A `.set` that stores two 539 reduction methods makes the formulas outnumber the names list (one set per arm);
   `0x4167f0` pairs them by index with no bounds check (`0x416c61`-`0x416c9d`) and reads past the names vector:
   undefined (garbage or a crash). Ours names the extra lines «_2», «_3»... Reason: both are reachable only through a
-  hand-made `.osc` / `.set`; a defined, error-free result beats a session-dependent fault or undefined behaviour.
+  hand-made `.osc` / `.set` (in ours, a hand-made `.set`); a defined, error-free result beats a session-dependent fault or undefined behaviour.
 - **The horizontal bar's first sample and position on long records (#196).** The original's Shift+wheel
   (`0x45d990`) and the bar's thumb drag (`0x45d6d0`) compute the first sample as (N − V) × position in 32-bit
   arithmetic before dividing, and the bar update (`0x45d4a0`) computes the position from first × 10000 the same way.

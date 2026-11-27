@@ -1,7 +1,7 @@
 //! The record settings file (`<base>.set`) and the document-modified flag
 //! (track S; `fvb_core::recset` holds the file format).
 //!
-//! Read (`0x44f5b0`, from the `.cfg` / `.osc` loaders): the tree replaces
+//! Read (`0x44f5b0`, from the `.cfg` / `.cff` loaders): the tree replaces
 //! the document's, then comments (unless loading settings by 32860),
 //! `Oscillogram` (rate, code page — a stored one wins over the guess), every
 //! channel's section, the formula channels, ОМП, the diagram pairs; the
@@ -152,20 +152,15 @@ pub fn needs_save_prompt(d: &Doc) -> bool {
 /// lowercased); anything else is refused.
 fn save_kind(p: &std::path::Path) -> Option<&'static str> {
     let s = p.to_string_lossy().to_lowercase();
-    [".cfg", ".osc", ".cff"].into_iter().find(|e| s.ends_with(e))
+    [".cfg", ".cff"].into_iter().find(|e| s.ends_with(e))
 }
 
 /// Save As's filter (`CDocManagerEx::DoPromptFileName` `0x447e30`, by the
-/// record path's last four characters): string 394 for an `.osc` record,
-/// 569 for the rest (`.cfg`, `.cff`, `.sto`; 399 for a `.zip`, which
-/// cannot be opened).
-pub fn save_filters(record: Option<&std::path::Path>) -> [(&'static str, &'static str); 2] {
-    let osc = record.is_some_and(|p| p.to_string_lossy().to_lowercase().ends_with(".osc"));
-    if osc {
-        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы OSC2 (*.osc)", "osc")]
-    } else {
-        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы COMTRADE'13 (*.cff)", "cff")]
-    }
+/// record path's last four characters): string 569 (`.cfg`, `.cff`). The
+/// original lists string 394 (`.cfg`, `.osc`) for an `.osc` record, 399 for a
+/// `.zip`; we open neither (#59), so there is one list.
+pub fn save_filters() -> [(&'static str, &'static str); 2] {
+    [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы COMTRADE'13 (*.cff)", "cff")]
 }
 
 /// The name after OK (`0x448208`–`0x448368`): lowered, tested against
@@ -520,6 +515,14 @@ impl Doc {
         ours | (old & !known)
     }
 
+    /// A digital or formula channel's ratios and a formula channel's alias as the last read of the `.set` left them:
+    /// the original's constructors give 1 / 1 and an empty alias, only the `.set` reader changes them, and the writer
+    /// `0x427bc0` writes them back as they are (L9.143; a hand-edited file's keys survive a save, #212, #215).
+    fn kept_ratios(t: &SetTree, key: &str) -> (f64, f64) {
+        let sec = t.section(key);
+        (sec.map_or(1.0, |s| s.get_dbl("PrimaryMul", 1.0)), sec.map_or(1.0, |s| s.get_dbl("SecondaryMul", 1.0)))
+    }
+
     /// `0x44cbc0` minus the serialisation: update the tree in place from the
     /// document. `print` = the change detector's variant (visibility, which
     /// 32845–32848 change without marking the document, and ОМП / pending
@@ -561,10 +564,11 @@ impl Doc {
             }
             let key = self.file_key(na + k);
             let known_d = flag::VISIBLE | flag::MODE_INSTANT | flag::MODE_RMS | flag::MODE_HARMONIC | flag::REMOVE_DC | flag::INVERT | flag::COMPUTED;
+            let (primary_mul, secondary_mul) = Self::kept_ratios(t, &key);
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, self.digital_flags(k), known_d) & mask,
-                primary_mul: 1.0,
-                secondary_mul: 1.0,
+                primary_mul,
+                secondary_mul,
                 // The ОМП's flags show their stored names: no alias, in any
                 // code page (#66).
                 // A flag the run made has none (#66); one that took over a
@@ -602,13 +606,22 @@ impl Doc {
             // ratios are the source's (a clone run).
             let (primary_mul, secondary_mul) = match pending.then(|| self.pending_of(j).map(|p| &p.pasted.channel)).flatten() {
                 Some(Ok(a)) => (a.primary, a.secondary),
-                _ => (1.0, 1.0),
+                _ if pending => (1.0, 1.0),
+                // A formula channel: whatever the file's section held.
+                _ => Self::kept_ratios(t, &key),
+            };
+            // A renamed pasted lane shows its new name as an alias (`0x425a30`), the section keeping the raw name; a
+            // formula channel's alias is the file's own.
+            let alias = if pending {
+                c.name_raw.as_ref().filter(|r| r.alias).map_or_else(String::new, |_| c.name.clone())
+            } else {
+                t.section(&key).map_or_else(String::new, |s| s.get_str("AliasName", ""))
             };
             let rec = ChannelRec {
                 show_flags: Self::merged_flags(t, &key, flags, known) & mask,
                 primary_mul,
                 secondary_mul,
-                alias: String::new(),
+                alias,
                 // `ch+0x140` as it is (a VM run, L9.213): a place colour
                 // writes CustomColorSet 0, colorCustom 0.
                 custom_color: c.custom_color.then(|| colorref(c.color)),
@@ -730,18 +743,20 @@ fn recompute_inputs(d: &Doc) -> Option<(usize, f64, f64, i32, Vec<fvb_core::comt
     Some((o.samples_per_cycle(), o.rate_r, o.line_freq, o.freq_sel, o.extra_freq.clone(), o.harmonic1_gain, chans))
 }
 
-impl App {
-    /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
-    /// 32860 (comments are not re-read).
-    pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
-        self.apply_settings(di, from_command, false);
-    }
+/// What [`Doc::settings_read`] leaves for the rest of the read.
+pub(crate) struct SettingsPass {
+    comment_recs: Option<Vec<CommentRec>>,
+    calc: Vec<(String, String)>,
+    /// The settings changed nothing a recompute reads: the open's values stand.
+    unchanged: bool,
+}
 
-    /// [`App::apply_record_settings`]; `fresh`: the document holds exactly
-    /// what `Doc::new` computed from the record as read (an open, on the
-    /// loader's thread), so the recompute may be spared.
-    fn apply_settings(&mut self, di: usize, from_command: bool, fresh: bool) {
-        let Some(d) = self.docs.get_mut(di) else { return };
+impl Doc {
+    /// The first half of the read of the settings tree into the document (`0x44f5b0`): everything up to the
+    /// recompute. `fresh`: the document holds exactly what `Doc::new` computed from the record as read (an open),
+    /// so the recompute may be spared when the settings change nothing it reads. Document-only, so it can run on the loader's thread (#32).
+    pub(crate) fn settings_read(&mut self, from_command: bool, fresh: bool) -> SettingsPass {
+        let d = self;
         let as_read = if fresh { recompute_inputs(d) } else { None };
         // The review elements name their channels; the painters resolve
         // those names among the shown ones (aliases included) — bound here
@@ -852,29 +867,26 @@ impl App {
         // what the open computed: ours keeps that (2 × the time on the UI
         // thread for a big record otherwise) and only takes the flagged
         // copy anew, for the names.
-        let d = &mut self.docs[di];
-        if as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown {
-            d.flagged = d.osc.clone();
-            d.series_gen += 1;
-        } else {
-            self.recompute_doc(di);
-        }
+        let unchanged = as_read.is_some() && as_read == recompute_inputs(d) && !d.omp.shown;
+        SettingsPass { comment_recs, calc, unchanged }
+    }
+
+    /// The second half: the formula channels (the batch, `0x415780`), then the new channels' own sections and the
+    /// comments. The alerts it raises (a failing batch) are returned for the caller to show.
+    pub(crate) fn settings_formulas(&mut self, pass: SettingsPass) -> Vec<String> {
+        let d = self;
+        let SettingsPass { comment_recs, calc, .. } = pass;
+        let mut alerts = Vec::new();
         if !calc.is_empty() {
-            let (active, status) = (self.active, self.status.clone());
-            self.active = Some(di);
             let batch: Vec<(String, String)> = calc;
             // A failing batch is its box; the rows stay in the definition list like any kept row, so the next
             // command that runs the batch shows the box again (clone, #174).
-            if self.append_computed(&batch).is_none() {
-                if let Some(d) = self.docs.get_mut(di) {
-                    let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
-                    d.loose_defs.extend(fresh);
-                }
+            if let Err(m) = d.append_computed_core(&batch) {
+                alerts.push(m);
+                let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
+                d.loose_defs.extend(fresh);
             }
-            self.active = active;
-            self.status = status;
         }
-        let d = &mut self.docs[di];
         for j in 0..d.computed.len() {
             let Some(sec) = d.set.tree.section(&d.computed[j].name).cloned() else { continue };
             let cur = ChannelRec { show_flags: d.computed_flags(j), primary_mul: 1.0, secondary_mul: 1.0, alias: String::new(), custom_color: None };
@@ -898,24 +910,70 @@ impl App {
             d.reflag_computed(j);
         }
         if let Some(recs) = comment_recs {
-            let d = &mut self.docs[di];
             d.comments = recs.iter().map(|r| d.comment_of(r)).collect();
+        }
+        d.set.print = d.settings_print();
+        alerts
+    }
+
+    /// Everything of an open that needs the document only, run on the loader's thread (`LoadingDlg`, #32): the
+    /// record's path and files, the text encodings, then the `<base>.set` read — the `.set` file, its settings and
+    /// the formula channels it defines, evaluated off the UI thread — and channel 0 selected (`0x44f245`). The
+    /// alerts it raises are left in [`Doc::open_alerts`].
+    pub(crate) fn finish_open(&mut self, path: &std::path::Path, cff: fvb_core::comtrade::CffSections, enc: Encoding) {
+        self.path = Some(path.to_path_buf());
+        self.rec_path = Some(path.to_path_buf());
+        self.cff = cff;
+        self.init_record_text(enc);
+        // Names may have been re-decoded; no flag is set yet.
+        self.flagged = self.osc.clone();
+        self.series_gen += 1;
+        self.init_set_keys();
+        self.set.tree.load_path(&recset::set_path(path));
+        let pass = self.settings_read(false, true);
+        let mut alerts = Vec::new();
+        if pass.unchanged {
+            self.flagged = self.osc.clone();
+            self.series_gen += 1;
+        } else {
+            // The ОМП is not shown in a document just opened: no re-run to do.
+            #[cfg(test)]
+            {
+                self.open_recomputes += 1;
+            }
+            self.recompute_signals();
+            alerts.extend(self.batch_error.take());
+        }
+        alerts.extend(self.settings_formulas(pass));
+        self.set.modified = false;
+        if !self.osc.analog.is_empty() {
+            self.selection.insert(ChanKey::Analog(0));
+        } else if !self.osc.digital.is_empty() {
+            self.selection.insert(ChanKey::Digital(0));
+        }
+        self.open_alerts = alerts;
+    }
+}
+
+impl App {
+    /// Read the settings for document `di` (`0x44f5b0`); `from_command` =
+    /// 32860 (comments are not re-read).
+    /// (An open reads them on the loader's thread, [`Doc::finish_open`].)
+    pub fn apply_record_settings(&mut self, di: usize, from_command: bool) {
+        let Some(d) = self.docs.get_mut(di) else { return };
+        let pass = d.settings_read(from_command, false);
+        if pass.unchanged {
+            let d = &mut self.docs[di];
+            d.flagged = d.osc.clone();
+            d.series_gen += 1;
+        } else {
+            self.recompute_doc(di);
+        }
+        for m in self.docs[di].settings_formulas(pass) {
+            self.dlg.push_alert(m);
         }
         // The diagram windows and the view re-read their sections.
         self.setfile.sync = None;
-        let d = &mut self.docs[di];
-        d.set.print = d.settings_print();
-    }
-
-    /// After a record was opened: read `<base>.set` (or the legacy `ini`).
-    pub fn load_record_settings(&mut self, di: usize) {
-        let Some(d) = self.docs.get_mut(di) else { return };
-        d.init_set_keys();
-        if let Some(p) = d.path.clone() {
-            d.set.tree.load_path(&recset::set_path(&p));
-        }
-        self.apply_settings(di, false, true);
-        self.docs[di].set.modified = false;
     }
 
     /// 32860 «Загрузка настроек...» (`0x44fd10`): pick a `.set`, read it
@@ -959,11 +1017,6 @@ impl App {
                     let bytes = comtrade::write_cff_numbered(&rec, &d.cff_sections(), d.codepage, &no).map_err(|e| e.to_string())?;
                     std::fs::write(target, bytes).map_err(|e| e.to_string())?;
                 }
-                ".osc" => {
-                    // `0x44ca80` writes the record's own bytes to the new name.
-                    let src = d.rec_path.clone().filter(|p| save_kind(p) == Some(".osc")).ok_or("Нет исходного файла .osc")?;
-                    std::fs::copy(src, target).map_err(|e| e.to_string())?;
-                }
                 _ => {
                     let (rec, no) = d.file_record();
                     let (cfg, dat) = comtrade::write_numbered(&rec, d.codepage, &no);
@@ -980,9 +1033,7 @@ impl App {
         let d = &mut self.docs[di];
         // The `.cfg` / `.cff` writers set the trigger sample to 0 whether
         // or not they wrote the record (`0x44d6c5`, `0x44daaa`).
-        if kind != ".osc" {
-            d.osc.trigger_sample = 0;
-        }
+        d.osc.trigger_sample = 0;
         let mut t = std::mem::take(&mut d.set.tree);
         d.store_settings(&mut t, false);
         d.set.tree = t;
@@ -1050,7 +1101,7 @@ impl App {
     pub fn ask_save_as(&mut self, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
         let Some(d) = self.docs.get(ai) else { return };
         let serial = d.serial;
-        let filters = save_filters(d.path.as_deref());
+        let filters = save_filters();
         // Proposed: the record's folder and its title without extension.
         // `0x447e30` lowers the name in place (three MakeLower calls) before
         // splitting it: folder and title come out lowercase — harmless on
@@ -1510,10 +1561,8 @@ mod tests {
 
     #[test]
     fn save_as_filters_and_extension() {
-        let f = save_filters(Some(Path::new("/r/a.OSC")));
-        assert_eq!(f.map(|x| x.1), ["cfg", "osc"]);
-        assert_eq!(save_filters(Some(Path::new("/r/a.sto"))).map(|x| x.1), ["cfg", "cff"]);
-        assert_eq!(save_filters(None).map(|x| x.1), ["cfg", "cff"]);
+        assert_eq!(save_filters().map(|x| x.1), ["cfg", "cff"]);
+        assert_eq!(save_kind(Path::new("/r/a.OSC")), None, "an .osc is no longer a save format (#59)");
         let exts = ["cfg", "cff"];
         assert_eq!(save_target(PathBuf::from("/r/x.CFF"), &exts, None), PathBuf::from("/r/x.CFF"));
         assert_eq!(save_target(PathBuf::from("/r/x.txt"), &exts, None), PathBuf::from("/r/x.txt.cfg"));
@@ -1744,6 +1793,87 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// #215 / L9.404, L9.143: a renamed pasted lane's new name is its `AliasName` (`0x427bc0` writes every channel's
+    /// alias, `0x425a30` sets it on a rename), the section still named by the raw name; an unrenamed lane writes none.
+    /// The saved `.set` reads back the alias.
+    #[test]
+    fn a_renamed_pasted_lane_writes_its_alias() {
+        let dir = temp_dir("pendalias");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &write_record(&dir));
+        app.docs[di].selection = [ChanKey::Analog(1)].into();
+        app.copy_channels_for_merge();
+        app.docs[di].selection = [ChanKey::Analog(0)].into();
+        app.paste_channels_for_merge();
+        let d = &mut app.docs[di];
+        let j = d.computed.iter().position(|c| c.formula == crate::merge_ui::PENDING).unwrap();
+        let raw = comtrade::decode_bytes(&d.computed[j].name_raw.as_ref().unwrap().bytes, Encoding::Cp1251);
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        assert_eq!(t.section(&raw).expect("the lane's section").get_str("AliasName", "-"), "", "no rename, no alias");
+        crate::chandlg::rename(d, ChanKey::Computed(j), "Лінія 7").unwrap();
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        let sec = t.section(&raw).expect("the section keeps the raw name");
+        assert_eq!(sec.get_str("AliasName", ""), "Лінія 7");
+        // The file written and read again.
+        let mut again = recset::SetTree::default();
+        again.load_bytes(&t.to_file_bytes());
+        let r = recset::read_channel(again.section(&raw).unwrap(), &recset::ChannelRec { show_flags: 0, primary_mul: 1.0, secondary_mul: 1.0, alias: String::new(), custom_color: None });
+        assert_eq!(r.alias, "Лінія 7");
+        // An empty name shows the file's name again: no alias.
+        crate::chandlg::rename(d, ChanKey::Computed(j), "").unwrap();
+        let mut t = d.set.tree.clone();
+        d.store_settings(&mut t, false);
+        assert_eq!(t.section(&raw).unwrap().get_str("AliasName", "-"), "");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #212 / #215, L9.143: ratios a hand-edited `.set` put into a digital or a formula channel's section (and an
+    /// alias into a formula channel's) are kept by the original and written back by `0x427bc0`; they survive a save.
+    #[test]
+    fn a_hand_edited_digital_or_formula_sections_ratios_survive_a_save() {
+        let dir = temp_dir("keptmul");
+        let cfg = write_record(&dir);
+        let key = {
+            let mut app = App::new();
+            app.persist = false;
+            let di = open(&mut app, &cfg);
+            let d = &app.docs[di];
+            d.file_key(d.osc.analog.len())
+        };
+        let xml = format!(
+            "<settings><category name=\"CalculatedChannels\" Channel0=\"X,Ua+Ub\"/>             <category name=\"{key}\" PrimaryMul=\"1234.5\" SecondaryMul=\"7.25\"/>             <category name=\"X\" PrimaryMul=\"1234.5\" SecondaryMul=\"7.25\" AliasName=\"Хт\"/></settings>"
+        );
+        std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert_eq!(app.docs[di].computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        let mut t = app.docs[di].set.tree.clone();
+        app.docs[di].store_settings(&mut t, false);
+        for k in [key.as_str(), "X"] {
+            let sec = t.section(k).unwrap();
+            assert_eq!((sec.get_dbl("PrimaryMul", 0.0), sec.get_dbl("SecondaryMul", 0.0)), (1234.5, 7.25), "{k}");
+        }
+        assert_eq!(t.section("X").unwrap().get_str("AliasName", ""), "Хт");
+        // Through a real save and the file read again.
+        app.docs[di].set.modified = true;
+        assert!(app.save_active());
+        let mut again = recset::SetTree::default();
+        again.load_bytes(&std::fs::read(dir.join("rec.set")).unwrap());
+        assert_eq!(again.section(&key).unwrap().get_dbl("PrimaryMul", 0.0), 1234.5);
+        assert_eq!(again.section("X").unwrap().get_dbl("SecondaryMul", 0.0), 7.25);
+        // A section that never held any writes 1 / 1 and no alias, as the constructors give.
+        let mut t2 = app.docs[di].set.tree.clone();
+        t2.sections.remove("X");
+        app.docs[di].store_settings(&mut t2, false);
+        let x = t2.section("X").unwrap();
+        assert_eq!((x.get_dbl("PrimaryMul", 0.0), x.get_dbl("SecondaryMul", 0.0), x.get_str("AliasName", "-")), (1.0, 1.0, String::new()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A pasted DIGITAL lane in front of a digital channel (a clone run, byte for
     /// byte): the channel after it is numbered 2, the lane's `.set` section has
     /// bit 14 and no `NetFreq` (#28).
@@ -1832,9 +1962,8 @@ mod tests {
     fn open_and_recompute(cfg: &Path) -> (usize, String, String) {
         let mut app = App::new();
         app.persist = false;
-        crate::recdlg::RECOMPUTES.with(|c| c.set(0));
         let di = open(&mut app, cfg);
-        let runs = crate::recdlg::RECOMPUTES.with(|c| c.get());
+        let runs = app.docs[di].open_recomputes;
         let opened = computed_state(&app.docs[di]);
         app.recompute_doc(di);
         (runs, opened, computed_state(&app.docs[di]))
@@ -1875,6 +2004,39 @@ mod tests {
         let (runs, opened, again) = open_and_recompute(&cfg);
         assert_eq!(runs, 1);
         assert_eq!(opened, again);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #32 / L9.332: the `.set`'s formula channels are evaluated on the loader's thread (with the `.set` read), not on
+    /// the UI thread that adds the document; a failing batch's box travels with the document.
+    #[test]
+    fn the_sets_formula_channels_are_evaluated_off_the_ui_thread() {
+        let dir = temp_dir("offui");
+        let cfg = write_record(&dir);
+        let set = |calc: &str| {
+            let xml = format!("<settings><category name=\"CalculatedChannels\" {calc}/></settings>");
+            std::fs::write(dir.join("rec.set"), fvb_core::settree::utf16le_crlf(&xml)).unwrap();
+        };
+        set("Channel0=\"X,Ua+Ub\"");
+        // The loader's own function hands over the finished document.
+        let doc = crate::app::open_file(&cfg, Encoding::Cp1251, None).unwrap();
+        assert_eq!(doc.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["X"]);
+        assert_eq!(doc.computed[0].samples.len(), doc.osc.sample_count());
+        assert!(doc.selection.contains(&ChanKey::Analog(0)) && !doc.set.modified && doc.open_alerts.is_empty());
+        // Through the application: this (the UI) thread runs no formula batch.
+        crate::app::FORMULA_BATCHES.with(|c| c.set(0));
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert_eq!(app.docs[di].computed.len(), 1, "the channel is there");
+        assert_eq!(crate::app::FORMULA_BATCHES.with(|c| c.get()), 0, "evaluated by the loader, not by the UI thread");
+        // A formula that fails: its box comes with the document, the row stays in the definition list.
+        set("Channel0=\"Y,Ua+\"");
+        let mut app = App::new();
+        app.persist = false;
+        let di = open(&mut app, &cfg);
+        assert!(app.dlg.alert().is_some(), "the batch's box");
+        assert!(app.docs[di].computed.is_empty() && app.docs[di].loose_defs.iter().any(|l| l.0 == "Y"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

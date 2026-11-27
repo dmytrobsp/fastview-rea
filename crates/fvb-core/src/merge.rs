@@ -264,9 +264,10 @@ impl Lane {
     }
 }
 
-/// Times in whole µs, as `0x428c20` stores the padding's.
+/// Times in whole µs, as `0x428c20` stores the padding's: rounded as every loader does (`0x411bf0`), an exact tie up
+/// (toward +∞), so −2.5 µs is −2 µs (#212).
 fn us(t: f64) -> f64 {
-    (t * 1e6).round() / 1e6
+    crate::comtrade::round_fv(t * 1e6) / 1e6
 }
 
 /// The padder `0x428c20` shifts and pads a channel's own frequency vector
@@ -518,6 +519,16 @@ mod tests {
                 a * (2.0 * std::f64::consts::PI * k as f64 / per as f64 + phase).sin()
             })
             .collect()
+    }
+
+    /// #212: the padding's µs rounding takes a tie up like the loaders' (`0x411bf0`), a negative one too.
+    #[test]
+    fn padding_times_round_a_us_tie_up() {
+        assert_eq!(us(-2.5e-6), -2e-6, "a negative tie goes toward +infinity, not away from zero");
+        assert_eq!(us(-0.5e-6), 0.0);
+        assert_eq!(us(2.5e-6), 3e-6);
+        assert_eq!(us(-2.6e-6), -3e-6);
+        assert_eq!(us(1.4e-6), 1e-6);
     }
 
     #[test]

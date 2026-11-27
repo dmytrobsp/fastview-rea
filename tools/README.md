@@ -127,17 +127,15 @@ line: the output has the same two lines with an invented count and invented, irr
 single-file **`.cff`** (the sections `--- file type: KIND ---` in the source's order, the data section last with its
 byte count after a colon or running to the end of the file; every text section, INF and SET too, is invented like a
 `.hdr` and checked like one; the BOM, encoding and line endings are kept; the data marker gets the new byte count),
-or an OSC2 **`.osc`** (128-byte big-endian blocks; the version, block geometry, tags, channel counts, line layout,
-samples per block and number of timing codes are kept, and every name, phase, unit, calibration number, ratio, timing
-code, the trigger moment and every sample is invented; bytes the format description does not name are written as
-zeros; the pre-trigger block count and the ratios between the timing codes stay, as the rate segments' ratios do for a `.cfg`; a ratio outside the reader's range is written as 1). Marker lines of a `.cff` and tag lines of an `.osc` are written in their plain form, whatever else the source's line held is not copied. The check indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample
-windows like the fields of a `.cfg`. Layouts the tools cannot take (a `.cff` without a CFG or DAT section, with text
-before its first section or a section after the data; an `.osc` with an unknown text tag, no samples-per-block block,
-sample records that do not fit a data block, or channel lines of another shape) are refused with a message.
+or (as a source of the **user-data check only**) an OSC2 **`.osc`**: the project no longer opens `.osc` (#59), so the generator refuses it,
+but the check still indexes an `.osc`'s names, calibration numbers, ratios, timing codes, trigger moment and sample windows like the fields of a
+`.cfg`, so a user's `.osc` can never leak into a fixture. Marker lines of a `.cff` are written in their plain form, whatever else the source's line
+held is not copied. Layouts the tools cannot take (a `.cff` without a CFG or DAT section, with text before its first section or a section after
+the data) are refused with a message.
 
-`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from seven hand-written
+`tools/records/make_fixtures.py [--check]` rebuilds `crates/fvb-core/tests/data/generated/` from six hand-written
 sources (invented, in the script: a 2013 record with a BOM, a 1999 BINARY one, a cut-name binary32 one, a 1991 one,
-a timestamp-only one, a `.cff`, an `.osc`) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them (the fixtures are compiled into the
+a timestamp-only one, a `.cff`) with fixed seeds; `crates/fvb-core/tests/generated_records.rs` reads them (the fixtures are compiled into the
 test executable and written to the temporary directory on first use, so an executable cross-built for Windows runs on a
 clone as it is). The tools' tests: `python3 -I -m unittest discover -s tools/records -p 'test_*.py'` (CI runs them).
 

@@ -18,7 +18,7 @@ pub enum ComtradeError {
     #[error("malformed .dat: {0}")]
     Dat(String),
     /// String 330 — the original's "invalid file format" (unknown data file
-    /// type, a `.cff` without CFG or DAT section, a bad `.osc`).
+    /// type, a `.cff` without CFG or DAT section).
     #[error("Неправильный формат файла")]
     Format,
     /// String 330 with its detail: the `.cfg` loader's check that the data
@@ -139,7 +139,7 @@ pub struct Oscillogram {
     /// Nominal samples-per-second of the first rate section (for DFT windowing).
     pub sample_rate: f64,
     /// Gain applied to the fundamental by `fourie:` (`rec+0x278`): 1 for
-    /// COMTRADE, set by the OSC2 version (1.0128 / 1.00259 / 1.014065).
+    /// COMTRADE (the OSC2 reader that set it is gone, #59).
     pub harmonic1_gain: f64,
     /// The record's time stamps as the `.cfg` writes them (the loader
     /// `0x450e70` keeps the four tokens: `doc+0x24c` start date, `+0x250`
@@ -147,7 +147,7 @@ pub struct Oscillogram {
     pub stamps: Stamps,
     /// The sample-rate segments (`rec+0x1f0`): the rate and `end`, the
     /// 0-based index of the next run's first sample (COMTRADE's endsamp,
-    /// OSC's block × samples per block).
+    /// the original's OSC2 block × samples per block, which we no longer read).
     pub rate_segs: Vec<(f64, usize)>,
     /// The record's integer rate (`rec+0x228`, `0x453db0`).
     pub rate_r: f64,
@@ -158,7 +158,7 @@ pub struct Oscillogram {
     /// `net_frequency` read.
     pub freq_track: Vec<f64>,
     /// The trigger's sample (`doc+0x214`): pre-trigger blocks × samples per
-    /// block for `.osc` (`0x452d89`), 0 for COMTRADE and after a `.cfg` /
+    /// block for `.osc` (`0x452d89`; not read any more, #59), 0 for COMTRADE and after a `.cfg` /
     /// `.cff` Save-As (`0x44d6c5`, `0x44daaa`).
     pub trigger_sample: usize,
     /// «Частота для коррекции расчётных значений» (`rec+0x874`): 0 none,
@@ -293,34 +293,30 @@ impl Progress {
         self.total.store((bytes as u64 * 5) as u32, Ordering::Relaxed);
     }
 
-    /// `T − remaining` (BINARY / binary32 records, `.osc` blocks).
+    /// `T − remaining` (BINARY / binary32 records).
     fn set_remaining(&self, remaining: usize) {
         self.pos.store(self.total.load(Ordering::Relaxed).wrapping_sub(remaining as u32), Ordering::Relaxed);
     }
 
-    /// The recompute phase (`0x428490`, `0x428809`): `step` added per sample
-    /// of every analog channel, cancel polled per sample. `step` =
-    /// ⌊T / (N·C)⌋ (`0x450c17`; `.osc` ×5, `0x4525d3`), N the first
-    /// channel's samples, C all analog + digital channels.
-    fn recompute_phase(&self, rec: &Oscillogram, osc: bool) {
+    /// The recompute phase's counter (`0x428490`, `0x428809`): the original adds `step` per sample of every analog
+    /// channel while its values are rebuilt, `step` = ⌊T / (N·C)⌋ (`0x450c17`), N the first channel's samples, C all
+    /// analog + digital channels. Per analog channel, what it adds; the caller adds each with [`Progress::advance`]
+    /// as it builds that channel's derived values (#32), so the bar reaches its last value when the build does, not
+    /// at the end of the parse.
+    pub fn recompute_steps(&self, rec: &Oscillogram) -> Vec<u32> {
         let n = rec.analog.first().map(|c| c.samples.len()).or_else(|| rec.digital.first().map(|c| c.samples.len())).unwrap_or(0);
         let c = rec.analog.len() + rec.digital.len();
         let nc = (n as u64 * c as u64) as u32;
         if nc == 0 {
-            return;
+            return vec![0; rec.analog.len()];
         }
-        let mut step = self.total.load(Ordering::Relaxed) / nc;
-        if osc {
-            step = step.wrapping_mul(5);
-        }
-        for ch in &rec.analog {
-            for chunk in ch.samples.chunks(1024) {
-                if self.cancelled() {
-                    return;
-                }
-                self.pos.fetch_add(step.wrapping_mul(chunk.len() as u32), Ordering::Relaxed);
-            }
-        }
+        let step = self.total.load(Ordering::Relaxed) / nc;
+        rec.analog.iter().map(|ch| step.wrapping_mul(ch.samples.len() as u32)).collect()
+    }
+
+    /// Add `by` to the position (wrapping, as the original's 32-bit counter).
+    pub fn advance(&self, by: u32) {
+        self.pos.fetch_add(by, Ordering::Relaxed);
     }
 }
 
@@ -343,10 +339,6 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     // 0x44ee70: the last four characters, lowercased, choose the reader.
     let name = path.to_string_lossy();
     let ext: String = name.chars().rev().take(4).collect::<Vec<_>>().into_iter().rev().collect::<String>().to_lowercase();
-    if ext == ".osc" {
-        let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
-        return parse_osc_progress(&bytes, enc, prog);
-    }
     if ext == ".cff" {
         let bytes = std::fs::read(path).map_err(|e| ComtradeError::Io(e.to_string()))?;
         return parse_cff_progress(&bytes, enc, prog).map(|(rec, _)| rec);
@@ -366,9 +358,6 @@ pub fn load_progress(path: impl AsRef<Path>, enc: Encoding, prog: Option<&Progre
     let dat = std::fs::read(&dat_path).map_err(|e| ComtradeError::Io(e.to_string()))?;
     parse_dat(&mut rec, fmt, &dat, prog)?;
     check_samples(&rec, || crate::recset::record_base(path))?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec, false);
-    }
     Ok(rec)
 }
 
@@ -562,9 +551,6 @@ pub fn parse(cfg_text: &str, dat: &[u8]) -> Result<Oscillogram, ComtradeError> {
 fn parse_progress(cfg_text: &str, dat: &[u8], prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
     let (mut rec, fmt) = parse_cfg(cfg_text)?;
     parse_dat(&mut rec, fmt, dat, prog)?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec, false);
-    }
     Ok(rec)
 }
 
@@ -656,9 +642,6 @@ pub fn parse_cff_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) 
     }
     parse_dat(&mut rec, fmt, dat, prog)?;
     check_samples(&rec, cff_temp_base)?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec, false);
-    }
     Ok((rec, sections))
 }
 
@@ -734,17 +717,6 @@ pub fn write_cff_numbered(osc: &Oscillogram, sections: &CffSections, names: Enco
     }
     out.extend(dat);
     Ok(out)
-}
-
-/// Big-endian readers over a block.
-fn be_i16(b: &[u8], o: usize) -> i16 {
-    i16::from_be_bytes([b[o], b[o + 1]])
-}
-fn be_u16(b: &[u8], o: usize) -> u16 {
-    u16::from_be_bytes([b[o], b[o + 1]])
-}
-fn be_f32(b: &[u8], o: usize) -> f64 {
-    f64::from(f32::from_be_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]))
 }
 
 /// The original's rounding (`FUN_00411bf0`): floor unless at least half-way.
@@ -833,248 +805,6 @@ fn snap_rate(fs: f64, fnom: f64) -> f64 {
         .unwrap_or_else(|| int_rate(fs, fnom))
 }
 
-/// Read an OSC2 oscillogram (`.osc`, `0x4524b0`; layout in
-/// `docs/original/specs/formats.md`): big-endian 128-byte blocks — header, calibration,
-/// channel-table text, info, then fixed-size data blocks with a per-block
-/// sample-rate code.
-pub fn parse_osc(bytes: &[u8], enc: Encoding) -> Result<Oscillogram, ComtradeError> {
-    parse_osc_progress(bytes, enc, None)
-}
-
-/// [`parse_osc`] reporting progress: total 5 × the bytes after the header,
-/// position `T − remaining` after each data block (`0x453080`, `0x45342d`;
-/// no cancel poll in the block loop), then the recompute phase with the
-/// ×5 step.
-pub fn parse_osc_progress(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
-    let rec = parse_osc_blocks(bytes, enc, prog)?;
-    if let Some(p) = prog {
-        p.recompute_phase(&rec, true);
-    }
-    Ok(rec)
-}
-
-/// An OSC2 analog line (`0x424800`, kind 0): split at every comma, no
-/// trim; exactly 4 fields (index, name, phase, unit) or 5 (index, name,
-/// phase, ccbm, unit), else nothing; an empty name reads «Резерв.».
-/// Returns (name, phase, ccbm, unit).
-fn osc_analog_line(line: &str) -> (String, String, String, String) {
-    let f: Vec<&str> = line.split(',').collect();
-    let (name, phase, ccbm, unit) = match f.len() {
-        4 => (f[1], f[2], "", f[3]),
-        5 => (f[1], f[2], f[3], f[4]),
-        _ => ("", "", "", ""),
-    };
-    (osc_name(name), phase.into(), ccbm.into(), unit.into())
-}
-
-/// An OSC2 digital line (`0x424800`, kind 1; an OSC2 record has no
-/// revision): the name from after the first comma to the next comma
-/// searched from two characters on — so an empty name takes the rest —, the
-/// normal state `_wtoi` after it (the whole line without that comma); no
-/// phase. Returns (name, normal).
-fn osc_digital_line(line: &str) -> (String, i32) {
-    let c: Vec<char> = line.chars().collect();
-    let find = |from: usize| (from..c.len()).find(|&i| c[i] == ',');
-    let start = find(0).map_or(0, |p| p + 1);
-    let end = find(start + 1);
-    let name: String = c[start.min(c.len())..end.unwrap_or(c.len())].iter().collect();
-    let rest: String = c[end.map_or(0, |p| p + 1)..].iter().collect();
-    (osc_name(&name), wtoi(&rest) as i32)
-}
-
-fn osc_name(name: &str) -> String {
-    if name.is_empty() { "Резерв.".into() } else { name.into() }
-}
-
-fn parse_osc_blocks(bytes: &[u8], enc: Encoding, prog: Option<&Progress>) -> Result<Oscillogram, ComtradeError> {
-    const B: usize = 128;
-    let block = |i: usize| bytes.get(i * B..(i + 1) * B).ok_or(ComtradeError::Format);
-    let b0 = block(0)?;
-    let (major, minor, h) = (b0[0], b0[1], b0[2] as usize);
-    let k = if b0[0x7D] != 0 { 2 } else { 1 };
-    if h < k + 1 {
-        return Err(ComtradeError::Format);
-    }
-    let gain = match (major, minor) {
-        (2, 3 | 4 | 5 | 8) => 1.0128,
-        (2, 6 | 7) => 1.00259,
-        (2, 9) => 1.014065,
-        _ => 1.0,
-    };
-    // Channel table (`0x452840`–`0x452c40`): each text block on its own —
-    // its first three characters the tag, compared exactly; the count
-    // `_wtoi` of characters 4..7; its lines CR / LF tokens (empty ones
-    // skipped), the first one the tag line; a block runs out of lines into
-    // empty ones (→ «Резерв.» channels).
-    let (mut analog_defs, mut digital_defs, mut n_per_block) = (Vec::new(), Vec::new(), None);
-    for i in k + 1..h {
-        let raw: Vec<u8> = block(i)?.iter().copied().filter(|b| *b != 0).collect();
-        let text = decode_text_enc(&raw, enc);
-        let tag: String = text.chars().take(3).collect();
-        let count = wtoi(&text.chars().skip(4).take(3).collect::<String>());
-        let mut lines = text.split(['\r', '\n']).filter(|l| !l.is_empty()).skip(1);
-        let mut next = || lines.next().unwrap_or("");
-        match tag.as_str() {
-            "nnA" => (0..count).for_each(|_| analog_defs.push(osc_analog_line(next()))),
-            "nnD" => (0..count).for_each(|_| digital_defs.push(osc_digital_line(next()))),
-            "nnF" => n_per_block = Some(wtoi(text.find(',').map_or(&text[..], |p| &text[p + 1..])).max(0) as usize),
-            _ => return Err(ComtradeError::Format),
-        }
-    }
-    let n = n_per_block.filter(|n| *n > 0).ok_or(ComtradeError::Format)?;
-    let (na, nd) = (analog_defs.len(), digital_defs.len());
-    // Calibration (a, b) per analog channel.
-    let mut cal = vec![(1.0, 0.0); na];
-    for (i, c) in cal.iter_mut().enumerate() {
-        if i / 8 >= k {
-            break;
-        }
-        let blk = block(1 + i / 8)?;
-        let j = i % 8;
-        let (f1, s1, f2, s2) = (be_f32(blk, 4 * j), be_i16(blk, 0x20 + 2 * j), be_f32(blk, 0x30 + 4 * j), be_i16(blk, 0x50 + 2 * j));
-        let a = if f2 == 0.0 { 1.0 } else { f1 / (f2 * 3276.8) };
-        let b = -(f64::from(s1) + f64::from(s2)) * a;
-        *c = if a.is_finite() && b.is_finite() { (a, b) } else { (1.0, 0.0) };
-    }
-    // Info block.
-    let info = block(h)?;
-    let max_blocks = be_i16(info, 2).max(0) as usize;
-    let ratio = |i: usize| {
-        let r = if 0x40 + 4 * i + 4 <= B { be_f32(info, 0x40 + 4 * i) } else { 1.0 };
-        if r > 0.1 && r < 100000.0 {
-            r
-        } else {
-            1.0
-        }
-    };
-    let mut analog: Vec<AnalogChannel> = analog_defs
-        .iter()
-        .enumerate()
-        .map(|(i, (name, phase, ccbm, unit))| AnalogChannel {
-            index: i as u32 + 1,
-            id: name.clone(),
-            phase: phase.clone(),
-            ccbm: ccbm.clone(),
-            unit: crate::units::normalize(unit).unit,
-            raw_unit: unit.clone(),
-            unit_mult: crate::units::normalize(unit).mult,
-            per_second: crate::units::normalize(unit).per_second,
-            a: cal[i].0,
-            b: cal[i].1,
-            skew: 0.0,
-            primary: ratio(i),
-            secondary: 1.0,
-            primary_tok: String::new(),
-            secondary_tok: String::new(),
-            is_primary: false,
-            samples: Vec::new(),
-            own_freq: Vec::new(),
-            own_rate: 0.0,
-        })
-        .collect();
-    let mut digital: Vec<DigitalChannel> = digital_defs
-        .iter()
-        .enumerate()
-        .map(|(i, (name, normal))| DigitalChannel { index: i as u32 + 1, id: name.clone(), phase: String::new(), normal: *normal, samples: Vec::new(), own_rate: 0.0 })
-        .collect();
-    let m = analog_defs.iter().filter(|(_, _, _, u)| matches!(u.trim(), "V" | "В" | "A" | "А" | "")).count() as f64;
-    let words = nd / 16;
-    let rec_len = (na + words) * 2;
-    let mul: Vec<f64> = analog.iter().map(|c| c.unit_mult).collect();
-    let fnom = 50.0;
-    let (mut rate, mut first_rate) = (2400.0, None);
-    // Segments (`0x453010`): block 0 sets R (snapped) as the current rate;
-    // a later block whose rate differs pushes {current, its first sample}.
-    let (mut rate_segs, mut cur) = (Vec::new(), f64::NAN);
-    let mut time = Vec::new();
-    let mut t_us: i64 = 0;
-    let mut bi = 0;
-    if let Some(p) = prog {
-        p.set_total(bytes.len().saturating_sub((h + 1) * B));
-        p.pos.store(0, Ordering::Relaxed);
-    }
-    while (max_blocks == 0 || bi < max_blocks) && (h + 1 + bi + 1) * B <= bytes.len() {
-        let blk = block(h + 1 + bi)?;
-        let code = f64::from(be_i16(blk, 0x7C));
-        let fs = round_fv(1e6 / (code * 0.03125 * m));
-        if fs.is_finite() && fs >= 1.0 {
-            rate = if first_rate.is_none() { snap_rate(fs, fnom) } else { fs };
-        }
-        first_rate.get_or_insert(rate);
-        if bi == 0 {
-            cur = rate;
-        } else if rate != cur {
-            rate_segs.push((cur, bi * n));
-            cur = rate;
-        }
-        // N records from the block start; nothing checks that they end
-        // before the rate code at +0x7C or the block end.
-        let base = (h + 1 + bi) * B;
-        for s in 0..n {
-            let off = base + s * rec_len;
-            if off + rec_len > bytes.len() {
-                break;
-            }
-            for (ci, ch) in analog.iter_mut().enumerate() {
-                let raw = f64::from(be_i16(bytes, off + 2 * ci));
-                ch.samples.push(raw * mul[ci] * ch.a + ch.b);
-            }
-            for w in 0..words {
-                let word = be_u16(bytes, off + 2 * (na + w));
-                for bit in 0..16 {
-                    if let Some(d) = digital.get_mut(16 * w + bit) {
-                        d.samples.push((word >> bit) & 1 == 1);
-                    }
-                }
-            }
-            time.push(t_us as f64 / 1e6);
-            t_us += (1e6 / rate).floor() as i64;
-        }
-        bi += 1;
-        if let Some(p) = prog {
-            p.set_remaining(bytes.len().saturating_sub((h + 1 + bi) * B));
-        }
-    }
-    for d in digital.iter_mut().skip(16 * words) {
-        d.samples = vec![false; time.len()];
-    }
-    // Then {R, total} unless the last run already is R up to the end — the
-    // final run always carries R (`0x453bdb`–`0x453d13`).
-    let r = first_rate.unwrap_or(rate);
-    if !(cur == r && rate_segs.last().is_some_and(|s: &(f64, usize)| s.1 == time.len())) {
-        rate_segs.push((r, time.len()));
-    }
-    let mut rec = Oscillogram {
-        station: String::new(),
-        device: format!("OSC Осциллограф. Версия {major}.{minor}"),
-        rev_year: 0,
-        // Nothing on the OSC path sets the revision (only the `.cfg`
-        // parser `0x450e70` writes rec+0x240): saved as COMTRADE the record
-        // has no revision field, 10-field analog lines, `n,name,state`
-        // digital lines and no multiplier line (`0x44e556`; L9.197).
-        rev_text: String::new(),
-        format: "ASCII".into(),
-        line_freq: fnom,
-        time,
-        analog,
-        digital,
-        sample_rate: first_rate.unwrap_or(rate),
-        harmonic1_gain: gain,
-        stamps: osc_stamps(info, n, first_rate.unwrap_or(rate)),
-        rate_segs,
-        rate_r: r,
-        time_mult: 1.0,
-        freq_track: Vec::new(),
-        trigger_sample: (be_i16(info, 0xE).max(0) as usize) * n,
-        freq_sel: 0,
-        extra_freq: Vec::new(),
-        text_enc: None,
-        text_bom: false,
-    };
-    rec.rebuild_freq_track();
-    Ok(rec)
-}
-
 /// A `.cfg`'s `rec+0x228` (`0x45146a`): `0x453db0` of the mean of the
 /// rates, snapped only with several rate lines.
 fn comtrade_rate(rates: &[RateSection], f: f64) -> f64 {
@@ -1084,46 +814,6 @@ fn comtrade_rate(rates: &[RateSection], f: f64) -> f64 {
     } else {
         int_rate(mean, f)
     }
-}
-
-/// A BCD byte (`0x44a570`).
-fn bcd(b: u8) -> u32 {
-    u32::from(b >> 4) * 10 + u32::from(b & 15)
-}
-
-/// The OSC info block's trigger moment, BCD-decoded (`0x44a570`,
-/// `0x44a690`): year = byte 0x0B + 2000, month 0x0A, day 9, hour 8,
-/// minute 7, second 6, milliseconds 10 × byte 5.
-pub fn osc_trigger(info: &[u8]) -> Option<[u32; 7]> {
-    let b = |i: usize| info.get(i).copied().map(bcd);
-    Some([2000 + b(0xB)?, b(0xA)?, b(9)?, b(8)?, b(7)?, b(6)?, 10 * b(5)?])
-}
-
-/// The `.osc` record's stamps (`0x452d42`–`0x452e57`): the trigger from
-/// the info block; the start (pretrig × N − 1) sample periods of
-/// ⌊10⁷ / R⌋ × 100 ns before it (pretrig the i16 at 0x0E — so with no
-/// pre-trigger blocks the start is a period after the trigger); dates as
-/// `%i/%02i/%4i` month first, times `%i:%02i:%02i.%03i`.
-fn osc_stamps(info: &[u8], n: usize, rate: f64) -> Stamps {
-    let Some([y, mo, d, h, mi, s, ms]) = osc_trigger(info) else { return Stamps::default() };
-    if !(1..=12).contains(&mo) || !(1..=31).contains(&d) || h > 23 || mi > 59 || s > 59 {
-        return Stamps::default();
-    }
-    let ticks = |y: u32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32| {
-        days_from_civil(i64::from(y), i64::from(mo), i64::from(d)) * 864_000_000_000 + ((i64::from(h) * 3600 + i64::from(mi) * 60 + i64::from(s)) * 1000 + i64::from(ms)) * 10_000
-    };
-    let trig = ticks(y, mo, d, h, mi, s, ms);
-    let period = if rate.round() >= 1.0 { 10_000_000 / rate.round() as i64 } else { 0 };
-    let pretrig = i64::from(be_i16(info, 0xE));
-    let start = trig - (pretrig * n as i64 - 1) * period;
-    let fmt = |t: i64| {
-        let (days, rem) = (t.div_euclid(864_000_000_000), t.rem_euclid(864_000_000_000));
-        let (y, m, d) = civil_from_days(days);
-        let ms = rem / 10_000;
-        (format!("{m}/{d:02}/{y:4}"), format!("{}:{:02}:{:02}.{:03}", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000))
-    };
-    let ((sd, st), (td, tt)) = (fmt(start), fmt(trig));
-    Stamps { start_date: sd, start_time: st, trigger_date: td, trigger_time: tt, ..Stamps::default() }
 }
 
 fn sibling_paths(path: &Path) -> Result<(std::path::PathBuf, std::path::PathBuf), ComtradeError> {
@@ -2173,29 +1863,6 @@ mod stamp_seconds_tests {
         assert_eq!(t(&st("", "09:05:03.5"), 0).as_deref(), Some("9:05:03.000"));
         assert_eq!(t(&st("04/19/2023", "25:00:00.0"), 0), None);
         assert_eq!(t(&st("", ""), 0), None);
-    }
-}
-
-#[cfg(test)]
-mod osc_stamp_tests {
-    use super::*;
-
-    /// `0x452d42`–`0x452e57`: the trigger from the BCD info block, the start
-    /// (pretrig × N − 1) periods before it; month-first, unpadded hour.
-    #[test]
-    fn osc_stamps_from_the_info_block() {
-        let mut info = vec![0u8; 128];
-        info[5..12].copy_from_slice(&[0x45, 0x30, 0x20, 0x09, 0x07, 0x03, 0x24]);
-        info[0xE..0x10].copy_from_slice(&2i16.to_be_bytes());
-        let st = osc_stamps(&info, 8, 1000.0);
-        assert_eq!((st.trigger_date.as_str(), st.trigger_time.as_str()), ("3/07/2024", "9:20:30.450"));
-        assert_eq!((st.start_date.as_str(), st.start_time.as_str()), ("3/07/2024", "9:20:30.435"), "15 periods of 1 ms before");
-        // No pre-trigger blocks: the start a period after the trigger.
-        info[0xE..0x10].copy_from_slice(&0i16.to_be_bytes());
-        assert_eq!(osc_stamps(&info, 8, 1000.0).start_time, "9:20:30.451");
-        // Not a date: no stamps.
-        info[10] = 0x13;
-        assert_eq!(osc_stamps(&info, 8, 1000.0).trigger_date, "");
     }
 }
 

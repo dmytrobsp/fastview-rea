@@ -213,7 +213,7 @@ impl OscView<'_> {
     /// sample (`doc+0x214`; 0 for COMTRADE) — the tick's µs is
     /// t(k) − t(trigger) for every unit (`0x4649cf`–`0x464a0d`), so
     /// «Абсолютное время» is the start's time of day plus it (a quirk with
-    /// an `.osc` trigger); samples print k − trigger + 1.
+    /// a trigger sample, which no record we open has now, #59); samples print k − trigger + 1.
     /// Past the record's end the times run on at its rate (`0x454b40`):
     /// the ruler labels the ticks out to the plot's edge (VM, L9.398).
     fn label_at(&self, k: usize) -> (f64, i64) {
@@ -583,7 +583,7 @@ impl OscView<'_> {
     /// merged (`g::vizir_labels`), each on an opaque white text cell.
     pub fn vizirs(&self, painter: &egui::Painter, top: f32, v_bottom: f32, labels: bool) {
         // The trigger moment (`0x464219`): a dotted line when the record
-        // has one (`.osc` with pre-trigger blocks).
+        // has one (the original's `.osc` with pre-trigger blocks; none we open, #59).
         let trig = self.doc.osc.trigger_sample;
         if trig != 0 {
             let x = self.vizir_x(trig);
