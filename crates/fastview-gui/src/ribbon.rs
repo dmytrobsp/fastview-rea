@@ -677,7 +677,7 @@ impl App {
                     (Mini::Vizir(4), "Гор. визир 2", has_doc, shown(4), Command::ToggleVizir(4)),
                 ],
                 // 155 / 157 / 156: one-shot comment tools (a radio group with
-                // toggle-off), enabled for records from .cfg / .osc files.
+                // toggle-off), enabled for records from .cfg files.
                 &[
                     (Mini::Moment, "Момент времени", comments_ok, mode(1), Command::CommentMode(1)),
                     (Mini::Area, "Область", comments_ok, mode(3), Command::CommentMode(3)),

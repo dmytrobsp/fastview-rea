@@ -1,6 +1,7 @@
 """Tests of the synthetic-record tools. Run: python3 -I -m unittest discover -s tools/records -p 'test_*.py'"""
 import os
 import shutil
+import struct
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,67 @@ def wb(path, data):
 
 def cfg_of(d):
     return next(os.path.join(d, n) for n in sorted(os.listdir(d)) if n.lower().endswith((".cfg", ".cff", ".osc")))
+
+
+# A hand-written OSC2 file for the user-data check's tests (the project no longer opens or generates .osc, #59).
+def osc_bytes(version, texts, cal, ratios, trigger, pretrig, n, rows_by_block, codes, nd=16):
+    """An OSC2 oscillogram: header, one calibration block, the text blocks, info, data blocks (big-endian)."""
+    B = 128
+    head = bytearray(B)
+    head[0], head[1], head[2] = version[0], version[1], 2 + len(texts)
+    blocks = [head]
+    cb = bytearray(B)
+    for j, (f1, s1, f2, s2) in enumerate(cal):
+        struct.pack_into(">f", cb, 4 * j, f1)
+        struct.pack_into(">h", cb, 0x20 + 2 * j, s1)
+        struct.pack_into(">f", cb, 0x30 + 4 * j, f2)
+        struct.pack_into(">h", cb, 0x50 + 2 * j, s2)
+    blocks.append(cb)
+    for t in texts:
+        blocks.append(bytearray(t + bytes(B - len(t))))
+    info = bytearray(B)
+    struct.pack_into(">h", info, 2, len(rows_by_block))
+    struct.pack_into(">h", info, 0xE, pretrig)
+    for at, v in zip((5, 6, 7, 8, 9, 0xA, 0xB), trigger):
+        info[at] = (v // 10) << 4 | v % 10
+    for i, x in enumerate(ratios):
+        struct.pack_into(">f", info, 0x40 + 4 * i, x)
+    blocks.append(info)
+    for blk_rows, code in zip(rows_by_block, codes):
+        blk = bytearray(B)
+        for s_, (a, word) in enumerate(blk_rows):
+            struct.pack_into(">" + "h" * len(a) + "H", blk, s_ * (2 * len(a) + 2), *a, word)
+        struct.pack_into(">h", blk, 0x7C, code)
+        blocks.append(blk)
+    return b"".join(bytes(b) for b in blocks)
+
+
+def src_h(d, variant=0):
+    """An OSC2 oscillogram (.osc): version 2.4, cp1251 names, three analog channels (one with a ccbm field),
+    sixteen digital in two text blocks, 14 samples per block, six data blocks with two timing codes.
+    `variant` 1: the same layout with every name, calibration number, ratio, trigger field, timing code and
+    sample different (a record that shares nothing with variant 0)."""
+    import math
+    CR = chr(13) + chr(10)
+    v = variant
+    n = ("Грім Лука", "Напор Верин", "Грім Мера", "Ск", "Ск") if v else ("Потік Орса", "Вольтаж Нерун", "Потік Кала", "Ка", "Ко")
+    texts = [
+        ("nnA,003" + CR + f"1,{n[0]},A,А" + CR + f"2,{n[1]},B,{'Х9' if v else 'Т7'},кВ" + CR + f"3,{n[2]},C,А" + CR).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл {n[3]}{i}{'х' if v else ''},{i % 2}" + CR for i in range(1, 9))).encode("cp1251"),
+        ("nnD,008" + CR + "".join(f"{i},Рл {n[4]}{i}{'х' if v else ''},{i % 2}" + CR for i in range(9, 17))).encode("cp1251"),
+        b"nnF,14" + CR.encode(),
+    ]
+    cal = [(1043.9, 517, 0.5231, -291), (3127.1, -619, 0.2917, 347), (1561.3, 733, 0.6119, 811)] if v else         [(1357.3, 238, 0.4167, -157), (2417.9, -311, 0.3871, 129), (1119.7, 87, 0.4293, 405)]
+    rows = []
+    for b in range(6):
+        rows.append([([int((5300 if v else 7000) * math.sin((b * 14 + s) / (3.0 if v else 4.0) + k * (0.7 if v else 1.0))) for k in range(3)],
+                      ((b * 14 + s) * (53 if v else 37) + (s % (3 if v else 5)) + (11 if v else 0)) & 0xFFFF)
+                     for s in range(14)])
+    data = osc_bytes((2, 4), texts, cal, [2117.0, 63.5, 489.5] if v else [1478.0, 87.5, 342.5],
+                     (23, 9, 15, 8, 22, 6, 17) if v else (31, 17, 42, 11, 12, 4, 21), 1, 14, rows,
+                     [8737, 8737, 8737, 8737, 5123, 5123] if v else [9421, 9421, 9421, 9421, 4711, 4711])
+    with open(os.path.join(d, "h.osc"), "wb") as f:
+        f.write(data)
 
 
 class Base(unittest.TestCase):
@@ -419,45 +481,15 @@ class Check(Base):
             synth_record.main([os.path.join(d, "nodat.cff"), os.path.join(d, "o")])
         self.assertIn("error:", str(cm.exception))
 
-    def test_an_osc_source_is_generated_with_its_structure(self):
-        src = self.source(make_fixtures.src_h)
-        self.assertTrue(src.is_osc)
-        self.assertEqual((src.n_analog, src.n_digital, src.n_per_block, src.n_blocks, src.enc), (3, 16, 14, 6, "cp1251"))
-        self.assertEqual(sorted(set(src.codes_by_block)), [4711, 9421])
-        for seed in (1, 2, 3, 4):
-            out = self.synth(src, seed, rows=60)
-            self.assertEqual((out.major, out.minor, out.H, out.K), (2, 4, src.H, 1), "version and block geometry")
-            self.assertEqual((out.n_analog, out.n_digital, out.n_per_block, out.enc), (3, 16, 14, "cp1251"))
-            self.assertEqual([(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in out.blocks],
-                             [(b["tag"], b["count"], len(b["lines"]), b["eol"]) for b in src.blocks])
-            self.assertEqual([b["tagline"] for b in out.blocks if b["tag"] == "nnF"], [b"nnF,14"])
-            self.assertEqual((out.n_blocks, out.max_blocks, out.total_samples), (5, 5, 70))
-            self.assertEqual(len(list(out.rows(10**6))), 70)
-            self.assertEqual(len(set(out.codes_by_block)), 2, "two timing codes, as in the source")
-            self.assertTrue(all(0 < c < 32768 for c in out.codes_by_block))
-            self.assertEqual(len(out.raw) % 128, 0)
-            self.assertEqual(len(out.analog_lines()[1].split(",")), 5, "the line with a ccbm field keeps its shape")
-            self.assertTrue(all(c is not None for c in out.cal))
-            self.assertNotEqual(out.trigger, src.trigger)
-            self.assertEqual(sum(self.hits(src, out).values()), 0)
-        a, b = self.synth(src, 5, name="x"), self.synth(src, 5, name="y")
-        self.assertEqual(a.raw, b.raw, "deterministic")
-        self.assertNotEqual(a.raw, self.synth(src, 6, name="z").raw)
-
-    def test_osc_rates_are_not_round_ones(self):
-        src = self.source(make_fixtures.src_h)
-        m = 2  # the analog channels whose unit is V / A / empty
-        for seed in range(1, 25):
-            out = self.synth(src, seed)
-            for c in out.codes_by_block:
-                fs = 1e6 / (c * 0.03125 * m)
-                for n in (1000, 2000, 4000, 5000):
-                    self.assertGreater(abs(fs / n - 1), 0.03, (seed, c))
-
     def test_a_copied_osc_part_is_found(self):
-        src = self.source(make_fixtures.src_h)
-        out = self.synth(src, 2, rows=60)
+        src = self.source(src_h)
+        d2 = os.path.join(self.tmp, "other_osc")
+        os.makedirs(d2)
+        src_h(d2, variant=1)
+        out = recfmt.open_record(os.path.join(d2, "h.osc"))
         B = 128
+        self.assertNotEqual(out.raw, src.raw)
+        self.assertEqual(sum(self.hits(src, out).values()), 0, "the baseline shares nothing with the source")
 
         def altered(name, edit):
             raw = bytearray(out.raw)
@@ -515,35 +547,9 @@ class Check(Base):
         for w in (b"Notez", b"Pleno", b"Qzxvb", b"Wqxyz"):
             self.assertNotIn(w, rb(out.cfg_path))
         self.assertIn(b"--- file type: HDR ---\r\n", rb(out.cfg_path))
-        h = self.source(make_fixtures.src_h)
-        raw = bytearray(h.raw)
-        at = (h.K + 1) * 128
-        blk = bytes(raw[at:at + 128]).rstrip(b"\0").replace(b"nnA,003", b"nnA,003 Tzqwx", 1)
-        self.assertLessEqual(len(blk), 128)
-        raw[at:at + 128] = blk + bytes(128 - len(blk))
-        wb(os.path.join(d, "h.osc"), bytes(raw))
-        out = self.synth(recfmt.open_record(os.path.join(d, "h.osc")), 2)
-        self.assertNotIn(b"Tzqwx", out.raw)
-        self.assertIn(b"nnA,003\r\n", out.raw)
-
-    def test_osc_small_offsets_are_invented_and_a_bad_ratio_is_written_as_one(self):
-        import struct
-        src = self.source(make_fixtures.src_h)
-        raw = bytearray(src.raw)
-        struct.pack_into(">f", raw, src.H * 128 + 0x40, 0.0)  # a ratio the reader reads as 1
-        p = os.path.join(self.tmp, "ratio.osc")
-        wb(p, bytes(raw))
-        bad = recfmt.open_record(p)
-        for seed in range(1, 6):
-            out = self.synth(bad, seed)  # does not run out of draws
-            self.assertEqual(out.ratios[0], 1.0)
-            for a, b in zip(bad.cal, out.cal):
-                self.assertNotEqual(a[1], b[1])
-                self.assertNotEqual(a[3], b[3])
-            self.assertTrue(any(abs(c[1]) <= 100 or abs(c[3]) <= 100 for c in bad.cal), "the source has small offsets")
 
     def test_osc_layouts_the_tools_do_not_take_are_refused(self):
-        src = self.source(make_fixtures.src_h)
+        src = self.source(src_h)
         d = os.path.join(self.tmp, "badosc")
         os.makedirs(d)
         raw = bytearray(src.raw)
