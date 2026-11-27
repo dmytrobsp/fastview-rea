@@ -414,8 +414,10 @@ leave it 0 (labels start-relative) [unknown].
   ending at W/2, «ГВ2» starting at W/2 (W = the whole client width), opaque.
 - **No shading between В1 and В2.**
 - Toggles (0x45c120, 0x492fa0): 32813 V1 / 32814 V2 / 139 V3 — if hidden and
-  never placed (sample 0) → placed at **¼ / ½ / ¾ of the plot width** and
-  shown; else visibility flips, position kept. 32815 H1 / 32816 H2 — if never
+  never placed (sample 0) → placed at **¼ / ½ / ¾ of the plot width** — the
+  view's client width without its vertical scroll bar, from the left column,
+  divided by 4 with truncation (L9.440) — and shown; else visibility flips,
+  position kept. 32815 H1 / 32816 H2 — if never
   placed (lane −1) → placed at content y 10 / 20 (top lane) [I: pixel args];
   else flips. CMDUI: enabled, checked = shown.
 - Moving V1/V2 also copies them into the ОМП object (`+0x67c/+0x680`) and
