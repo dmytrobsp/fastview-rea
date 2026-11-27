@@ -1332,7 +1332,9 @@ impl Doc {
     /// placed at ¼ / ½ / ¾ of the plot width and shown, else its visibility
     /// flips. `width` is the view's client width, which excludes the vertical
     /// scroll bar (the original's `GetClientRect`); the quarter is a truncated
-    /// integer division of `width − left`, as in the original (#47). 32815 / 32816: a never-placed horizontal визир goes on the first
+    /// integer division of `width − left`, as in the original (#47).
+    ///
+    /// 32815 / 32816: a never-placed horizontal визир goes on the first
     /// analog lane (10 / 20 px from its top, resolved at the next layout),
     /// else it flips.
     pub fn toggle_vizir(&mut self, k: usize, width: f32, left: f32) {
