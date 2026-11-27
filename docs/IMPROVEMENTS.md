@@ -297,34 +297,43 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
   the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
   and its line points at no sample it reports; the decision of the 2026-11-27 triage.
-- **A sampling rate smaller than the network frequency in «Настройки частотной диаграммы» (#43).** The dialog's
-  exchange (`0x46ee70`) bounds the periods by N div (R div trunc f), R the record's sampling rate and f the network
-  frequency; for a record whose R div trunc(f) is 0 the original divides by zero. Ours takes that quotient as 1, so
-  OK validates against N instead of faulting. Reason: a division by zero is no behaviour to keep, and the record
-  is valid; the record: L9.133.
-- **The window stays alive while a record loads (#43).** In the original the load's progress dialog (DIALOG 492,
-  timer `0x471870`) freezes the frame (the record's «UI freeze») until the load, including the per-sample
-  recompute (`0x428490`) and the `.set` apply (`0x44f5b0`), ends; after «Отмена» it freezes until the next cancel
-  poll. Ours reads the record, builds its derived arrays and applies the `.set` (its formula channels too) on a
-  loader thread; the frame keeps being drawn, the bar moves and «Отмена» answers at once. The counters, the 500 ms
-  bar steps and the cancel rules are the original's. Reason: a frozen window looks like a hang and gains nothing;
-  the record: L9.31, L9.268, L9.332, L9.441.
-- **Alt+F4 right after a pane's caption ✕ (#43).** In the original, with the vector diagram's pane hidden by its
-  caption ✕, an Alt+F4 does nothing (the window stays, nothing is saved); on its own Alt+F4 closes the window. The
-  cause was not read (most likely the keyboard focus left on the hidden pane). Ours closes the window as it does
-  always. Reason: an ignored close request is a focus slip, not a designed behaviour; the record: L9.278.
+- **A sampling rate whose quotient by the network frequency is 0 in «Настройки частотной диаграммы» (#43).** The
+  dialog's exchange (`0x46ee70`) bounds the periods by N div (R div trunc f), R the record's sampling rate and f the
+  network frequency; for a record whose R div trunc(f) is 0 the original divides by zero. Ours takes that quotient
+  as 1, so the periods are bounded by N; the harmonics bound, trunc(R / f · 0.5) · periods, is then 0 and ours refuses
+  every harmonics value with MFC's range message, so the dialog can only be cancelled — instead of faulting. Reason:
+  a division by zero is no behaviour to keep; the record: L9.133.
+- **The window never waits for the loader (#43).** The original opens a record on a worker thread (the per-sample
+  recompute `0x428490` and the `.set` apply `0x44f5b0` run there, L9.332) while a modal progress dialog (DIALOG 492,
+  timer `0x471870`) is up for a big record; the frame then repaints and the bar moves. The UI thread blocks in the
+  worker's infinite wait in two cases: after «Отмена» (until the worker's next cancel poll, or until it ends where
+  nothing polls — the `.cff` split, L9.268), and for the whole of a load under the size threshold, which shows no
+  dialog (`0x44f1f8`–`0x44f245`, `0x44f311`–`0x44f352`, the worker `0x44f410`; L9.31). Ours never waits: «Отмена»
+  drops the load at once and the loader stops at its next poll unseen, and a small record is read on the thread too.
+  The counters, the 500 ms bar steps and the cancel rules are the original's. Reason: a window that does not answer
+  after a cancel looks like a hang; the difference is small. Whether ours blocks input to the frame during a load as
+  the original's modal dialog does was not checked. The record: L9.31, L9.268, L9.332, L9.441.
+- **Alt+F4 right after a pane's caption ✕ (#43).** Observed on a clone: right after the caption ✕ hid the vector
+  diagram's pane, an Alt+F4 did nothing in the original (the window stayed and nothing was saved); on its own Alt+F4
+  closes the window. The cause was not read. Ours closes the window every time. Reason: it looks like a focus slip,
+  not a designed behaviour; the record: L9.278.
 - **«Участок» in «Параметры ОМП» after it disables itself (#43).** After the toolbar's «Участок» is pressed and the
-  command disables itself, the original's button stays in its hot face, not
-  refreshed, under the pointer until the pointer moves. Ours repaints at once: a disabled button is never hot. Reason:
-  a repaint lag, not a feature; the record: L9.333.
-- **The «Каналы» rename with pair rows (#43).** The original's in-place rename (`0x435ac0`, the commit `0x435c80`)
-  maps the edited row to a record by its row index (`0x435da1`, from a reading of the code); with a differential or
-  an R/X pair row in the list, which has no record of its own, the row and the record indices no longer agree. Ours
-  acts on the record the edited row stands for, whatever pair rows precede it. Reason: renaming the channel that
-  is shown is the only sensible result; the record: L9.199.
+  command disables itself, the original's button stays in its hot face, not refreshed, under the pointer until the
+  pointer moves. Ours repaints on the next frame: a disabled button is never hot. Reason: a repaint lag, not a
+  feature; the record: L9.333.
+- **The «Каналы» rename with pair rows (#43).** The original's in-place rename stores the list item index the edit
+  was opened on (`0x435c31`) and the commit (`0x435c80`) uses it as the index into the record vector
+  (`0x435eb2`, `0x435f57`; also the duplicate-name scan's self-skip, `0x435da1`). With a differential or an R/X pair
+  row in the list, which has no record of its own, a digital row after them no longer matches its record. Ours acts
+  on the record the edited row stands for, whatever pair rows precede it. Reason: renaming the channel that is
+  shown is the only sensible result; the record: L9.199.
 - **Parallel consecutive lines of a characteristic polygon (#43).** The original takes vertex i of a `<polygon>` as
   the intersection of line i−1 and line i with no check (`0x409860`, fed to GDI by `0x409c00`); for two parallel
-  lines the division by zero gives infinity, which becomes 0x80000000 in device space and the GDI call fails, so the
-  figure is not painted. Ours drops that vertex (and any beyond 10^6 units) and fills the rest, painting nothing only
-  when fewer than three vertices remain. Reason: invalid input in a hand-made `.fvb` should degrade, not blank the
-  figure; the shipped library has no such polygon; the record: L4.
+  lines the division by zero gives infinity (NaN for coincident ones), which becomes 0x80000000 in device space and
+  the GDI call fails (L4; what is painted afterwards was not observed). Ours drops that vertex and fills the rest,
+  painting nothing only when fewer than three vertices remain. A scan of the shipped library (62 characteristics,
+  97 polygons) finds no such pair at the default parameters; nine characteristics reach it when parameters are set
+  to certain values (for example two angle parameters made equal, which makes a slope line and an inverse-slope
+  line parallel). Reason: a parameter value or a hand-made `.fvb` that makes two consecutive lines parallel should
+  degrade, not fail the figure; the record: L4. Ours also drops a vertex beyond 10^6 units, a guard against a
+  runaway near-parallel vertex with no counterpart in the original.
