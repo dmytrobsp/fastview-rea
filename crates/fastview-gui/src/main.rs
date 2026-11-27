@@ -2593,10 +2593,10 @@ mod window_tests {
         assert!(!matches!(saved, Some(v) if v != "200"), "kept, not clamped: {saved:?}");
     }
 
-    /// The grid / plane splitter dragged while the grid sits below the
-    /// drag's range (a short pane: the saved 200 px against pane − 150)
-    /// snaps to the range's end at the first move, as the original's drag
-    /// `0x437900` clamps to [50, client − 150] (L9.399 residual, #16).
+    /// The grid / plane splitter dragged while the grid is taller than the drag's range allows (a
+    /// saved 450 px height in the default frame, a pane of about 370 px) snaps to pane − 150 at the
+    /// first vertical move, not at the press: the original's drag `0x437900` acts only once the
+    /// cursor's y differs from the press's, then clamps to [50, client − 150] (L9.399 residual, #16).
     #[test]
     fn the_splitter_snaps_into_its_range_at_the_first_move() {
         let mut w = Win::new();
@@ -2613,6 +2613,9 @@ mod window_tests {
         let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         w.run(vec![egui::Event::PointerMoved(from)]);
         w.run(vec![ev(from, true)]);
+        w.idle(2);
+        let pressed = *w.app.pane_grid.first().unwrap();
+        assert!((pressed.height() - g.height()).abs() <= 6.0, "a press alone leaves the grid: {} -> {}", g.height(), pressed.height());
         w.run(vec![egui::Event::PointerMoved(from + Vec2::new(0.0, 1.0))]);
         w.idle(1);
         let g1 = *w.app.pane_grid.first().unwrap();
@@ -6050,9 +6053,22 @@ mod window_tests {
         w.key(egui::Key::ArrowUp);
         assert_eq!(kind(&w), Some(GroupKind::Check), "↑ from the list");
         // The list takes no Tab.
-        w.key(egui::Key::ArrowDown);
-        w.key(egui::Key::Tab);
-        assert_ne!(kind(&w), Some(GroupKind::Bar), "no tab stop");
+        // Tab from the list starts at it: the first enabled sheet button; Shift+Tab: the page's last check.
+        for back in [false, true] {
+            let mut w = sheet(app::AnalysisTab::Zero);
+            tab_to(&mut w, GroupKind::Check);
+            w.key(egui::Key::ArrowDown);
+            let last_check = w.ctx.memory(|m| m.focused());
+            w.key(egui::Key::ArrowDown);
+            assert_eq!(kind(&w), Some(GroupKind::Bar));
+            w.held = if back { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+            w.key(egui::Key::Tab);
+            if back {
+                assert_eq!(w.ctx.memory(|m| m.focused()), last_check, "Shift+Tab from the list reaches the page's last check");
+            } else {
+                assert_eq!(kind(&w), Some(GroupKind::Push), "Tab from the list reaches a sheet button");
+            }
+        }
         // 537 with the voltage side off: the lone «Отключить» and the list pass the focus between them.
         let mut w = sheet(app::AnalysisTab::Zero);
         w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap()].zero_u_off = true;

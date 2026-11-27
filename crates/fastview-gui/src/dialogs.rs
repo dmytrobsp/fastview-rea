@@ -285,7 +285,16 @@ impl<'o> Dlg<'o> {
                 }
                 let n = ring.len();
                 let cur = focused_stop(ctx, &ring).and_then(|f| ring.iter().position(|s| s.0 == f)).unwrap_or(0);
-                let next = ring[if back { (cur + n - 1) % n } else { (cur + 1) % n }].0;
+                let mut next = ring[if back { (cur + n - 1) % n } else { (cur + 1) % n }].0;
+                // From a control with no tab stop (the page list, a progress bar) the dialog manager
+                // starts at that control: the next / previous stop after it in the template's order.
+                let focus = ctx.memory(|m| m.focused());
+                if let Some(at) = focus.filter(|f| !ring.iter().any(|s| s.0 == *f)).and_then(|f| items.iter().position(|s| s.0 == f)) {
+                    let m = items.len();
+                    if let Some(id) = (1..m).map(|i| items[if back { (at + m - i) % m } else { (at + i) % m }].0).find(|id| ring.iter().any(|s| s.0 == *id)) {
+                        next = id;
+                    }
+                }
                 ctx.memory_mut(|m| m.request_focus(next));
                 ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_tabbed_to"), (next, frame)));
                 cues = true;

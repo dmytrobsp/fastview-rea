@@ -1478,7 +1478,19 @@ impl App {
         let key = format!("{}\\Properties Height", if pane == Pane::Differential { "Diff Diagram" } else { "Circle Diagram" });
         let stored = self.store.view.get(&key).and_then(|v| v.parse::<f32>().ok()).unwrap_or(200.0);
         let grid_id = egui::Id::new(("char_grid", pane));
-        let dragging = ui.ctx().dragged_id() == Some(grid_id.with("__resize"));
+        // The original's drag (`0x437900`) acts only once the cursor's y differs from the press's
+        // (`0x437890`): a latch per drag, set at the first vertical move and kept until the release.
+        let latch = grid_id.with("__snap");
+        let dragging = ui.ctx().dragged_id() == Some(grid_id.with("__resize")) && {
+            let y = ui.ctx().input(|i| i.pointer.latest_pos()).map(|p| p.y);
+            let (press_y, snapped): (Option<f32>, bool) = ui.data(|d| d.get_temp(latch)).unwrap_or((y, false));
+            let snapped = snapped || matches!((press_y, y), (Some(a), Some(b)) if (a - b).abs() >= 0.5);
+            ui.data_mut(|d| d.insert_temp(latch, (press_y, snapped)));
+            snapped
+        };
+        if ui.ctx().dragged_id() != Some(grid_id.with("__resize")) {
+            ui.data_mut(|d| d.remove_temp::<(Option<f32>, bool)>(latch));
+        }
         let top = (h - 150.0).max(50.0);
         let grid = egui::TopBottomPanel::top(grid_id)
             .resizable(true)
