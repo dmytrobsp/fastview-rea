@@ -76,8 +76,9 @@ fn min_client_at(dpi: u32) -> [f32; 2] {
 /// What ours' window is larger than the layout inside it (#241): on Windows 11 the DWM's border, 1 / 1 / 2 / 2 / 2 px
 /// at 100 / 125 / 150 / 175 / 200 %, covers the outermost ring of a frameless window, so the layout leaves it out at
 /// the left, right and bottom (`winframe::inset_screen`) and the window is that much larger than the original's
-/// client: its visible frame (the client and the border's line at each side and below). Where there is no such border
-/// (a Windows before 11) the window is the layout.
+/// client: its visible frame (the client and the border's line at each side and below). With no such ring to leave out
+/// (a Windows before 11, whose DWM was not seen to paint it; a window with the system title bar, `FV_SYSTEM_TITLEBAR`)
+/// the window is the layout, and its minimum is the original's client (850 x 492 at 100 %, not 852 x 493).
 fn frame_extra(dpi: u32) -> [f32; 2] {
     frame_extra_on(dpi, winframe::ring_wanted())
 }
@@ -108,13 +109,14 @@ const STATUS_GRIP: f32 = 20.0;
 /// between 954 and 958 px; 38 taken); the 100 % value is this constant.
 const STATUS_GRIP_ALONE: f32 = 28.0;
 
-/// The grip's reserve is 20 / 25 / 30 / 37 / 38 px at 100 - 200 % (#246, clone, a first run's frame stepped by 2 px at
-/// 175 %: the original's fifth pane appears at a client 952 px wide, ours 2 px earlier with 35; 125 / 150 / 200 % as
-/// before: panes appear at the same 12-px step in both).
+/// The grip's reserve is 20 / 25 / 30 / 37 / 40 px at 100 - 200 % (#246, clone, a first run's frame stepped by 2 px at
+/// 175 %: the original's fifth pane appears at a client 952 px wide, ours 2 px earlier with 35; the other scales are
+/// the earlier values (`s(20)`: 200 % is 40), whose panes appear at the same 12-px step in both, a step that cannot
+/// tell 38 from 40).
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::measured5([STATUS_GRIP, 25.0, 30.0, 37.0, 38.0]), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::measured5([STATUS_GRIP, 25.0, 30.0, 37.0, 40.0]), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
     if ext_hidden {
         (ext, right - alone)
     } else {
@@ -489,6 +491,7 @@ fn main() -> eframe::Result<()> {
     // The ribbon draws the caption row (L9.150): no system decorations,
     // unless `FV_SYSTEM_TITLEBAR` asks for them.
     let own_caption = std::env::var_os("FV_SYSTEM_TITLEBAR").is_none();
+    winframe::set_undecorated(own_caption);
     viewport = viewport.with_decorations(!own_caption);
     // `LoadState` restores the frame's saved window placement; on a first
     // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
@@ -2158,7 +2161,7 @@ mod window_tests {
         dpi::set(96);
         assert_eq!(status_reserve(1000.0, 135.0, false, false), (155.0, 1000.0 - 155.0));
         dpi::set(192);
-        assert_eq!(status_reserve(1000.0, 238.0, false, false).0, 238.0 + 38.0);
+        assert_eq!(status_reserve(1000.0, 238.0, false, false).0, 238.0 + 40.0);
         dpi::set(96);
     }
 
@@ -3064,8 +3067,9 @@ mod window_tests {
     }
 
     /// #219 (clone, 175 / 200 %, a work area so small that the first run's frame is clamped to 866 x 500): the
-    /// original's MDI area is 205 x 54 and 204 x 32 px; ours is within a pixel (205 / 204 wide) with the layout the
-    /// clamped frame gives.
+    /// original's MDI area is 205 x 54 and 204 x 32 px. A regression pin for the live state the clone checked (ours
+    /// 204 / 203 wide there), not a headless defect: the headless width was already 205 before the unit's changes; the
+    /// 0.7.1 clone's difference of about 90 px has no cause found here.
     #[test]
     fn a_clamped_first_runs_mdi_area_is_the_originals_at_175_and_200() {
         for (dpi, want) in [(168u32, (205.0, 54.0)), (192, (204.0, 32.0))] {
@@ -3162,6 +3166,31 @@ mod window_tests {
             frames(&mut app, &ctx, Vec2::new(NARROW, 860.0), vec![vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }], vec![]]);
         }
         panic!("no collapsed «Вычисления» button opened its panel");
+    }
+
+    /// #225 (clone, 100 - 200 %): through the ribbon's real widths, «Объединение» keeps its full layout until
+    /// «Осциллограмма», «Вычисления» and «Видимость» have collapsed (the original's default reduction with one width
+    /// for «Объединение»; with an icon-only second width it was reduced first).
+    #[test]
+    fn the_home_ribbon_keeps_obedinenie_full_until_the_others_collapse() {
+        let steps = |w: f32| {
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            frames(&mut app, &ctx, Vec2::new(w, 860.0), vec![vec![]; 3]);
+            ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "].iter().map(|t| ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("fv_ribbon_group_step", *t)))).unwrap_or(0)).collect::<Vec<usize>>()
+        };
+        let mut seen = false;
+        for w in (300..1320).step_by(4).rev() {
+            let c = steps(w as f32);
+            if c[0] > 0 {
+                // Объединение's only step is its collapse: the others are collapsed (Диаграммы at its smallest layout).
+                assert!(c[4] == 1 && c[3] == 3 && c[2] == 1 && c[1] > 0, "{w}: {c:?}");
+                seen = true;
+            }
+        }
+        assert!(seen, "a width that collapses «Объединение» too");
+        // Down to the minimum frame (866) it stays full.
+        assert_eq!(steps(852.0)[0], 0);
     }
 
     /// The diagram panes dock, float and auto-hide (L9.92): a caption

@@ -60,8 +60,8 @@ pub fn max_hot() -> bool {
 /// How many device pixels of the window's outermost ring Windows 11's DWM paints its border over, when the window's
 /// frame is extended into the client area (`win::extend`) and the window is neither maximised nor full screen: the
 /// ring is the DWM border's, not ours. It is one logical pixel at the window's scale, rounded as Windows rounds a
-/// metric (1 / 1 / 2 / 2 / 2 px at 100 / 125 / 150 / 175 / 200 %: clone-measured, #241). Windows before 11 draw none
-/// over the client (not measured: left as before).
+/// metric (1 / 1 / 2 / 2 / 2 px at 100 / 125 / 150 / 175 / 200 %: clone-measured, #241). Windows before 11 were not seen
+/// to draw one over the client (not measurable here): no inset there.
 #[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub fn border_ring_px(native: f32, windows_11: bool, maximised: bool, fullscreen: bool) -> f32 {
     if windows_11 && !maximised && !fullscreen && native > 0.0 {
@@ -74,14 +74,24 @@ pub fn border_ring_px(native: f32, windows_11: bool, maximised: bool, fullscreen
 /// Whether this system has the DWM border over the window's outer ring (Windows 11; the platforms with no such
 /// frame are treated as having it, so that the sizes agree where they are computed in tests).
 pub fn ring_wanted() -> bool {
-    #[cfg(windows)]
-    {
-        win::windows_11()
+    UNDECORATED.load(std::sync::atomic::Ordering::Relaxed) && {
+        #[cfg(windows)]
+        {
+            win::windows_11()
+        }
+        #[cfg(not(windows))]
+        {
+            true
+        }
     }
-    #[cfg(not(windows))]
-    {
-        true
-    }
+}
+
+/// Whether the window is the undecorated one (the ribbon draws the caption row); `FV_SYSTEM_TITLEBAR` gives the
+/// window the system's frame, which has no ring to leave out. Set once at start-up.
+static UNDECORATED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+pub fn set_undecorated(undecorated: bool) {
+    UNDECORATED.store(undecorated, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// The input's screen with the DWM border's ring left out at the left, right and bottom (#241): the layout of an

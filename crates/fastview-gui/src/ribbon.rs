@@ -16,7 +16,7 @@ use eframe::egui::{self, Color32, RichText};
 /// caption row 30 / 36 / 43 px, the tab row 23 / 30 / 35, a panel's
 /// caption band 16 / 22 / 26. At 175 / 200 % (#224, clone, a 1000 × 700 frame, the original against ours) the tab
 /// row's line lies 99 / 118 px from the window's top and the body's bottom line 150 / 169 px under it: the caption
-/// row 59 / 73 px, the band 29 / 32 (the 3-point rule had extrapolated 50 / 57 and 34 / 38). The body's bottom line
+/// row 59 / 73 px, the band 29 / 32 (the 3-point rule had extrapolated 50 / 57 and 30 / 34). The body's bottom line
 /// lies 2 rows above the original's (150 / 169 under the tab line) as at 125 / 150 %: ours draws two brush rows under
 /// it, so the info band below starts where the original's does (259 / 297 px from the top).
 pub(crate) fn caption_h() -> f32 {
@@ -536,10 +536,7 @@ impl App {
                             v
                         })
                         .collect();
-                    let plan = match self.tab {
-                        RibbonTab::Home => reduction_plan_in_order(&widths, avail, &HOME_REDUCTION_ORDER),
-                        RibbonTab::Omp => reduction_plan(&widths, avail),
-                    };
+                    let plan = reduction_plan(&widths, avail);
                     ui.data_mut(|d| {
                         for ((t, n, _), (step, w)) in groups.iter().zip(plan.iter().zip(&widths)) {
                             // The collapsed layout is index n.
@@ -582,7 +579,7 @@ impl App {
         let p = self.skin.palette();
         // Объединение
         // Steps (`Repos` `0x101227d5`): the small column goes icon-only.
-        ribbon_group(ui, p, "Объединение", 2, |ui, step| {
+        ribbon_group(ui, p, "Объединение", 1, |ui, step| {
             // 57637 needs the clipboard and no pending paste; 57634 a selected
             // file channel; 57643 / 57644 the undo / redo counts.
             let can_paste = self.active_doc().is_some_and(|d| self.clip.available() && !crate::omp_ui::has_pending_paste(d));
@@ -1554,7 +1551,11 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
 /// A ribbon group: content row/area + centered caption + right divider.
 /// The panels of each category, left to right.
 /// Each panel: title, its layouts before collapsing, a single element.
-const HOME_GROUPS: [(&str, usize, bool); 5] = [("Объединение", 2, false), ("Диаграммы", 3, false), ("Видимость", 1, false), ("Вычисления", 3, false), (" ", 1, true)];
+/// «Объединение» has one width, then its collapsed button: the original's reduction (the default one, "most steps left,
+/// ties rightmost": FastView sets no collapse order, `RecalcLayout` 0x10106b37 takes its default loop 0x10106d96, as
+/// L9.91 says) leaves it in its full layout until «Осциллограмма», «Вычисления» and «Видимость» have collapsed
+/// (clone, 100 - 200 %, #225); its icon-only layout (`Repos` 0x101227d5) is drawable but is not a width step.
+const HOME_GROUPS: [(&str, usize, bool); 5] = [("Объединение", 1, false), ("Диаграммы", 3, false), ("Видимость", 1, false), ("Вычисления", 3, false), (" ", 1, true)];
 const OMP_GROUPS: [(&str, usize, bool); 1] = [("ОМП", 1, false)];
 fn group_width_id(title: &str, step: usize) -> egui::Id {
     egui::Id::new(("fv_ribbon_group_w", title, step))
@@ -1604,36 +1605,6 @@ pub fn reduction_plan(widths: &[Vec<f32>], avail: f32) -> Vec<usize> {
         let left = |i: usize| last(&widths[i]) - plan[i];
         let Some(i) = (0..widths.len()).filter(|&i| left(i) > 0).max_by_key(|&i| (left(i), i)) else { break };
         plan[i] += 1;
-    }
-    plan
-}
-
-/// The order the original reduces «Главная»'s panels in (`RecalcLayout` `0x10106b37`: the category holds a list of
-/// panel indices and each entry takes its panel one layout step down, the last step being its collapse to a button;
-/// the list is the application's collapse order, not the "most steps left" rule). Read from clone states (#225, a
-/// 1000-px frame stepped at 100 % and 12-px steps at 150 / 175 / 200 %): «Вычисления» one layout, «Диаграммы» one,
-/// «Вычисления» another, «Диаграммы» its smallest; then «Осциллограмма» collapses first, «Вычисления», «Видимость»
-/// (all three are collapsed at a 175 % first run's 866 frame, with «Объединение» in its full layout and «Диаграммы»
-/// at its smallest); «Объединение»'s icon-only layout, its collapse and «Диаграммы»' collapse come after (not
-/// reachable in a frame down to the 866 minimum: INFERRED order). Panel indices as in [`HOME_GROUPS`].
-const HOME_REDUCTION_ORDER: [usize; 10] = [3, 1, 3, 1, 4, 3, 2, 0, 0, 1];
-
-/// [`reduction_plan`] with the application's collapse `order`: each entry takes its panel one step down (a panel
-/// with no step left is skipped) until the panels fit.
-pub fn reduction_plan_in_order(widths: &[Vec<f32>], avail: f32, order: &[usize]) -> Vec<usize> {
-    let last = |w: &Vec<f32>| w.len().saturating_sub(1);
-    let total = |plan: &[usize]| widths.iter().zip(plan).map(|(w, &k)| w.get(k).copied().unwrap_or(0.0) + 2.0).sum::<f32>();
-    if avail - 8.0 <= 2.0 + widths.iter().map(|w| w.last().copied().unwrap_or(0.0) + 2.0).sum::<f32>() {
-        return widths.iter().map(last).collect();
-    }
-    let mut plan = vec![0; widths.len()];
-    for &i in order {
-        if total(&plan) <= avail - 8.0 {
-            break;
-        }
-        if i < widths.len() && plan[i] < last(&widths[i]) {
-            plan[i] += 1;
-        }
     }
     plan
 }
@@ -2758,25 +2729,6 @@ mod tests {
         assert_eq!(bottom_text("Ab cde", 9.0, m), (vec!["Ab".to_string(), "cde".to_string()], 30.0));
         assert_eq!(large_width(32.0, 20.0), 42.0, "at least the image + 2 × 5");
         assert_eq!(large_width(32.0, 56.0), 61.0);
-    }
-
-    /// #225 (clone): «Главная» reduces in the application's order: «Вычисления» and «Диаграммы» down their layouts,
-    /// then «Осциллограмма», «Вычисления», «Видимость» collapse (right to left) while «Объединение» keeps its full
-    /// layout.
-    #[test]
-    fn the_home_ribbon_reduces_in_the_originals_order() {
-        // Объединение, Диаграммы, Видимость, Вычисления, Осциллограмма: layouts, the collapsed button last.
-        let w = vec![vec![200.0, 150.0, 60.0], vec![250.0, 200.0, 120.0, 60.0], vec![300.0, 60.0], vec![280.0, 210.0, 150.0, 60.0], vec![80.0, 40.0]];
-        let sum = |plan: &[usize]| 8.0 + plan.iter().enumerate().map(|(i, &k)| w[i][k] + 2.0).sum::<f32>();
-        let order = HOME_REDUCTION_ORDER;
-        let at = |plan: &[usize]| reduction_plan_in_order(&w, sum(plan), &order);
-        // Each state of the sequence is the first the width of the previous one no longer holds.
-        for plan in [[0, 0, 0, 0, 0], [0, 0, 0, 1, 0], [0, 1, 0, 1, 0], [0, 1, 0, 2, 0], [0, 2, 0, 2, 0], [0, 2, 0, 2, 1], [0, 2, 0, 3, 1], [0, 2, 1, 3, 1]] {
-            assert_eq!(at(&plan), plan.to_vec(), "{plan:?}");
-            assert_ne!(reduction_plan_in_order(&w, sum(&plan) - 1.0, &order), plan.to_vec(), "{plan:?} one pixel narrower");
-        }
-        // Below the last state every panel is collapsed.
-        assert_eq!(reduction_plan_in_order(&w, 100.0, &order), vec![2, 3, 1, 3, 1]);
     }
 
     #[test]
