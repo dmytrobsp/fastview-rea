@@ -884,6 +884,12 @@ pub struct Doc {
 }
 
 impl Doc {
+    /// The kept horizontal-bar position of the Shift+wheel step goes (the views' refresh sets the bar from the
+    /// first sample again, `0x45ac60`): a command that opens a dialog does it when the dialog is confirmed (#232).
+    pub fn drop_bar_position(&mut self) {
+        self.hscroll_pos = None;
+    }
+
     /// The document title the tab, the caption and «Окна...» show: MFC's
     /// SetPathName → AfxGetFileTitle, the file name with its extension (seen
     /// on the VM: «WIN_1999.cfg»); a document without a file, its name.
@@ -2078,6 +2084,13 @@ impl Doc {
 }
 
 impl App {
+    /// The view window's client width, which leaves out the vertical scroll bar
+    /// (the original's `GetClientRect`): the plot's width. The horizontal zoom's
+    /// fit scale and the визир toggles read it (`0x45c430`, `0x45c4f0`, `0x45c8c0`).
+    pub fn client_width(&self) -> f32 {
+        self.view_rects.map_or(self.view_width, |(_, plot)| plot.width())
+    }
+
     pub fn new() -> Self {
         let (full_library, source_name) = load_libraries();
         let mut app = App {
@@ -2380,8 +2393,23 @@ impl App {
         // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
         // the first sample again (`lanes::hscroll_page`).
         // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
-        // open a dialog or a chooser (Open, Печать, its preview) leave the bar alone.
-        if !matches!(cmd, Command::Copy | Command::Open | Command::Print | Command::PrintPreview) {
+        // open a dialog or a chooser (Open, Печать, its preview, Save without a file of its own, Save As, «Загрузка настроек...», the exports)
+        // leave the bar alone until the dialog is answered (#232): a confirmed one drops the position in its
+        // own continuation ([`Doc::drop_bar_position`]), a cancelled one never does.
+        if !matches!(
+            cmd,
+            Command::Copy
+                | Command::Open
+                | Command::Print
+                | Command::PrintPreview
+                | Command::Save
+                | Command::SaveAs
+                | Command::LoadSettings
+                | Command::ExportCsv
+                | Command::Archive
+                | Command::OpenFvb
+                | Command::ExportImage
+        ) {
             if let Some(d) = self.active_doc_mut() {
                 d.hscroll_pos = None;
             }
@@ -2503,8 +2531,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
-                // The view's client: without the vertical scroll bar (`view_rects.1`, the plot).
-                let w = self.view_rects.map_or(self.view_width, |(_, plot)| plot.width());
+                let w = self.client_width();
                 let left = self.view_left;
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_vizir(k, w, left);
@@ -2563,7 +2590,7 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ZoomX(zin) => {
-                let (w, left) = (self.view_width, self.view_left);
+                let (w, left) = (self.client_width(), self.view_left);
                 if let Some(d) = self.active_doc_mut() {
                     d.zoom_x(zin, w, left);
                 }
@@ -3005,6 +3032,9 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("FastView library", &["fvb"]);
         self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
             let Some((path, _)) = picked else { return };
+            if let Some(d) = app.active_doc_mut() {
+                d.drop_bar_position();
+            }
             match std::fs::read(&path)
                 .map_err(|e| e.to_string())
                 .and_then(|b| fvb_core::load_fvb_bytes(&b).map_err(|e| e.to_string()))
@@ -3180,7 +3210,8 @@ impl App {
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
             // The record the command was given for (the dialog ran meanwhile).
-            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get_mut(i)) else { return };
+            d.drop_bar_position();
             let out = Self::csv_string(d);
             match std::fs::write(&path, out) {
                 Ok(()) => app.status = format!("Экспортировано в {}", path.display()),
@@ -3199,7 +3230,8 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("ZIP", &["zip"]).set_file_name(name);
         self.pick(crate::sysdlg::Job::Save(dlg), move |app, _, picked| {
             let Some((path, _)) = picked else { return };
-            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get(i)) else { return };
+            let Some(d) = app.doc_by_serial(serial).and_then(|i| app.docs.get_mut(i)) else { return };
+            d.drop_bar_position();
             let (cfg, dat) = fvb_core::comtrade::write(&d.osc, d.codepage);
             let csv = Self::csv_string(d);
             let zip = crate::util::zip_store(&[
@@ -3224,6 +3256,9 @@ impl App {
         let dlg = crate::dialogs::file_dialog().add_filter("PNG", &["png"]).set_file_name("fastview.png");
         self.pick(crate::sysdlg::Job::Save(dlg), |app, _, picked| {
             if let Some((path, _)) = picked {
+                if let Some(d) = app.active_doc_mut() {
+                    d.drop_bar_position();
+                }
                 app.want_screenshot = Some(path);
                 app.status = "Готовится изображение…".into();
             }
@@ -3291,6 +3326,7 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.redo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
     }
 
     /// 57644 (`0x4548d0`), the mirror of [`App::undo`].
@@ -3300,6 +3336,15 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.undo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
+    }
+
+    /// The merge bar stays up through the undo and the redo of a paste (#231): the pasted lanes may be gone
+    /// from the record for the moment, the bar is not.
+    fn keep_merge_bar(&mut self) {
+        if let Some(b) = self.merge.as_mut() {
+            b.kept = true;
+        }
     }
 
     /// Append computed channels to the active record, evaluated in order in
