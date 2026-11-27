@@ -787,7 +787,16 @@ mod tests {
     /// the fundamental's 123: bars with no height, none exactly 0), rendered at `dpi`; the canvas and the
     /// channel's colour and the scale.
     fn tiny_harmonics_page(dpi: f32) -> (Canvas, [u8; 3], usize) {
+        tiny_harmonics_page_in(dpi, None)
+    }
+
+    /// The same, with the live frequency pane `pane` px (w, h) wide: a real print tiles the panels by its aspect,
+    /// which makes the plot narrower than tall (`f` < 1) and rounds a flat bar to a box one row tall.
+    fn tiny_harmonics_page_in(dpi: f32, pane: Option<(f32, f32)>) -> (Canvas, [u8; 3], usize) {
         let mut app = App::new();
+        if let Some((w, h)) = pane {
+            app.pane_canvas.push((crate::app::Pane::Frequency, egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(w, h))));
+        }
         app.dispatch(Command::Demo);
         {
             let d = &mut app.docs[0];
@@ -833,6 +842,41 @@ mod tests {
         // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
         // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
         assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+    }
+
+    /// #238 (clone): on a real print the frequency page tiles by the live pane's aspect, and a bar with no height
+    /// then comes out one row tall. GDI's `Rectangle` strokes the path from `top` to `bottom - 1`, so that box is
+    /// the same flat line, centred on its top row: the pen's `s` rows, the baseline over the middle (clone, 600 dpi:
+    /// two rows of colour above the baseline, three of baseline, one below; ours had drawn the outline of the box,
+    /// twelve rows). Every non-background row counts, not only the exact colour.
+    #[test]
+    fn a_frequency_bar_one_row_tall_prints_the_same_pen_wide_line() {
+        let (c, want, s) = tiny_harmonics_page_in(600.0, Some((568.0, 130.0)));
+        assert_eq!(s, 6);
+        let bg = [255u8, 255, 255];
+        // A flat bar's column: the channel's colour in it, but not a tall bar's side (many rows).
+        let mut checked = 0;
+        for x in 0..c.w {
+            let colour_rows = (0..c.h).filter(|&y| c.get(x, y) == want).count();
+            // The flat bars' columns carry the pen's colour rows next to the baseline; a column with none, or with a tall
+            // bar's side or top edge, is not one.
+            if colour_rows == 0 || colour_rows > 2 * s || (0..c.h).filter(|&y| c.get(x, y) == want).any(|y| c.get(x, y + 1) != want && c.get(x, y + 1) != [50, 50, 50] && c.get(x, y.saturating_sub(1)) != want && c.get(x, y.saturating_sub(1)) != [50, 50, 50]) {
+                continue;
+            }
+            // The stack around the baseline: first and last non-background row of the colour's neighbourhood.
+            let ys: Vec<usize> = (0..c.h).filter(|&y| c.get(x, y) == want).collect();
+            let (lo, hi) = (*ys.first().unwrap(), *ys.last().unwrap());
+            if hi - lo > 2 * s || c.get(x, lo.saturating_sub(40)) != bg && c.get(x, hi + 40) != bg {
+                continue;
+            }
+            let rows: Vec<usize> = (lo..=hi).collect();
+            assert_eq!(rows.len(), s, "a flat bar's colour and baseline cover the pen's {s} rows, column {x}: {lo}..{hi}");
+            // The baseline (s / 2 rows) sits in the pen's middle: two rows of colour above it, one below (clone).
+            let base = (lo..=hi).filter(|&y| c.get(x, y) != want).collect::<Vec<_>>();
+            assert_eq!((base[0] - lo, hi - base[base.len() - 1]), (2, 1), "colour above and below the baseline, column {x}");
+            checked += 1;
+        }
+        assert!(checked > 10, "the flat bars were found: {checked}");
     }
 
     /// #158 on the screen (s = 1: a printer under 192 dpi, the 1-pixel pen): a bar with no height draws

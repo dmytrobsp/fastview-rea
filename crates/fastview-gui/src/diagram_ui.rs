@@ -1765,10 +1765,12 @@ impl App {
                     let bar = Rect::from_min_max(pt(bl, top_dev), pt(bl + tl.bar, bottom_dev));
                     // A bar with no height: GDI's Rectangle draws nothing under a
                     // 1-pixel pen and, under a wider one, a single line of the pen's
-                    // width centred on the edge (the baseline then covers its lower half) (`0x470488`; clone, #158).
-                    if bottom_dev - top_dev <= 0 {
+                    // width centred on the edge (the baseline then covers its middle) (`0x470488`; clone, #158).
+                    // A box one row tall is the same line: the path runs to `bottom - 1`, on the top row (#238).
+                    if bottom_dev - top_dev <= 1 {
                         if let Some(w) = dg::flat_bar_pen(si, bottom_dev - top_dev) {
-                            let y = pt(0, bottom_dev - w / 2).y;
+                            let edge = if bottom_dev - top_dev == 1 { top_dev } else { bottom_dev };
+                            let y = pt(0, edge - w / 2).y;
                             // A stroke, so the preview's one-pixel minimum applies (the line is under a preview pixel).
                             painter.hline(bar.left()..=bar.right(), y + w as f32 / s / 2.0, stroke(w as f32 / s, color));
                         }
