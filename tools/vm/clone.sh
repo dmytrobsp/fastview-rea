@@ -155,7 +155,11 @@ run)
         if "${TB[@]}" instance pull "$name" "$id" "$H\\shots\\$s" "$shots/$s"; then pull_clean "$H\\shots\\$s"; elif [ "$rc" -eq 0 ]; then exit 1; fi
     done
     overlay
-    [ "$rc" -eq 0 ] || { echo "clone.sh run $who: failed in the clone (code $rc; 3 = the program died or showed no window, no key was sent; 124 = timeout)" >&2; exit "$rc"; }
+    if [ "$rc" -ne 0 ]; then
+        echo "clone.sh run $who: failed in the clone (code $rc; 3 = the program died or showed no window, no key was sent; 124 = timeout)" >&2
+        # As hyperv.ps1: 3 and 124 as they are, any other failure (testbox's own codes included) is 4.
+        case "$rc" in 3|124) exit "$rc" ;; *) exit 4 ;; esac
+    fi
     ;;
 push) load; tb_push "$2" "$3"; overlay ;;
 pull) load; "${TB[@]}" instance pull "$name" "$id" "$2" "$3"; pull_clean "$2"; overlay ;;

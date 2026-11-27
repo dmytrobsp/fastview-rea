@@ -27,8 +27,9 @@ FV_MEM_GB (a clone's memory, default 4).
 FV_GPU=1: `new` partitions the host's GPU into the clone (GPU-P: the partitionable GPU Hyper-V lists, a discrete one
 preferred, FV_GPU_NAME = a part of its name or PCI path picks another; MMIO space, the partition adapter, the host's
 display driver copied into the guest, a restart, the guest device checked OK; about 5 minutes and 7 GB of overlay, the
-clone is on the host GPU only as far as the host driver allows it), and `run u` (also with FV_GPU=1 in its own
-environment) starts ours without -Soft, on its GPU runner, and prints the OpenGL modules the process loaded. FV_ORIG and FV_RECORDS belong to hyperv-base.ps1: the original and the
+clone is on the host GPU only as far as the host driver allows it). The clone remembers it (a `gpu` line in its state
+file): `run u` then starts ours without -Soft, on its GPU runner, and prints the OpenGL modules the process loaded
+(FV_GPU=0 on a call: the software runner; FV_GPU=1 on a clone without the partition: an immediate error). FV_ORIG and FV_RECORDS belong to hyperv-base.ps1: the original and the
 records are in the base, a clone inherits them. Needs membership in "Hyper-V Administrators"; no elevation.
 
 Layout in the guest as clone.sh: C:\Users\tbuser\fv-test\{FastView5,harness,records,out,ours}. A clone has no network
@@ -73,6 +74,9 @@ function Get-Cred {
 
 # Exactly the form `new` creates: a wildcard or any other name never passes, so no command can reach another VM.
 function Test-CloneName([string]$Name) { $Name -cmatch '^fv-clone-[0-9a-f]{6}$' }
+
+# A clone made with FV_GPU=1 has a second line `gpu` in its state file.
+function Test-CloneGpu { @(@(Get-Content -LiteralPath $State -ErrorAction SilentlyContinue) | Select-Object -Skip 1 | Where-Object { $_.Trim() -eq 'gpu' }).Count -gt 0 }
 
 function Get-CloneName {
     if (-not (Test-Path -LiteralPath $State)) { Fail 'no clone (run: hyperv.ps1 new)' }
@@ -337,7 +341,7 @@ function New-Clone {
     $mem = [long]([double](EnvOr 'FV_MEM_GB' '4') * 1GB)
     # FV_GPU=1: look at the host's GPU first, so that a host without one fails before anything is made.
     $gpu = $null; $gpuFiles = $null
-    if ($env:FV_GPU) { $gpu = Get-HostGpu; $gpuFiles = Get-GpuDriverFiles $gpu; Write-Host "clone ${name}: GPU partition of $($gpu.Label)" }
+    if ($env:FV_GPU -eq '1') { $gpu = Get-HostGpu; $gpuFiles = Get-GpuDriverFiles $gpu; Write-Host "clone ${name}: GPU partition of $($gpu.Label)" }
     try {
         New-VHD -Differencing -ParentPath $parent -Path $vhd | Out-Null
         $vm = New-VM -Name $name -Generation 2 -MemoryStartupBytes $mem -VHDPath $vhd -Path $dir
@@ -350,7 +354,7 @@ function New-Clone {
         Enable-VMIntegrationService -VM $vm -Name 'Guest Service Interface'
         if ($gpu) { Add-GpuPartition $vm $gpu }
         New-Item -ItemType Directory -Force (Split-Path -Parent $State) | Out-Null
-        Set-Content -LiteralPath $State -Value $name -Encoding ASCII
+        Set-Content -LiteralPath $State -Value (@($name) + $(if ($gpu) { 'gpu' })) -Encoding ASCII
         Start-VM -VM $vm
         Write-Host "clone ${name}: preparing"
         $sec = Wait-Desktop $name $cred
@@ -384,9 +388,14 @@ try {
             if (-not $env:FV_NOMAX) { $keys = "% ;x;;$keys" }
             # FV_GPU=1 (a clone made with it): ours on the host GPU's partition, not in its software runner; its loaded
             # modules are listed after the run (opengl32 and the vendor's OpenGL driver show the path).
-            $gpu = ($who -eq 'u') -and [bool]$env:FV_GPU
+            # A clone made with FV_GPU=1 runs ours on its GPU unless this call has FV_GPU=0; FV_GPU=1 on a clone without
+            # the partition fails at once (ours' GPU start would fail there and hang its launcher).
+            $cloneGpu = Test-CloneGpu
+            if ($env:FV_GPU -eq '1' -and -not $cloneGpu) { Fail 'FV_GPU=1: this clone has no GPU partition (made without FV_GPU=1?); hyperv.ps1 rm, then new with FV_GPU=1' }
+            $gpu = ($who -eq 'u') -and $cloneGpu -and ($env:FV_GPU -ne '0')
             $glFile = '_glmods.txt'
-            if ($gpu) { $keys = "$keys;MODULES $glFile" }
+            # The module list is taken before a trailing CLOSE (the process is gone after it).
+            if ($gpu) { $keys = if ($keys -match ';\s*CLOSE\s*$') { ($keys -replace ';\s*CLOSE\s*$', ";MODULES $glFile;CLOSE") } else { "$keys;MODULES $glFile" } }
             $exe = if ($who -eq 'o') { "$G\FastView5\FastView.exe" } else { "$G\ours\fastview.exe" }
             $open = if ($rec -notin '-', '--', 'none') { "$G\records\$rec" } else { '' }
             $out = Invoke-Command -VMName $name -Credential $cred -ArgumentList $G, $exe, $open, (($who -eq 'u') -and -not $gpu), $keys, $who, [bool]$env:FV_FRESH -ScriptBlock {
@@ -490,7 +499,12 @@ try {
             Remove-Item -LiteralPath $State -Force
             Write-Host "${name}: removed"
         }
-        default { (Get-Content -LiteralPath $PSCommandPath -TotalCount 40) -join "`n" | Write-Host; exit 2 }
+        default {
+            $help = @(Get-Content -LiteralPath $PSCommandPath)
+            $end = [array]::IndexOf($help, '#>')
+            (@($help | Select-Object -First $(if ($end -gt 0) { $end + 1 } else { 40 }))) -join "`n" | Write-Host
+            exit 2
+        }
     }
     # Called in-process (the way the docs advise from PowerShell) `$LASTEXITCODE` keeps the last native command's
     # value otherwise: a step that went through says so.

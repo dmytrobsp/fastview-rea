@@ -11,6 +11,7 @@ $s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBat
 Register-ScheduledTask -TaskName $name -Action $a -Principal $p -Settings $s | Out-Null
 Start-ScheduledTask -TaskName $name
 $code = 0
+try {
 if ($Wait) {
     $t0 = Get-Date
     Start-Sleep -Milliseconds 300
@@ -19,8 +20,10 @@ if ($Wait) {
         $code = 124
         [Console]::Error.WriteLine("insession: still running after $TimeoutSec s")
     } else {
-        $code = [int](Get-ScheduledTaskInfo -TaskName $name).LastTaskResult
+        # The task result is unsigned: a negative exit code or an NTSTATUS (0xC0000005) is above 0x7FFFFFFF.
+        $u = [int64](Get-ScheduledTaskInfo -TaskName $name).LastTaskResult
+        $code = if ($u -gt 2147483647) { [int]($u - 4294967296) } else { [int]$u }
     }
 }
-Unregister-ScheduledTask -TaskName $name -Confirm:$false
+} finally { Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue }
 exit $code
