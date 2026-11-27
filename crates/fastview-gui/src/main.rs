@@ -64,13 +64,36 @@ use eframe::egui;
 #[cfg(test)]
 const MIN_VISIBLE: [f32; 2] = [852.0, 493.0];
 
-/// [`MIN_VISIBLE`] at a system dpi: the window rect 866 × 500 (physical pixels at every scale) less the invisible
-/// border a side. The border measured on clones is 7 / 9 / 11 / 12 / 13 px at 100 / 125 / 150 / 175 / 200 %:
-/// `WinMetrics::border()` at the scaled looks (a first run's client is the clamped rect less it, #176) and one less
-/// at 100 %, where the visible frame line is not part of the client.
-fn min_visible_at(dpi: u32) -> [f32; 2] {
-    let b = oscgeom::WinMetrics::at(dpi).border() - if dpi <= 96 { 1.0 } else { 0.0 };
+/// The frame's minimum client at a system dpi: the minimum tracking rect 866 × 500 (physical pixels at every scale)
+/// less the sizing border (`WinMetrics::border()`: 8 / 9 / 11 / 12 / 13 px at 100 / 125 / 150 / 175 / 200 %) on each
+/// side and below, which is what the original lays its views out in; the caption row is the ribbon's, so none
+/// above (#176).
+fn min_client_at(dpi: u32) -> [f32; 2] {
+    let b = oscgeom::WinMetrics::at(dpi).border();
     [MIN_TRACK_W - 2.0 * b, MIN_TRACK_H - b]
+}
+
+/// What ours' window is larger than the layout inside it (#241): on Windows 11 the DWM's border, 1 / 1 / 2 / 2 / 2 px
+/// at 100 / 125 / 150 / 175 / 200 %, covers the outermost ring of a frameless window, so the layout leaves it out at
+/// the left, right and bottom (`winframe::inset_screen`) and the window is that much larger than the original's
+/// client: its visible frame (the client and the border's line at each side and below). With no such ring to leave out
+/// (a Windows before 11, whose DWM was not seen to paint it; a window with the system title bar, `FV_SYSTEM_TITLEBAR`)
+/// the window is the layout, and its minimum is the original's client (850 x 492 at 100 %, not 852 x 493).
+fn frame_extra(dpi: u32) -> [f32; 2] {
+    frame_extra_on(dpi, winframe::ring_wanted())
+}
+
+/// [`frame_extra`] on a system that has (`ring`) or has not the DWM border's ring.
+fn frame_extra_on(dpi: u32, ring: bool) -> [f32; 2] {
+    let ring = if ring { dpi::mul_div(1, dpi as i32, 96).max(1) as f32 } else { 0.0 };
+    [2.0 * ring, ring]
+}
+
+/// [`min_client_at`] as the smallest window (what the frame's `WM_GETMINMAXINFO` handler of the original gives:
+/// its minimum tracking rect less the invisible border, which is what shows of it).
+fn min_visible_at(dpi: u32) -> [f32; 2] {
+    let (c, e) = (min_client_at(dpi), frame_extra(dpi));
+    [c[0] + e[0], c[1] + e[1]]
 }
 /// The frame's minimum tracking size as a window rect (see [`MIN_VISIBLE`]).
 const MIN_TRACK_W: f32 = 866.0;
@@ -86,10 +109,14 @@ const STATUS_GRIP: f32 = 20.0;
 /// between 954 and 958 px; 38 taken); the 100 % value is this constant.
 const STATUS_GRIP_ALONE: f32 = 28.0;
 
+/// The grip's reserve is 20 / 25 / 30 / 37 / 40 px at 100 - 200 % (#246, clone, a first run's frame stepped by 2 px at
+/// 175 %: the original's fifth pane appears at a client 952 px wide, ours 2 px earlier with 35; the other scales are
+/// the earlier values (`s(20)`: 200 % is 40), whose panes appear at the same 12-px step in both, a step that cannot
+/// tell 38 from 40).
 /// The status bar's right end at `right` (the extended pane's width `ext` at this scale, its grip
 /// not included): `(the extended pane's width with its grip, where the panes must end)`.
 fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f32, f32) {
-    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::s(STATUS_GRIP), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
+    let (grip, alone) = if maximised { (0.0, 0.0) } else { (dpi::measured5([STATUS_GRIP, 25.0, 30.0, 37.0, 40.0]), dpi::measured5([STATUS_GRIP_ALONE, 32.0, 38.0, 43.0, 48.0])) };
     if ext_hidden {
         (ext, right - alone)
     } else {
@@ -97,33 +124,20 @@ fn status_reserve(right: f32, ext: f32, maximised: bool, ext_hidden: bool) -> (f
     }
 }
 
-/// How many pixels of the layout's right and bottom edge a normal (not maximised) window of ours does not show: the
-/// clone's windows end one pixel before the egui area at 100 / 125 % and two at 150 % (the last row and column are the
-/// desktop's; the 175 / 200 % entries repeat 150 %, not measured). The older looks' grip (lines, dots) is placed
-/// against the edge that shows, as the original's is against its client's (#167); the Office 2007 looks' dots, which
-/// an earlier clone run found at the client's edge, are left as they were.
-fn status_grip_inset(grip: theme::Grip) -> f32 {
-    if cfg!(windows) && !matches!(grip, theme::Grip::Shadowed { .. }) {
-        dpi::measured5([1.0, 1.0, 2.0, 2.0, 2.0])
-    } else {
-        0.0
-    }
-}
-
-/// Where the older looks' last pane draws its right bracket line, from the layout's right edge (clone, #167: 22 px
-/// from the last pixel the window shows at 125 %, 27 at 150 %, with the window's cut of 1 / 2 px; at 100 % 19, as it
-/// was). The 175 / 200 % entries continue the step, not measured.
+/// Where the older looks' last pane draws its right bracket line, from the layout's right edge, which is the last
+/// pixel of the visible client (#241; clone, #167: 22 px from the last pixel the window shows at 125 %, 27 at 150 %,
+/// at 100 % 18). The 175 / 200 % entries continue the step, not measured.
 fn status_pane_line_offset() -> f32 {
-    dpi::measured5([19.0, 24.0, 30.0, 35.0, 40.0])
+    dpi::measured5([18.0, 23.0, 28.0, 33.0, 38.0])
 }
 
-/// The left bracket line the original draws at the scaled looks only, from the layout's right edge: 184 / 266 px from
-/// the last pixel the window shows at 125 / 150 % (clone, Office XP and Windows XP; none at 100 %). Not measured at
-/// 175 / 200 %, where none is drawn.
+/// The left bracket line the original draws at the scaled looks only, from the layout's right edge (the visible
+/// client's): 184 / 266 px from the last pixel the window shows at 125 / 150 % (clone, Office XP and Windows XP; none
+/// at 100 %). Not measured at 175 / 200 %, where none is drawn.
 fn status_pane_left_line_offset() -> Option<f32> {
     match dpi::dpi() {
-        120 => Some(186.0),
-        144 => Some(269.0),
+        120 => Some(185.0),
+        144 => Some(267.0),
         _ => None,
     }
 }
@@ -477,6 +491,7 @@ fn main() -> eframe::Result<()> {
     // The ribbon draws the caption row (L9.150): no system decorations,
     // unless `FV_SYSTEM_TITLEBAR` asks for them.
     let own_caption = std::env::var_os("FV_SYSTEM_TITLEBAR").is_none();
+    winframe::set_undecorated(own_caption);
     viewport = viewport.with_decorations(!own_caption);
     // `LoadState` restores the frame's saved window placement; on a first
     // run the frame is CW_USEDEFAULT's: placed by Windows, three quarters of
@@ -677,7 +692,10 @@ fn default_frame_size() -> Option<[f32; 2]> {
     let ok = unsafe { SystemParametersInfoW(SPI_GETWORKAREA, 0, (&mut r as *mut RECT).cast(), 0) } != 0;
     let (w, h) = ((r.right - r.left) as f32, (r.bottom - r.top) as f32);
     let dpi = system_dpi_scale().map_or(96, |s| (s * 96.0).round() as u32);
-    (ok && w > 0.0 && h > 0.0).then(|| first_run_client([w, h], dpi))
+    (ok && w > 0.0 && h > 0.0).then(|| {
+        let (c, e) = (first_run_client([w, h], dpi), frame_extra(dpi));
+        [c[0] + e[0], c[1] + e[1]]
+    })
 }
 
 #[cfg(not(windows))]
@@ -1116,8 +1134,7 @@ impl App {
         // The size grip, in a normal window only (the visual style's gripper).
         self.status_grip = (!maximised).then(|| egui::Rect::from_min_max(egui::pos2(r.right() - 11.0, r.bottom() - 11.0), r.right_bottom()));
         if !maximised {
-            let inset = status_grip_inset(self.skin.status_grip());
-            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right() - inset, r.bottom() - inset) {
+            for (rect, c) in status_grip_shapes(self.skin.status_grip(), r.right(), r.bottom()) {
                 painter.rect_filled(rect, 0.0, c);
             }
             // The older looks' last pane: a line at its right ([`status_pane_line_offset`]) and, at 125 / 150 %, one at
@@ -1283,6 +1300,9 @@ fn startup_args(args: impl Iterator<Item = String>) -> StartupArgs {
 impl eframe::App for App {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         device_screen(ctx, raw);
+        if self.own_caption {
+            winframe::inset_screen(raw, ctx.zoom_factor());
+        }
         winkeys::filter(ctx, raw);
         dialogs::take_dialog_tabs(ctx, raw);
     }
@@ -2114,36 +2134,34 @@ mod window_tests {
         assert_eq!((Skin::OfficeXp.status_pane_line(), Skin::WinXp.status_pane_line(), Skin::Win2000.status_pane_line()), (Some(egui::Color32::from_gray(160)), Some(egui::Color32::from_gray(180)), None));
     }
 
-    /// #167 (clone, 125 / 150 %): the older looks' extended pane: its right bracket line 24 / 29 px from the layout's
-    /// edge (the original's, against the cut of the window's edge), the text 3 px further right than the blue look's
-    /// inset puts it, and a second bracket line left of the pane at the scaled looks only.
+    /// #167 (clone, 125 / 150 %): the older looks' extended pane: its right bracket line 23 / 28 px from the layout's
+    /// edge (the visible client's), the text 3 px further right than the blue look's inset puts it, and a second
+    /// bracket line left of the pane at the scaled looks only.
     #[test]
     fn the_older_looks_extended_pane_follows_the_clone() {
-        for (d, line, shift) in [(96, 19.0, 0.0), (120, 24.0, 3.0), (144, 30.0, 3.0)] {
+        for (d, line, shift) in [(96, 18.0, 0.0), (120, 23.0, 3.0), (144, 28.0, 3.0)] {
             dpi::set(d);
             assert_eq!((status_pane_line_offset(), status_ext_text_shift()), (line, shift), "{d}");
         }
         dpi::set(96);
         assert_eq!(status_pane_left_line_offset(), None, "none at 100 %");
         dpi::set(120);
-        assert_eq!(status_pane_left_line_offset(), Some(186.0));
+        assert_eq!(status_pane_left_line_offset(), Some(185.0));
         dpi::set(144);
-        assert_eq!(status_pane_left_line_offset(), Some(269.0));
+        assert_eq!(status_pane_left_line_offset(), Some(267.0));
         dpi::set(96);
     }
 
-    /// #167 (clone): the grip is laid against the edge of the window that shows, one pixel in at 100 / 125 % and two at
-    /// 150 %, so the dots keep the original's three clear columns and two clear rows.
-    #[cfg(windows)]
+    /// #246 (clone, 175 %): the status bar's grip reserve is 37 px, so the fifth pane appears at the original's client
+    /// width, 2 px later than with 35.
     #[test]
-    fn the_size_grip_keeps_to_the_edge_that_shows() {
-        for (d, want) in [(96, 1.0), (120, 1.0), (144, 2.0)] {
-            dpi::set(d);
-            for skin in [theme::Skin::Win2000, theme::Skin::OfficeXp, theme::Skin::WinXp, theme::Skin::Office2003, theme::Skin::Vs2005] {
-                assert_eq!(status_grip_inset(skin.status_grip()), want, "{d} {skin:?}");
-            }
-            assert_eq!(status_grip_inset(theme::Skin::Blue.status_grip()), 0.0, "{d}: the Office 2007 look is as it was");
-        }
+    fn the_status_grip_reserve_at_175_percent_is_37() {
+        dpi::set(168);
+        assert_eq!(status_reserve(1000.0, 213.0, false, false), (213.0 + 37.0, 1000.0 - 213.0 - 37.0));
+        dpi::set(96);
+        assert_eq!(status_reserve(1000.0, 135.0, false, false), (155.0, 1000.0 - 155.0));
+        dpi::set(192);
+        assert_eq!(status_reserve(1000.0, 238.0, false, false).0, 238.0 + 40.0);
         dpi::set(96);
     }
 
@@ -2593,6 +2611,36 @@ mod window_tests {
         assert!(!matches!(saved, Some(v) if v != "200"), "kept, not clamped: {saved:?}");
     }
 
+    /// The grid / plane splitter dragged while the grid is taller than the drag's range allows (a
+    /// saved 450 px height in the default frame, a pane of about 370 px) snaps to pane − 150 at the
+    /// first vertical move, not at the press: the original's drag `0x437900` acts only once the
+    /// cursor's y differs from the press's, then clamps to [50, client − 150] (L9.399 residual, #16).
+    #[test]
+    fn the_splitter_snaps_into_its_range_at_the_first_move() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert(r"Circle Diagram\Properties Height".into(), "450".into());
+        w.idle(3);
+        let g = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let canvas = *w.app.pane_canvas.iter().find(|c| c.0 == app::Pane::Circle).expect("the plane");
+        let pane_h = canvas.1.bottom() - g.top();
+        // The pane's client (grid, splitter, plane); the 365 px grid of a
+        // saved 450 overflows the limit pane - 150 either way.
+        assert!(g.height() > pane_h - 150.0 + 100.0, "the grid sits above the limit: {} in {pane_h}", g.height());
+        let from = Pos2::new(g.center().x, g.bottom() + 1.0);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(from)]);
+        w.run(vec![ev(from, true)]);
+        w.idle(2);
+        let pressed = *w.app.pane_grid.first().unwrap();
+        assert!((pressed.height() - g.height()).abs() <= 6.0, "a press alone leaves the grid: {} -> {}", g.height(), pressed.height());
+        w.run(vec![egui::Event::PointerMoved(from + Vec2::new(0.0, 1.0))]);
+        w.idle(1);
+        let g1 = *w.app.pane_grid.first().unwrap();
+        assert!((g1.height() - (pane_h - 150.0)).abs() <= 6.0, "snapped to pane - 150 at the first move: {} -> {}", g.height(), g1.height());
+        w.run(vec![ev(from, false)]);
+    }
+
     /// The ruler labels its ticks out to the plot's edge, past the record's
     /// end too (VM, L9.398: the first tick past a record's end is labelled).
     #[test]
@@ -3007,8 +3055,14 @@ mod window_tests {
     /// border (852 × 493 at 100 %, 840 × 487 at 200 %).
     #[test]
     fn the_first_run_frame_keeps_the_minimum_tracking_size() {
-        assert_eq!(min_visible_at(96), MIN_VISIBLE);
-        assert_eq!(min_visible_at(192), [840.0, 487.0]);
+        // The layout's minimum is the original's client (the rect less its sizing border); ours' window is that and the
+        // DWM border's ring at the left, right and bottom (#241): the visible frame, 852 × 493 at 100 %.
+        assert_eq!(min_client_at(96), [850.0, 492.0]);
+        assert_eq!(frame_extra_on(96, true), [2.0, 1.0]);
+        assert_eq!(MIN_VISIBLE, [850.0 + 2.0, 492.0 + 1.0]);
+        assert_eq!(min_client_at(192), [840.0, 487.0]);
+        assert_eq!(frame_extra_on(192, true), [4.0, 2.0]);
+        assert_eq!(frame_extra_on(192, false), [0.0, 0.0], "no border ring before Windows 11");
         // The work area 1280 × 704 at 192 dpi: 528 − 38 = 490 would be below the minimum 500.
         assert_eq!(first_run_client([1280.0, 704.0], 192)[1], 500.0 - 13.0);
         // Where the rule gives more, the rule stands (168 dpi: 537 − 34 = 503).
@@ -3018,12 +3072,12 @@ mod window_tests {
         // … and what the first run gives is never below what the window can be sized to, at any scale: the two
         // rules were one pixel apart at 200 %, so the window grew the clone's first run to 488 high.
         for dpi in [96, 120, 144, 168, 192] {
-            let (min, first) = (min_visible_at(dpi), first_run_client([1280.0, 704.0], dpi));
+            let (min, first) = (min_client_at(dpi), first_run_client([1280.0, 704.0], dpi));
             assert!(first[0] >= min[0] && first[1] >= min[1], "dpi {dpi}: {first:?} against {min:?}");
         }
         let small = first_run_client([1000.0, 566.0], 192);
         assert_eq!(small, [866.0 - 26.0, 500.0 - 13.0]);
-        assert_eq!(small, min_visible_at(192), "the clamped first run is exactly the smallest window");
+        assert_eq!(small, min_client_at(192), "the clamped first run is exactly the smallest window");
     }
 
     /// #147: on a first run's frame ours' MDI area is the original's at every display scale (clone,
@@ -3040,6 +3094,25 @@ mod window_tests {
             frames(&mut app, &ctx, Vec2::new(w, h), vec![vec![]; 4]);
             assert_eq!((app.mdi_area.width(), app.mdi_area.height()), want, "dpi {dpi}: {:?}", app.mdi_area);
         }
+    }
+
+    /// #219 (clone, 175 / 200 %, a work area so small that the first run's frame is clamped to 866 x 500): the
+    /// original's MDI area is 205 x 54 and 204 x 32 px. A regression pin for the live state the clone checked (ours
+    /// 204 / 203 wide there), not a headless defect: the headless width was already 205 before the unit's changes; the
+    /// 0.7.1 clone's difference of about 90 px has no cause found here.
+    #[test]
+    fn a_clamped_first_runs_mdi_area_is_the_originals_at_175_and_200() {
+        for (dpi, want) in [(168u32, (205.0, 54.0)), (192, (204.0, 32.0))] {
+            dpi::set(dpi);
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            app.own_caption = true;
+            let [w, h] = first_run_client([1000.0, 566.0], dpi);
+            frames(&mut app, &ctx, Vec2::new(w, h), vec![vec![]; 4]);
+            let got = (app.mdi_area.width(), app.mdi_area.height());
+            assert!((got.0 - want.0).abs() <= 1.0 && (got.1 - want.1).abs() <= 1.0, "dpi {dpi}: {got:?} against {want:?}");
+        }
+        dpi::set(96);
     }
 
     /// #147: restored maximised after the first run, ours' MDI area is the original's (clone:
@@ -3123,6 +3196,31 @@ mod window_tests {
             frames(&mut app, &ctx, Vec2::new(NARROW, 860.0), vec![vec![egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }], vec![]]);
         }
         panic!("no collapsed «Вычисления» button opened its panel");
+    }
+
+    /// #225 (clone, 100 - 200 %): through the ribbon's real widths, «Объединение» keeps its full layout until
+    /// «Осциллограмма», «Вычисления» and «Видимость» have collapsed (the original's default reduction with one width
+    /// for «Объединение»; with an icon-only second width it was reduced first).
+    #[test]
+    fn the_home_ribbon_keeps_obedinenie_full_until_the_others_collapse() {
+        let steps = |w: f32| {
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            frames(&mut app, &ctx, Vec2::new(w, 860.0), vec![vec![]; 3]);
+            ["Объединение", "Диаграммы", "Видимость", "Вычисления", " "].iter().map(|t| ctx.data(|d| d.get_temp::<usize>(egui::Id::new(("fv_ribbon_group_step", *t)))).unwrap_or(0)).collect::<Vec<usize>>()
+        };
+        let mut seen = false;
+        for w in (300..1320).step_by(4).rev() {
+            let c = steps(w as f32);
+            if c[0] > 0 {
+                // Объединение's only step is its collapse: the others are collapsed (Диаграммы at its smallest layout).
+                assert!(c[4] == 1 && c[3] == 3 && c[2] == 1 && c[1] > 0, "{w}: {c:?}");
+                seen = true;
+            }
+        }
+        assert!(seen, "a width that collapses «Объединение» too");
+        // Down to the minimum frame (866) it stays full.
+        assert_eq!(steps(852.0)[0], 0);
     }
 
     /// The diagram panes dock, float and auto-hide (L9.92): a caption
@@ -5983,6 +6081,88 @@ mod window_tests {
         assert_eq!(focused(&w), cancel, "and back");
     }
 
+    /// The quick-analysis sheet's page list is the last member of the last span of a page: on a clone
+    /// (536, 537, the formula page) ↓ from the last control of that span moves the focus to the list and
+    /// the next arrow goes round; a lone «Отключить» passes the focus to the list and back (#239). The
+    /// list has no tab stop: Tab skips it.
+    #[test]
+    fn the_quick_sheets_page_list_ends_the_last_span_for_the_arrows() {
+        use crate::dialogs::{focused_kind, GroupKind};
+        let sheet = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        let kind = |w: &Win| focused_kind(&w.ctx, "fv_quick_sheet");
+        let tab_to = |w: &mut Win, want: GroupKind| {
+            for _ in 0..40 {
+                if kind(w) == Some(want) {
+                    return;
+                }
+                w.key(egui::Key::Tab);
+            }
+            panic!("no {want:?} reached by Tab");
+        };
+        // 537, both «Отключить» enabled: the check, the other check, the list, round to the first.
+        let mut w = sheet(app::AnalysisTab::Zero);
+        tab_to(&mut w, GroupKind::Check);
+        let first = w.ctx.memory(|m| m.focused());
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Check), "the second check");
+        assert_ne!(w.ctx.memory(|m| m.focused()), first);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↓ from the last check reaches the page list");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.ctx.memory(|m| m.focused()), first, "round to the first check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↑ from the first check goes round to the list");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Check), "↑ from the list");
+        // The list takes no Tab.
+        // Tab from the list starts at it: the first enabled sheet button; Shift+Tab: the page's last check.
+        for back in [false, true] {
+            let mut w = sheet(app::AnalysisTab::Zero);
+            tab_to(&mut w, GroupKind::Check);
+            w.key(egui::Key::ArrowDown);
+            let last_check = w.ctx.memory(|m| m.focused());
+            w.key(egui::Key::ArrowDown);
+            assert_eq!(kind(&w), Some(GroupKind::Bar));
+            w.held = if back { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+            w.key(egui::Key::Tab);
+            if back {
+                assert_eq!(w.ctx.memory(|m| m.focused()), last_check, "Shift+Tab from the list reaches the page's last check");
+            } else {
+                assert_eq!(kind(&w), Some(GroupKind::Push), "Tab from the list reaches a sheet button");
+            }
+        }
+        // 537 with the voltage side off: the lone «Отключить» and the list pass the focus between them.
+        let mut w = sheet(app::AnalysisTab::Zero);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap()].zero_u_off = true;
+        w.idle(4);
+        tab_to(&mut w, GroupKind::Check);
+        let at = w.ctx.memory(|m| m.focused());
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s == &[GroupKind::Check, GroupKind::Bar]), "{spans:?}");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↓ from the lone check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(w.ctx.memory(|m| m.focused()), at, "↑ back to the check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↑ from the lone check reaches the list as well");
+        // 536 with its voltage «Отключить» disabled (the currents ones ticked): the same pair.
+        let mut w = sheet(app::AnalysisTab::Symmetric);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Symmetric).unwrap()].currents_off = true;
+        w.idle(4);
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s == &[GroupKind::Check, GroupKind::Bar]), "{spans:?}");
+        // The formula editor (340): ↓ from the last button reaches the list.
+        let w = sheet(app::AnalysisTab::Formula);
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s.last() == Some(&GroupKind::Bar) && s.contains(&GroupKind::Push) && s.len() > 2), "{spans:?}");
+    }
+
     /// A pane that slides out on hover (a foreground layer, no press) does not take the merge bar's
     /// keyboard focus (re-review of #186).
     #[test]
@@ -6168,7 +6348,7 @@ mod window_tests {
     /// the program settings (510) (#25).
     #[test]
     fn the_templates_mixed_spans_are_one_span_for_the_arrows() {
-        use crate::dialogs::{arrow_spans, GroupKind::{Check, Other, Push, Radio}};
+        use crate::dialogs::{arrow_spans, GroupKind::{Bar, Check, Other, Push, Radio}};
         let has = |w: &Win, title: &str, span: &[crate::dialogs::GroupKind]| {
             let spans = arrow_spans(&w.ctx, title);
             assert!(spans.iter().any(|s| s == span), "{title}: no span {span:?} in {spans:?}");
@@ -6187,7 +6367,7 @@ mod window_tests {
             w
         };
         let w = page(app::AnalysisTab::Formula);
-        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push]);
+        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push, Bar]);
         let w = page(app::AnalysisTab::Symmetric);
         has(&w, "fv_quick_sheet", &[Other, Check]);
         let w = page(app::AnalysisTab::PhasePhase);
@@ -6196,7 +6376,7 @@ mod window_tests {
         // 537: «Ic» with the 3Io radios; the two «Отключить» one span.
         let w = page(app::AnalysisTab::Zero);
         has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
-        has(&w, "fv_quick_sheet", &[Check, Check]);
+        has(&w, "fv_quick_sheet", &[Check, Check, Bar]);
         // A disabled control takes up the span flag meant for it: with the
         // voltages off the sheet's buttons stay their own span (review).
         let mut w = page(app::AnalysisTab::Zero);
@@ -6213,7 +6393,7 @@ mod window_tests {
         w.idle(4);
         let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
         let with_check: Vec<_> = spans.iter().filter(|s| s.contains(&Check)).collect();
-        assert_eq!(with_check, vec![&vec![Check]], "{spans:?}");
+        assert_eq!(with_check, vec![&vec![Check, Bar]], "{spans:?}");
         let before = w.app.quick[q].zero_i;
         // Ia, Ib, Ic, «Расчетный», then the 3Io «Отключить» (the voltage side is off).
         for _ in 0..4 {
@@ -6351,13 +6531,13 @@ mod window_tests {
             w.idle(4);
             w
         };
-        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CC", "PP"]);
-        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CC", "PP"]);
+        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CCB", "PP"]);
+        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CCB", "PP"]);
         check(&page(app::AnalysisTab::PhasePhase), "fv_quick_sheet", &["OC", "RROOOO", "PP"]);
         check(&page(app::AnalysisTab::Phase), "fv_quick_sheet", &["ORR", "PP"]);
-        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "c", "PP"]);
+        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "cB", "PP"]);
         let mut w = page(app::AnalysisTab::Formula);
-        check(&w, "fv_quick_sheet", &["OPPPPPPP", "PP"]);
+        check(&w, "fv_quick_sheet", &["OPPPPPPPB", "PP"]);
         w.app.open_formula_dlg();
         w.idle(4);
         check(&w, "fv_add_formula", &["OOPP"]);
