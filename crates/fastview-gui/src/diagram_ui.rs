@@ -1766,8 +1766,9 @@ impl App {
                     // A bar with no height: GDI's Rectangle draws nothing under a
                     // 1-pixel pen and, under a wider one, a single line of the pen's
                     // width centred on the edge (the baseline then covers its middle) (`0x470488`; clone, #158).
-                    // A box one row tall is the same line: the path runs to `bottom - 1`, on the top row (#238).
-                    if bottom_dev - top_dev <= 1 {
+                    // A box one row tall is the same line: the path runs to `bottom - 1`, on the top row (#238). Under
+                    // the 1-pixel pen (s = 1) it is still a box: GradientFill fills its row and the pen draws it.
+                    if dg::is_flat_bar(si, bottom_dev - top_dev) {
                         if let Some(w) = dg::flat_bar_pen(si, bottom_dev - top_dev) {
                             let edge = if bottom_dev - top_dev == 1 { top_dev } else { bottom_dev };
                             let y = pt(0, edge - w / 2).y;

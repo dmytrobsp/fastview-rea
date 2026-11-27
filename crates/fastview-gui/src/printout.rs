@@ -278,6 +278,18 @@ const S_URL: &str = "www.mtrele.ru";
 /// The printed slice's bitmap resolution (`0x405970`, VM).
 const SLICE_PPI: f32 = 136.0;
 
+/// The most pixels the supersampled slice raster may have (a few times the A4 page at the slice's resolution): a
+/// margin rectangle a few pixels wide plans a slice thousands of times taller than the page, and drawing it at a
+/// pixel a point would allocate gigabytes.
+const SLICE_RASTER_MAX_PX: f32 = 16_000_000.0;
+
+/// The supersampling of the slice drawn at `k` px a point (< 1: drawn at about a pixel a point and shrunk keeping
+/// ink): `⌈1 / k⌉`, but never more than keeps the raster of a `size` slice within [`SLICE_RASTER_MAX_PX`].
+fn slice_oversample(size: Vec2, k: f32) -> f32 {
+    let area = (size.x * size.y * k * k).max(1.0);
+    (1.0 / k).ceil().min((SLICE_RASTER_MAX_PX / area).sqrt().floor().max(1.0))
+}
+
 /// The header/footer font: «Arial» 12 screen px cell height.
 const DECOR_FONT: FontId = FontId::proportional(10.5);
 /// The header/footer line pitch `T` (≈ the cell height of that font).
@@ -465,6 +477,8 @@ impl App {
         let mut canvas = raster::render(page_scr, k, Some(fonts), |ctx| this.paint_decor(ctx, job, r_scr, idx, preview));
         let (rw, rh) = (rdev.width().max(1.0) as usize, rdev.height().max(1.0) as usize);
         match job.pages[idx] {
+            // A margin rectangle with no width or height has no slice (the original's bitmap of R is empty).
+            PageKind::Osc(_) if rdev.width() < 1.0 || rdev.height() < 1.0 => {}
             PageKind::Osc(slice) => {
                 let ppp = rw as f32 / plan.client_w;
                 let size = Vec2::new(plan.client_w, plan.page_h);
@@ -477,7 +491,7 @@ impl App {
                 let at = |k: f32| {
                     let (w, h) = (((size.x * k).round() as usize).max(1), ((size.y * k).round() as usize).max(1));
                     if k < 1.0 {
-                        let ss = (1.0 / k).ceil();
+                        let ss = slice_oversample(size, k);
                         raster::render(size, k * ss, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice)).shrink_ink(w, h)
                     } else {
                         raster::render(size, k, Some(fonts), |ctx| this.paint_osc_slice(ctx, job.di, plan, slice))
@@ -721,8 +735,15 @@ fn crop(c: &Canvas, w: usize, h: usize) -> Canvas {
 /// The 1-device-px black frame around R (`0x405970`, Rectangle with the
 /// null brush).
 fn frame(c: &mut Canvas, r: Rect) {
+    // Only what lies on the canvas: an empty or inverted R, or one at its edge, draws nothing out of bounds.
+    if c.w == 0 || c.h == 0 || r.max.x <= r.min.x || r.max.y <= r.min.y {
+        return;
+    }
     let (x0, y0) = (r.min.x.max(0.0) as usize, r.min.y.max(0.0) as usize);
     let (x1, y1) = ((r.max.x as usize).min(c.w).saturating_sub(1), (r.max.y as usize).min(c.h).saturating_sub(1));
+    if x0 > x1 || y0 > y1 {
+        return;
+    }
     for x in x0..=x1 {
         c.px[y0 * c.w + x] = [0; 3];
         c.px[y1 * c.w + x] = [0; 3];
@@ -840,9 +861,10 @@ mod tests {
         let (lo, hi) = (*tall.first().expect("the fundamental's bar"), *tall.last().unwrap());
         let thin: Vec<usize> = (0..c.w).filter(|&x| x < lo || x > hi).map(|x| runs[x]).filter(|&r| r > 0).collect();
         assert!(!thin.is_empty(), "the flat bars are drawn");
-        // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its lower half
-        // (the original on a clone at 600 dpi: three rows of colour above the baseline; with this test's page offset two).
-        assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, half under the baseline: {:?}", thin.iter().max());
+        // The pen is `s` wide, centred on the bar's edge, and the baseline (`s / 2` wide) covers its middle (the
+        // original on a clone at 600 dpi: two rows of colour above the baseline, three of baseline, one below, #238;
+        // with this test's page offset, one above and two below: never more than `s / 2` in one run).
+        assert!(thin.iter().all(|&r| r <= s / 2), "a flat bar is the pen's width centred on its edge, the baseline over its middle: {:?}", thin.iter().max());
     }
 
     /// #238 (clone): on a real print the frequency page tiles by the live pane's aspect, and a bar with no height
@@ -870,10 +892,16 @@ mod tests {
             if hi - lo > 2 * s || c.get(x, lo.saturating_sub(40)) != bg && c.get(x, hi + 40) != bg {
                 continue;
             }
+            // Every non-background row within 1.5 s of the baseline (the colour's own rows, a feathered edge, anything; the axis
+            // label's text starts 2 s under it): the pen's s.
+            let base: Vec<usize> = (lo..=hi).filter(|&y| c.get(x, y) != want).collect();
+            let (b0, b1) = (base[0], base[base.len() - 1]);
+            let ink: Vec<usize> = (b0.saturating_sub(3 * s / 2)..=(b1 + 3 * s / 2).min(c.h - 1)).filter(|&y| c.get(x, y) != bg).collect();
+            assert_eq!((ink.first().copied(), ink.last().copied()), (Some(lo), Some(hi)), "no other ink beside the pen, column {x}");
             let rows: Vec<usize> = (lo..=hi).collect();
+            assert_eq!(ink.len(), s, "every non-background row is one of the pen's {s}, column {x}");
             assert_eq!(rows.len(), s, "a flat bar's colour and baseline cover the pen's {s} rows, column {x}: {lo}..{hi}");
             // The baseline (s / 2 rows) sits in the pen's middle: two rows of colour above it, one below (clone).
-            let base = (lo..=hi).filter(|&y| c.get(x, y) != want).collect::<Vec<_>>();
             assert_eq!((base[0] - lo, hi - base[base.len() - 1]), (2, 1), "colour above and below the baseline, column {x}");
             checked += 1;
         }
@@ -886,7 +914,19 @@ mod tests {
     fn a_frequency_bar_with_no_height_draws_nothing_at_scale_one() {
         let (c, want, s) = tiny_harmonics_page(150.0);
         assert_eq!(s, 1);
-        // The channel's colour in 8-connected blobs, as bounding boxes (x0, y0, x1, y1).
+        let blobs = colour_blobs(&c, want);
+        // The fundamental's bar is the tall blob; whatever else carries the colour is the legend's swatch, one
+        // small box. A flat bar's tick would be a blob of its own beside the bar, far from the swatch.
+        let tall = *blobs.iter().max_by_key(|b| b.3 - b.1).expect("the fundamental's bar");
+        assert!(tall.3 - tall.1 > 100, "the fundamental's bar is tall: {tall:?}");
+        let rest: Vec<_> = blobs.iter().filter(|&&b| b != tall).collect();
+        let (x0, y0) = (rest.iter().map(|b| b.0).min().unwrap_or(0), rest.iter().map(|b| b.1).min().unwrap_or(0));
+        let (x1, y1) = (rest.iter().map(|b| b.2).max().unwrap_or(0), rest.iter().map(|b| b.3).max().unwrap_or(0));
+        assert!(!rest.is_empty() && x1 - x0 <= 12 && y1 - y0 <= 12, "the channel's colour outside the tall bar is the swatch alone: {blobs:?}");
+    }
+
+    /// The channel's colour in 8-connected blobs, as bounding boxes (x0, y0, x1, y1).
+    fn colour_blobs(c: &Canvas, want: [u8; 3]) -> Vec<(usize, usize, usize, usize)> {
         let mut seen = vec![false; c.w * c.h];
         let mut blobs = Vec::new();
         for y0 in 0..c.h {
@@ -908,14 +948,7 @@ mod tests {
                 blobs.push(bb);
             }
         }
-        // The fundamental's bar is the tall blob; whatever else carries the colour is the legend's swatch, one
-        // small box. A flat bar's tick would be a blob of its own beside the bar, far from the swatch.
-        let tall = *blobs.iter().max_by_key(|b| b.3 - b.1).expect("the fundamental's bar");
-        assert!(tall.3 - tall.1 > 100, "the fundamental's bar is tall: {tall:?}");
-        let rest: Vec<_> = blobs.iter().filter(|&&b| b != tall).collect();
-        let (x0, y0) = (rest.iter().map(|b| b.0).min().unwrap_or(0), rest.iter().map(|b| b.1).min().unwrap_or(0));
-        let (x1, y1) = (rest.iter().map(|b| b.2).max().unwrap_or(0), rest.iter().map(|b| b.3).max().unwrap_or(0));
-        assert!(!rest.is_empty() && x1 - x0 <= 12 && y1 - y0 <= 12, "the channel's colour outside the tall bar is the swatch alone: {blobs:?}");
+        blobs
     }
 
     /// #191 (clone): on a real print a vector legend that does not fit starts at the page's `6·s`, left of R
@@ -1081,6 +1114,41 @@ mod dump {
         assert_eq!(header_name(Some(Path::new("/data/rec.osc2"))), "rec.", "four characters, not the extension");
         assert_eq!(header_name(Some(Path::new("/data/a.b"))), "");
         assert_eq!(header_name(None), "", "an unsaved document");
+    }
+
+    /// Critical (review 1 of #229): the page setup takes margins that leave a margin rectangle a few pixels wide or none
+    /// (comdlg32 does). The oscillogram page planned a slice thousands of times taller than the page and rasterised it
+    /// at a pixel a point (gigabytes), and `frame` indexed past the canvas at its edge.
+    #[test]
+    fn narrow_margin_rectangles_render_in_bounded_memory() {
+        // The raster of a slice 1000 x 323 666 pt drawn at k = 0.0058 (R 27 px wide at 600 dpi) stays small; before, the
+        // supersampling `ceil(1/k)` made it 1000 x 323 666 px.
+        let size = Vec2::new(1000.0, 323_666.0);
+        let k = 0.0058;
+        let ss = slice_oversample(size, k);
+        assert!(size.x * size.y * (k * ss) * (k * ss) <= SLICE_RASTER_MAX_PX * 1.01, "{ss}");
+        assert_eq!(slice_oversample(Vec2::new(1000.0, 3000.0), 0.5), 2.0, "a normal slice keeps ceil(1 / k)");
+        // `frame` clips: an empty R, one at the canvas's right or bottom edge, an inverted one.
+        let mut c = Canvas::white(100, 50);
+        for r in [Rect::from_min_max(Pos2::new(100.0, 10.0), Pos2::new(100.0, 50.0)), Rect::from_min_max(Pos2::new(100.0, 10.0), Pos2::new(130.0, 60.0)), Rect::from_min_max(Pos2::new(40.0, 50.0), Pos2::new(60.0, 50.0)), Rect::from_min_max(Pos2::new(60.0, 40.0), Pos2::new(40.0, 10.0)), Rect::from_min_max(Pos2::new(-5.0, -5.0), Pos2::new(3.0, 3.0))] {
+            frame(&mut c, r);
+        }
+        // Every page kind under margins that leave 27 px or nothing, at a preview's and a printer's resolution.
+        let started = std::time::Instant::now();
+        for (margins, dpi) in [([21000, 2000, 0, 0], 110.0), ([10450, 2000, 10450, 2000], 110.0), ([2000, 14850, 2000, 14850], 110.0), ([10450, 2000, 10450, 2000], 600.0)] {
+            {
+                let mut app = App::new();
+                app.dispatch(Command::Demo);
+                app.docs[0].print_ticks = [true; 5];
+                let setup = PageSetup { margins, portrait: true };
+                let job = app.print_job(0, Device::sheet(&setup, dpi), setup);
+                for i in 0..job.pages.len().min(8) {
+                    let c = app.render_page(&egui::FontDefinitions::default(), &job, i, false);
+                    assert!(c.w * c.h <= 5000 * 7100, "the page is the sheet: {margins:?} {dpi} dpi");
+                }
+            }
+        }
+        assert!(started.elapsed().as_secs() < 100, "quick: {:?}", started.elapsed());
     }
 
     #[test]
