@@ -2593,6 +2593,33 @@ mod window_tests {
         assert!(!matches!(saved, Some(v) if v != "200"), "kept, not clamped: {saved:?}");
     }
 
+    /// The grid / plane splitter dragged while the grid sits below the
+    /// drag's range (a short pane: the saved 200 px against pane − 150)
+    /// snaps to the range's end at the first move, as the original's drag
+    /// `0x437900` clamps to [50, client − 150] (L9.399 residual, #16).
+    #[test]
+    fn the_splitter_snaps_into_its_range_at_the_first_move() {
+        let mut w = Win::new();
+        w.app.dispatch(app::Command::ActivatePane(app::Pane::Circle));
+        w.app.store.view.insert(r"Circle Diagram\Properties Height".into(), "450".into());
+        w.idle(3);
+        let g = *w.app.pane_grid.first().expect("the circle pane's grid");
+        let canvas = *w.app.pane_canvas.iter().find(|c| c.0 == app::Pane::Circle).expect("the plane");
+        let pane_h = canvas.1.bottom() - g.top();
+        // The pane's client (grid, splitter, plane); the 365 px grid of a
+        // saved 450 overflows the limit pane - 150 either way.
+        assert!(g.height() > pane_h - 150.0 + 100.0, "the grid sits above the limit: {} in {pane_h}", g.height());
+        let from = Pos2::new(g.center().x, g.bottom() + 1.0);
+        let ev = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        w.run(vec![egui::Event::PointerMoved(from)]);
+        w.run(vec![ev(from, true)]);
+        w.run(vec![egui::Event::PointerMoved(from + Vec2::new(0.0, 1.0))]);
+        w.idle(1);
+        let g1 = *w.app.pane_grid.first().unwrap();
+        assert!((g1.height() - (pane_h - 150.0)).abs() <= 6.0, "snapped to pane - 150 at the first move: {} -> {}", g.height(), g1.height());
+        w.run(vec![ev(from, false)]);
+    }
+
     /// The ruler labels its ticks out to the plot's edge, past the record's
     /// end too (VM, L9.398: the first tick past a record's end is labelled).
     #[test]
