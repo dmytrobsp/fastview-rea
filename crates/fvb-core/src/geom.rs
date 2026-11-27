@@ -281,19 +281,22 @@ fn unit_rect(x: f64, y: f64) -> IShapes {
 /// (device y = −world y), the regions fold by their ops as when painting,
 /// and the extent is the largest |edge| of the fold's box (`GetRgnBox`).
 /// Per figure: polygon / polypoint vertices round to the nearest unit,
-/// ties up (`0x409c00`, `0x40ae40`); a circle is the `Ellipse` of its box
-/// rounded outward, drawn into a path (`0x40a170`), so — GDI's compatible
-/// mode, the DC's default — without the box's right and bottom edges and,
-/// from the path's scan conversion, its top row and left column
-/// (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
+/// ties up (`0x409c00`, `0x40ae40`), and the path converts to a region by
+/// [`scan_region`]'s rule, which loses the row of a lone top vertex (a
+/// diamond's apex reaching 51 scales as 50; #226, clone); a circle is the
+/// `Ellipse` of its box rounded outward, drawn into a path (`0x40a170`), so
+/// — GDI's compatible mode, the DC's default — without the box's right and
+/// bottom edges and, from the path's scan conversion, its top row and left
+/// column (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
 /// 8 Ом cell, not 65 / 9); an ellipse is the axis-aligned one of
 /// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋+1…⌈b/2⌉−1 (its top row lost like the circle's, but
 /// its left column kept: a clone's ellipse 82 wide at x −10 scales to 51, a
 /// 20 Ом cell, where the circle's rule gave 50) turned, rounded and moved to
-/// (R(cx), R(−cy)) (`0x40a5d0`). A figure whose region is empty — or whose box
-/// has no width or no height — is a 1 × 1 rectangle instead: a polygon's
-/// at its first point (⌈x⌉, −⌈y⌉), (0, 0) without one; a circle's at
-/// (⌈cx⌉, ⌈cy⌉) and an ellipse's at (R(cx), R(cy)), neither flipped.
+/// (R(cx), R(−cy)) (`0x40a5d0`). A figure whose
+/// region is empty — or whose box has no width or no height — is a 1 × 1
+/// rectangle instead: a polygon's at its first point (⌈x⌉, −⌈y⌉), (0, 0)
+/// without one; a circle's at (⌈cx⌉, ⌈cy⌉) and an ellipse's at (R(cx),
+/// R(cy)), neither flipped.
 pub fn integer_extent(ch: &Characteristic, figs: &[Option<FigureValues>]) -> f64 {
     let mut ext = 0.0f64;
     for mode in [Mode::On, Mode::Off] {
@@ -315,15 +318,83 @@ pub fn integer_extent(ch: &Characteristic, figs: &[Option<FigureValues>]) -> f64
     ext
 }
 
+/// The pixels GDI's `PathToRegion` gives a closed path of device points
+/// (`BeginPath`, `Polygon`, `EndPath`, ALTERNATE fill; #226, #242, clones):
+/// a pixel is in when the lattice point at its top-left corner is inside the
+/// path, an edge's left and top side counting as inside and its right and
+/// bottom side as outside. So a row whose crossings are all one point —
+/// the row of a lone top vertex, also of a top edge that slants — has no
+/// pixel, while a flat top edge, a left apex, a right apex and a bottom apex
+/// keep theirs (a clone: apexes of every slope at 51, thin ones included).
+/// Returned as one rectangle per run of equal rows.
+fn scan_region(ring: &[Pt]) -> IShapes {
+    /// Rows beyond this are not worth the pixels: the lost row cannot change
+    /// the scale there, and a runaway polygon would build a million rectangles.
+    const MAX_ROWS: f64 = 4096.0;
+    let n = ring.len();
+    if n < 3 || ring.iter().any(|p| !p[0].is_finite() || !p[1].is_finite()) {
+        return Vec::new();
+    }
+    let (ymin, ymax) = ring.iter().fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p[1]), b.max(p[1])));
+    if ymax - ymin > MAX_ROWS {
+        return simplify_ring(ring.to_vec());
+    }
+    let mut open: Vec<(i64, i64, i64)> = Vec::new(); // (x0, x1, first row) of runs reaching the previous row
+    let mut out: IShapes = Vec::new();
+    let mut close = |run: (i64, i64, i64), end: i64| {
+        let (x0, x1, y0) = (run.0 as f64, run.1 as f64, run.2 as f64);
+        out.push(vec![vec![[x0, y0], [x1, y0], [x1, end as f64], [x0, end as f64]]]);
+    };
+    let mut y = ymin.ceil() as i64;
+    let last = ymax.ceil() as i64;
+    while y < last || !open.is_empty() {
+        let mut runs: Vec<(i64, i64)> = Vec::new();
+        if y < last {
+            let yf = y as f64;
+            let mut xs: Vec<f64> = Vec::new();
+            for i in 0..n {
+                let (p, q) = (ring[i], ring[(i + 1) % n]);
+                let (lo, hi) = if p[1] <= q[1] { (p, q) } else { (q, p) };
+                if lo[1] <= yf && yf < hi[1] {
+                    xs.push(lo[0] + (yf - lo[1]) * (hi[0] - lo[0]) / (hi[1] - lo[1]));
+                }
+            }
+            xs.sort_by(f64::total_cmp);
+            for pair in xs.as_chunks::<2>().0 {
+                let (a, b) = (pair[0].ceil() as i64, pair[1].ceil() as i64);
+                if a < b {
+                    runs.push((a, b));
+                }
+            }
+        }
+        let mut next: Vec<(i64, i64, i64)> = Vec::new();
+        for run in open.drain(..) {
+            if let Some(pos) = runs.iter().position(|r| *r == (run.0, run.1)) {
+                runs.remove(pos);
+                next.push(run);
+            } else {
+                close(run, y);
+            }
+        }
+        next.extend(runs.into_iter().map(|(a, b)| (a, b, y)));
+        open = next;
+        y += 1;
+    }
+    out
+}
+
 /// One figure's integer region at scale 1 (see [`integer_extent`]).
 fn device_region(v: &FigureValues) -> IShapes {
     let dev = |p: &Pt| [rnd(p[0]), -rnd(p[1])];
-    let (ring, fallback): (Contour, Pt) = match v {
-        FigureValues::PolyPoint(pts) => (pts.iter().map(dev).collect(), pts.first().map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()])),
+    let (region, fallback): (IShapes, Pt) = match v {
+        FigureValues::PolyPoint(pts) => {
+            let ring: Contour = pts.iter().map(dev).collect();
+            (scan_region(&ring), pts.first().map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()]))
+        }
         FigureValues::Polygon(lines) => {
             let first = lines.last().zip(lines.first()).and_then(|(a, b)| line_intersection(a, b));
-            let ring = polygon_from_lines(lines).map(|pts| pts.iter().map(dev).collect()).unwrap_or_default();
-            (ring, first.map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()]))
+            let ring: Contour = polygon_from_lines(lines).map(|pts| pts.iter().map(dev).collect()).unwrap_or_default();
+            (scan_region(&ring), first.map_or([0.0, 0.0], |p| [p[0].ceil(), -p[1].ceil()]))
         }
         FigureValues::Circle { center: [cx, cy], radius } => {
             let r = radius.abs();
@@ -332,7 +403,7 @@ fn device_region(v: &FigureValues) -> IShapes {
             // conversion its top row and left column, the tips (clone, #194).
             let (l, t, rt, b) = ((cx - r).floor() + 1.0, (-(cy + r)).floor() + 1.0, (cx + r).ceil() - 1.0, (r - cy).ceil() - 1.0);
             let ring = ellipse_points([(l + rt) / 2.0, (t + b) / 2.0], (rt - l) / 2.0, (b - t) / 2.0, 0.0);
-            (ring, [cx.ceil(), cy.ceil()])
+            (simplify_ring(ring), [cx.ceil(), cy.ceil()])
         }
         FigureValues::Ellipse { center: [cx, cy], width, height, angle } => {
             let (a, b) = (width.abs(), height.abs());
@@ -346,10 +417,9 @@ fn device_region(v: &FigureValues) -> IShapes {
                 .iter()
                 .map(|p| [rnd(p[0]) + ox, rnd(p[1]) + oy])
                 .collect();
-            (ring, [rnd(*cx), rnd(*cy)])
+            (simplify_ring(ring), [rnd(*cx), rnd(*cy)])
         }
     };
-    let region = simplify_ring(ring);
     match shapes_box(&region) {
         Some((l, t, r, b)) if r > l && b > t => region,
         _ => unit_rect(fallback[0], fallback[1]),

@@ -97,6 +97,61 @@ fn characteristic_extent_in_whole_units() {
     assert_eq!(ext(r#"<ellipse mode="on" xcenter="0" ycenter="11" width="20" height="82" angle="0"/>"#), 51.0);
 }
 
+/// The plane extent of one figure body (`geom::integer_extent`).
+fn extent_of(body: &str) -> f64 {
+    let ch = one_char(body);
+    let cx = ch.context(&HashMap::new()).unwrap();
+    let mut figs = Vec::new();
+    fvb_core::geom::evaluate_figures(&ch, &cx, &mut figs).unwrap();
+    fvb_core::geom::integer_extent(&ch, &figs)
+}
+
+fn polypoint(pts: &[(f64, f64)]) -> String {
+    let lines: String = pts.iter().map(|(x, y)| format!(r#"<line x="{x}" y="{y}"/>"#)).collect();
+    format!(r#"<polypoint mode="on">{lines}</polypoint>"#)
+}
+
+fn polygon(lines: &[(f64, f64, u8)]) -> String {
+    let lines: String = lines.iter().map(|(k, b, t)| format!(r#"<line k="{k}" b="{b}" type="{t}"/>"#)).collect();
+    format!(r#"<polygon mode="on">{lines}</polygon>"#)
+}
+
+/// #226 (clones, a plane scale that steps between a 50 and a 51 unit
+/// extent): GDI's path-to-region conversion loses a polygon's lone top
+/// vertex row, as the circle's. A flat top edge, a left, right or bottom apex
+/// and a thin apex's second row stay; a slanting top edge's first row is its
+/// lone vertex's too.
+#[test]
+fn a_polygons_lone_top_vertex_row_is_lost_in_the_plane_extent() {
+    // The flat top edge keeps its row at 51 and at 50.
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 51.0), (5.0, 40.0), (-5.0, 40.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 50.0), (5.0, 50.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    // A diamond whose apex reaches 51 scales as 50; at 52 one row is lost.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 51.0), (6.0, 45.0), (0.0, 39.0), (-6.0, 45.0)])), 50.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, 52.0), (6.0, 46.0), (0.0, 40.0), (-6.0, 46.0)])), 51.0);
+    // A thin triangle (0.2 across per row) loses the apex row only: its next
+    // row, 0.4 wide, still holds a lattice point.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 52.0), (2.0, 42.0), (-2.0, 42.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, 54.0), (2.0, 44.0), (-2.0, 44.0)])), 53.0);
+    // A wide shallow apex, and a sector's: polygons of lines, an apex rounded
+    // from 50.6.
+    assert_eq!(extent_of(&polypoint(&[(0.0, 51.0), (30.0, 45.0), (-30.0, 45.0)])), 50.0);
+    assert_eq!(extent_of(&polygon(&[(1.0, 51.0, 1), (-1.0, 51.0, 1), (0.0, 40.0, 1)])), 50.0);
+    assert_eq!(extent_of(&polygon(&[(1.7, 50.6, 1), (-1.7, 50.6, 1), (0.0, 40.0, 1)])), 50.0);
+    // A top edge that slants starts at its lone left vertex: its first row has
+    // no pixel (one row, and with two rows' slant still one).
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 50.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    assert_eq!(extent_of(&polypoint(&[(-5.0, 51.0), (5.0, 49.0), (5.0, 40.0), (-5.0, 40.0)])), 50.0);
+    // A left, right and bottom apex keep their pixels (the right and bottom
+    // edges are the box's open sides), also a thin one.
+    assert_eq!(extent_of(&polypoint(&[(-51.0, 0.0), (-45.0, 6.0), (-39.0, 0.0), (-45.0, -6.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(-51.0, 0.0), (-41.0, 2.0), (-41.0, -2.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(51.0, 0.0), (45.0, 6.0), (39.0, 0.0), (45.0, -6.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, -51.0), (6.0, -45.0), (0.0, -39.0), (-6.0, -45.0)])), 51.0);
+    assert_eq!(extent_of(&polypoint(&[(0.0, -52.0), (2.0, -42.0), (-2.0, -42.0)])), 52.0);
+    assert_eq!(extent_of(&polygon(&[(0.5, 25.5, 1), (0.0, -40.0, 2), (-0.5, -25.5, 1)])), 51.0);
+}
+
 /// Figures fold in document order: A, then `not` B, then `or` C gives
 /// (A − B) ∪ C — C survives inside the cut-out. Grouping all unions before
 /// the differences would erase it.
