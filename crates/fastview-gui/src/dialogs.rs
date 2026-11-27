@@ -1043,6 +1043,14 @@ pub fn arrow_spans_all(ctx: &egui::Context, title: &str) -> Vec<Vec<(GroupKind, 
     out
 }
 
+/// The kind of the control of dialog `title` that holds the focus, among those the arrows see (tests).
+#[cfg(test)]
+pub fn focused_kind(ctx: &egui::Context, title: &str) -> Option<GroupKind> {
+    let ring: Ring = ctx.data(|d| d.get_temp(egui::Id::new(title).with("fv_tab_ring"))).unwrap_or_default();
+    let f = ctx.memory(|m| m.focused())?;
+    ring.prev_items.iter().find(|s| s.0 == f).map(|s| s.1)
+}
+
 /// A control drawn for the arrows' groups, before the groups are made.
 #[derive(Clone, Copy)]
 struct RawItem {
@@ -1371,19 +1379,25 @@ pub fn win_tree(ui: &mut egui::Ui, r: Rect, id: egui::Id, border: Color32, rows:
     ev
 }
 
-/// A progress bar (msctls_progress32, Windows 11 theme; not measured —
-/// none stayed up long enough on the VM): a (188) frame on (230), the done
-/// part (6, 176, 37).
-pub fn win_progress(ui: &egui::Ui, r: Rect, fraction: f32) {
-    // A member of the dialog's arrow span (it has no tab stop): the focus can sit on it.
-    let id = ui.id().with(("fv_progress", r.min.x as i32, r.min.y as i32));
+/// A window with no tab stop that the dialog manager's arrows still reach and leave (a progress bar,
+/// the quick-analysis sheet's page list): it joins the arrow span being drawn and can hold the focus
+/// (a press on it gives none).
+pub fn arrow_only_stop(ui: &egui::Ui, id: egui::Id, r: Rect, enabled: bool) {
     ui.interact(r, id, egui::Sense::focusable_noninteractive());
-    group_item(ui, id, GroupKind::Bar, true);
+    group_item(ui, id, GroupKind::Bar, enabled);
     if ui.ctx().memory(|m| m.has_focus(id)) {
         // The dialog manager takes its arrows too (it is no edit).
         let pass = ui.ctx().cumulative_pass_nr();
         ui.ctx().data_mut(|d| d.insert_temp(egui::Id::new("fv_focus_kind"), (pass, StopKind::Other)));
     }
+}
+
+/// A progress bar (msctls_progress32, Windows 11 theme; not measured —
+/// none stayed up long enough on the VM): a (188) frame on (230), the done
+/// part (6, 176, 37).
+pub fn win_progress(ui: &egui::Ui, r: Rect, fraction: f32) {
+    // A member of the dialog's arrow span (it has no tab stop): the focus can sit on it.
+    arrow_only_stop(ui, ui.id().with(("fv_progress", r.min.x as i32, r.min.y as i32)), r, true);
     let p = ui.painter();
     p.rect_filled(r, 0.0, Color32::from_gray(188));
     let inner = r.shrink(1.0);

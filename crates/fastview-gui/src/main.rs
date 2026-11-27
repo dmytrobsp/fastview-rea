@@ -6010,6 +6010,75 @@ mod window_tests {
         assert_eq!(focused(&w), cancel, "and back");
     }
 
+    /// The quick-analysis sheet's page list is the last member of the last span of a page: on a clone
+    /// (536, 537, the formula page) ↓ from the last control of that span moves the focus to the list and
+    /// the next arrow goes round; a lone «Отключить» passes the focus to the list and back (#239). The
+    /// list has no tab stop: Tab skips it.
+    #[test]
+    fn the_quick_sheets_page_list_ends_the_last_span_for_the_arrows() {
+        use crate::dialogs::{focused_kind, GroupKind};
+        let sheet = |tab: app::AnalysisTab| {
+            let mut w = Win::new();
+            w.app.dispatch(app::Command::QuickAnalysis);
+            w.app.analysis_tab = tab;
+            w.idle(4);
+            w
+        };
+        let kind = |w: &Win| focused_kind(&w.ctx, "fv_quick_sheet");
+        let tab_to = |w: &mut Win, want: GroupKind| {
+            for _ in 0..40 {
+                if kind(w) == Some(want) {
+                    return;
+                }
+                w.key(egui::Key::Tab);
+            }
+            panic!("no {want:?} reached by Tab");
+        };
+        // 537, both «Отключить» enabled: the check, the other check, the list, round to the first.
+        let mut w = sheet(app::AnalysisTab::Zero);
+        tab_to(&mut w, GroupKind::Check);
+        let first = w.ctx.memory(|m| m.focused());
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Check), "the second check");
+        assert_ne!(w.ctx.memory(|m| m.focused()), first);
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↓ from the last check reaches the page list");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(w.ctx.memory(|m| m.focused()), first, "round to the first check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↑ from the first check goes round to the list");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Check), "↑ from the list");
+        // The list takes no Tab.
+        w.key(egui::Key::ArrowDown);
+        w.key(egui::Key::Tab);
+        assert_ne!(kind(&w), Some(GroupKind::Bar), "no tab stop");
+        // 537 with the voltage side off: the lone «Отключить» and the list pass the focus between them.
+        let mut w = sheet(app::AnalysisTab::Zero);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Zero).unwrap()].zero_u_off = true;
+        w.idle(4);
+        tab_to(&mut w, GroupKind::Check);
+        let at = w.ctx.memory(|m| m.focused());
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s == &[GroupKind::Check, GroupKind::Bar]), "{spans:?}");
+        w.key(egui::Key::ArrowDown);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↓ from the lone check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(w.ctx.memory(|m| m.focused()), at, "↑ back to the check");
+        w.key(egui::Key::ArrowUp);
+        assert_eq!(kind(&w), Some(GroupKind::Bar), "↑ from the lone check reaches the list as well");
+        // 536 with its voltage «Отключить» disabled (the currents ones ticked): the same pair.
+        let mut w = sheet(app::AnalysisTab::Symmetric);
+        w.app.quick[crate::quick_ui::page_index(app::AnalysisTab::Symmetric).unwrap()].currents_off = true;
+        w.idle(4);
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s == &[GroupKind::Check, GroupKind::Bar]), "{spans:?}");
+        // The formula editor (340): ↓ from the last button reaches the list.
+        let w = sheet(app::AnalysisTab::Formula);
+        let spans = crate::dialogs::arrow_spans(&w.ctx, "fv_quick_sheet");
+        assert!(spans.iter().any(|s| s.last() == Some(&GroupKind::Bar) && s.contains(&GroupKind::Push) && s.len() > 2), "{spans:?}");
+    }
+
     /// A pane that slides out on hover (a foreground layer, no press) does not take the merge bar's
     /// keyboard focus (re-review of #186).
     #[test]
@@ -6195,7 +6264,7 @@ mod window_tests {
     /// the program settings (510) (#25).
     #[test]
     fn the_templates_mixed_spans_are_one_span_for_the_arrows() {
-        use crate::dialogs::{arrow_spans, GroupKind::{Check, Other, Push, Radio}};
+        use crate::dialogs::{arrow_spans, GroupKind::{Bar, Check, Other, Push, Radio}};
         let has = |w: &Win, title: &str, span: &[crate::dialogs::GroupKind]| {
             let spans = arrow_spans(&w.ctx, title);
             assert!(spans.iter().any(|s| s == span), "{title}: no span {span:?} in {spans:?}");
@@ -6214,7 +6283,7 @@ mod window_tests {
             w
         };
         let w = page(app::AnalysisTab::Formula);
-        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push]);
+        has(&w, "fv_quick_sheet", &[Other, Push, Push, Push, Push, Push, Push, Push, Bar]);
         let w = page(app::AnalysisTab::Symmetric);
         has(&w, "fv_quick_sheet", &[Other, Check]);
         let w = page(app::AnalysisTab::PhasePhase);
@@ -6223,7 +6292,7 @@ mod window_tests {
         // 537: «Ic» with the 3Io radios; the two «Отключить» one span.
         let w = page(app::AnalysisTab::Zero);
         has(&w, "fv_quick_sheet", &[Other, Radio, Radio]);
-        has(&w, "fv_quick_sheet", &[Check, Check]);
+        has(&w, "fv_quick_sheet", &[Check, Check, Bar]);
         // A disabled control takes up the span flag meant for it: with the
         // voltages off the sheet's buttons stay their own span (review).
         let mut w = page(app::AnalysisTab::Zero);
@@ -6240,7 +6309,7 @@ mod window_tests {
         w.idle(4);
         let spans = arrow_spans(&w.ctx, "fv_quick_sheet");
         let with_check: Vec<_> = spans.iter().filter(|s| s.contains(&Check)).collect();
-        assert_eq!(with_check, vec![&vec![Check]], "{spans:?}");
+        assert_eq!(with_check, vec![&vec![Check, Bar]], "{spans:?}");
         let before = w.app.quick[q].zero_i;
         // Ia, Ib, Ic, «Расчетный», then the 3Io «Отключить» (the voltage side is off).
         for _ in 0..4 {
@@ -6378,13 +6447,13 @@ mod window_tests {
             w.idle(4);
             w
         };
-        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CC", "PP"]);
-        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CC", "PP"]);
+        check(&page(app::AnalysisTab::Symmetric), "fv_quick_sheet", &["OC", "RR", "CCB", "PP"]);
+        check(&page(app::AnalysisTab::Zero), "fv_quick_sheet", &["ORR", "ORRRo", "CCB", "PP"]);
         check(&page(app::AnalysisTab::PhasePhase), "fv_quick_sheet", &["OC", "RROOOO", "PP"]);
         check(&page(app::AnalysisTab::Phase), "fv_quick_sheet", &["ORR", "PP"]);
-        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "c", "PP"]);
+        check(&page(app::AnalysisTab::Differential), "fv_quick_sheet", &["ORRRRPp", "RRRO", "RRR", "cB", "PP"]);
         let mut w = page(app::AnalysisTab::Formula);
-        check(&w, "fv_quick_sheet", &["OPPPPPPP", "PP"]);
+        check(&w, "fv_quick_sheet", &["OPPPPPPPB", "PP"]);
         w.app.open_formula_dlg();
         w.idle(4);
         check(&w, "fv_add_formula", &["OOPP"]);
