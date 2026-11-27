@@ -1975,6 +1975,8 @@ pub struct App {
     /// «Цвет канала» (33030) colour dialog, initialised from the first
     /// selected channel and applied to every selected channel on OK.
     pub color_dialog: Option<egui::Color32>,
+    /// The screen and the mouse capture behind that dialog's «Выбор...» (a test feeds its own).
+    pub screen: Box<dyn crate::eyedrop::ScreenSource>,
     /// A dialog window was up last frame: the original's dialogs are all
     /// modal, so the main window takes no pointer or key input.
     pub modal_up: bool,
@@ -2222,6 +2224,7 @@ impl App {
             lane_menu_serial: 0,
             lane_menu_eat: false,
             color_dialog: None,
+            screen: crate::eyedrop::system(),
             modal_up: false,
             frame_normal: None,
             paste_announced: false,
