@@ -4618,6 +4618,44 @@ mod tests {
         assert!(crate::app::stale_flags::swept(&app));
     }
 
+    /// #233 / L9.65: «Закрыть» of the file-info dialog stores a changed «Частота для коррекции расчётных значений»
+    /// (`0x44a2c9`), marks the document modified and recomputes every channel, a formula one too; an unchanged choice
+    /// does none of it.
+    #[test]
+    fn the_file_info_correction_choice_is_stored_and_recomputes() {
+        let cfg = DEMO_CFG.replacen("2,Ub,B,,V,", "2,Ub,B,,Гц,", 1);
+        let osc = fvb_core::comtrade::parse(&cfg, DEMO_DAT).unwrap();
+        let mut app = App::new();
+        app.docs.push(Doc::new(osc, "f".into()));
+        app.active = Some(0);
+        app.docs[0].osc.freq_sel = 0;
+        app.docs[0].recompute_signals();
+        app.append_computed(&[("X".into(), "rms:(Ua)".into())]).unwrap();
+        // Adding a channel turned the correction on; «Не корректировать» again, everything recomputed.
+        app.docs[0].osc.freq_sel = 0;
+        assert!(app.docs[0].recompute_with_batch().is_none());
+        app.docs[0].set.modified = false;
+        let k = 300;
+        let plain = app.docs[0].computed[0].samples[k];
+        app.show_file_params = true;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        // The choice left as it is: nothing stored, nothing recomputed.
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params, "Enter closed the dialog");
+        assert_eq!((app.docs[0].osc.freq_sel, app.docs[0].set.modified), (0, false));
+        assert_eq!(app.docs[0].computed[0].samples[k], plain);
+        // The Hz channel picked (item 1 after «Не корректировать»).
+        app.show_file_params = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| app.record_dialogs_ui(ctx));
+        app.dlg.file_params.as_mut().expect("the dialog's state").correction = 1;
+        let _ = ctx.run(enter_key(), |ctx| app.record_dialogs_ui(ctx));
+        assert!(!app.show_file_params);
+        assert_eq!(app.docs[0].osc.freq_sel, 1, "the choice stored");
+        assert!(app.docs[0].set.modified, "the document marked modified");
+        assert_ne!(app.docs[0].computed[0].samples[k], plain, "the formula channel recomputed with the correction");
+    }
+
     /// #31 / L9.56: leaving the formula editor (kill-active `0x486d20`) writes the page's list into the record's
     /// definitions without computing it: a channel keeps its values under the new formula text, a row without a
     /// channel is kept as a definition (the page, the pages' combos), and the next calculation of any page
