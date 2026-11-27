@@ -288,11 +288,13 @@ fn unit_rect(x: f64, y: f64) -> IShapes {
 /// — GDI's compatible mode, the DC's default — without the box's right and
 /// bottom edges and, from the path's scan conversion, its top row and left
 /// column (VM: «БМРЗ - Защита генераторов (с 2025 г.в.)» scales to 64 Ом, an
-/// 8 Ом cell, not 65 / 9); an ellipse is the axis-aligned one of
-/// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋+1…⌈b/2⌉−1 (its top row lost like the circle's, but
-/// its left column kept: a clone's ellipse 82 wide at x −10 scales to 51, a
-/// 20 Ом cell, where the circle's rule gave 50) turned, rounded and moved to
-/// (R(cx), R(−cy)) (`0x40a5d0`). A figure whose
+/// 8 Ом cell, not 65 / 9); an ellipse is drawn into a path as the box
+/// ⌊−a/2⌋…⌈a/2⌉−1 × ⌊−b/2⌋…⌈b/2⌉−1 (no right or bottom edge), the path read
+/// back, its points turned about the origin, rounded and moved to
+/// (R(cx), R(−cy)), and the turned path converted to a region (`0x40a5d0`),
+/// so the lost top row falls after the turn, in device space, while the
+/// left column stays (a clone's ellipse 82 wide at x −10 scales to 51, a
+/// 20 Ом cell, where the circle's rule gave 50; #194, #242). A figure whose
 /// region is empty — or whose box has no width or no height — is a 1 × 1
 /// rectangle instead: a polygon's at its first point (⌈x⌉, −⌈y⌉), (0, 0)
 /// without one; a circle's at (⌈cx⌉, ⌈cy⌉) and an ellipse's at (R(cx),
@@ -383,6 +385,57 @@ fn scan_region(ring: &[Pt]) -> IShapes {
     out
 }
 
+/// GDI's `Ellipse` path of the box `l..r` × `t..b` as `GetPath` gives it:
+/// four Béziers from the right end (kappa 0.5523), every point on the pixel
+/// grid (nearest, ties up).
+fn ellipse_path(l: f64, t: f64, r: f64, b: f64) -> [Pt; 13] {
+    const K: f64 = 0.552_284_749_830_793_6;
+    let (cx, cy, rx, ry) = ((l + r) / 2.0, (t + b) / 2.0, (r - l) / 2.0, (b - t) / 2.0);
+    let (kx, ky) = (K * rx, K * ry);
+    [
+        [cx + rx, cy],
+        [cx + rx, cy + ky],
+        [cx + kx, cy + ry],
+        [cx, cy + ry],
+        [cx - kx, cy + ry],
+        [cx - rx, cy + ky],
+        [cx - rx, cy],
+        [cx - rx, cy - ky],
+        [cx - kx, cy - ry],
+        [cx, cy - ry],
+        [cx + kx, cy - ry],
+        [cx + rx, cy - ky],
+        [cx + rx, cy],
+    ]
+    .map(|p| [rnd(p[0]), rnd(p[1])])
+}
+
+/// The polygon a Bézier path (3k + 1 points) flattens to. GDI flattens each
+/// cubic into a power-of-two number of equal parameter steps that grows with
+/// the control polygon's second differences, so the polygon cuts a curve's
+/// extreme by up to a few tenths of a pixel; the rule here (steps n least
+/// with `max |P0 − 2·P1 + P2|, |P1 − 2·P2 + P3|` ≤ 0.8·n², in pixels) is
+/// fitted to clone runs of turned ellipses (#242): 94 probes at the edge of
+/// a plane-scale step, 90 of them equal.
+fn flatten_bezier(pts: &[Pt]) -> Vec<Pt> {
+    let mut ring = Vec::new();
+    for seg in pts.windows(4).step_by(3) {
+        let second = |a: usize, b: usize, c: usize| (seg[a][0] - 2.0 * seg[b][0] + seg[c][0]).hypot(seg[a][1] - 2.0 * seg[b][1] + seg[c][1]);
+        let m = second(0, 1, 2).max(second(1, 2, 3));
+        let mut steps = 1usize;
+        while m > 0.8 * (steps * steps) as f64 && steps < 256 {
+            steps *= 2;
+        }
+        for i in 0..steps {
+            let s = i as f64 / steps as f64;
+            let u = 1.0 - s;
+            let w = [u * u * u, 3.0 * u * u * s, 3.0 * u * s * s, s * s * s];
+            ring.push([0, 1].map(|k| w[0] * seg[0][k] + w[1] * seg[1][k] + w[2] * seg[2][k] + w[3] * seg[3][k]));
+        }
+    }
+    ring
+}
+
 /// One figure's integer region at scale 1 (see [`integer_extent`]).
 fn device_region(v: &FigureValues) -> IShapes {
     let dev = |p: &Pt| [rnd(p[0]), -rnd(p[1])];
@@ -407,17 +460,20 @@ fn device_region(v: &FigureValues) -> IShapes {
         }
         FigureValues::Ellipse { center: [cx, cy], width, height, angle } => {
             let (a, b) = (width.abs(), height.abs());
-            // No top row and no right or bottom edge, as the circle's, but the left
-            // column stays (clone, #194).
-            let (l, t, r, bt) = ((-a / 2.0).floor(), (-b / 2.0).floor() + 1.0, (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
+            // The ellipse is drawn into a path at the origin (no right or bottom
+            // edge, as the circle's), the path read back, its points turned,
+            // rounded and moved, and the turned path converted to a region: the
+            // scan conversion's lost row falls after the turn, in device space
+            // (`0x40a5d0`; clones, #194, #242).
+            let (l, t, r, bt) = ((-a / 2.0).floor(), (-b / 2.0).floor(), (a / 2.0).ceil() - 1.0, (b / 2.0).ceil() - 1.0);
             let (ox, oy) = (rnd(*cx), rnd(-cy));
-            // Device y points down: the turn is mirrored (the box is the
-            // same either way).
-            let ring = ellipse_points([(l + r) / 2.0, (t + bt) / 2.0], (r - l) / 2.0, (bt - t) / 2.0, -angle)
+            // Device y points down: the turn is mirrored.
+            let (sa, ca) = (-angle).to_radians().sin_cos();
+            let turned: Vec<Pt> = ellipse_path(l, t, r, bt)
                 .iter()
-                .map(|p| [rnd(p[0]) + ox, rnd(p[1]) + oy])
+                .map(|p| [rnd(p[0] * ca - p[1] * sa) + ox, rnd(p[0] * sa + p[1] * ca) + oy])
                 .collect();
-            (simplify_ring(ring), [rnd(*cx), rnd(*cy)])
+            (scan_region(&flatten_bezier(&turned)), [rnd(*cx), rnd(*cy)])
         }
     };
     match shapes_box(&region) {

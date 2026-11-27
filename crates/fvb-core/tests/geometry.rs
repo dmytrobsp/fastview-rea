@@ -152,6 +152,37 @@ fn a_polygons_lone_top_vertex_row_is_lost_in_the_plane_extent() {
     assert_eq!(extent_of(&polygon(&[(0.5, 25.5, 1), (0.0, -40.0, 2), (-0.5, -25.5, 1)])), 51.0);
 }
 
+/// #242 (clones, 94 turned ellipses at the edge of the 50 | 51 step): the
+/// original draws the ellipse into a path, turns the points and converts the
+/// turned path to a region, so the row GDI loses is the turned shape's top
+/// row, in device space. At 90° the box's left, right and bottom edges stay
+/// and its top row (the unturned left side) goes.
+#[test]
+fn a_turned_ellipses_top_row_is_lost_after_the_turn() {
+    let e = |cx: f64, cy: f64, w: u32, h: u32, angle: i32| {
+        extent_of(&format!(r#"<ellipse mode="on" xcenter="{cx}" ycenter="{cy}" width="{w}" height="{h}" angle="{angle}"/>"#))
+    };
+    // 90°: 82 × 20 stands up; its extreme edge is the extent's, at each side.
+    assert_eq!((e(0.0, 11.0, 82, 20, 90), e(0.0, 12.0, 82, 20, 90)), (50.0, 51.0), "top");
+    assert_eq!((e(0.0, -9.0, 82, 20, 90), e(0.0, -10.0, 82, 20, 90)), (50.0, 51.0), "bottom");
+    assert_eq!((e(-9.0, 0.0, 20, 82, 90), e(-10.0, 0.0, 20, 82, 90)), (50.0, 51.0), "left");
+    assert_eq!((e(10.0, 0.0, 20, 82, 90), e(11.0, 0.0, 20, 82, 90)), (50.0, 51.0), "right");
+    // The same with a half-unit centre (rounded up after the sign flip).
+    assert_eq!((e(0.0, 11.5, 82, 20, 90), e(0.0, 12.5, 82, 20, 90)), (50.0, 51.0), "top, half unit");
+    // 45°.
+    assert_eq!((e(0.0, 21.0, 82, 20, 45), e(0.0, 22.0, 82, 20, 45)), (50.0, 51.0), "45 top");
+    assert_eq!((e(0.0, -20.0, 82, 20, 45), e(0.0, -21.0, 82, 20, 45)), (50.0, 51.0), "45 bottom");
+    assert_eq!((e(21.0, 0.0, 82, 20, 45), e(22.0, 0.0, 82, 20, 45)), (50.0, 51.0), "45 right");
+    assert_eq!((e(-21.0, 0.0, 82, 20, 45), e(-22.0, 0.0, 82, 20, 45)), (50.0, 51.0), "45 left");
+    // Other angles and sizes, as measured.
+    assert_eq!((e(0.0, 28.0, 80, 24, 30), e(0.0, 29.0, 80, 24, 30)), (50.0, 51.0), "30 top");
+    assert_eq!((e(28.0, 0.0, 80, 24, 60), e(29.0, 0.0, 80, 24, 60)), (50.0, 51.0), "60 right");
+    assert_eq!((e(0.0, 22.0, 82, 20, 135), e(0.0, 23.0, 82, 20, 135)), (50.0, 51.0), "135 top");
+    assert_eq!((e(0.0, 28.0, 82, 20, -30), e(0.0, 29.0, 82, 20, -30)), (50.0, 51.0), "-30 top");
+    assert_eq!((e(0.0, 36.0, 83, 19, 15), e(0.0, 37.0, 83, 19, 15)), (50.0, 51.0), "15 top");
+    assert_eq!((e(-26.0, 0.0, 66, 26, 225), e(-27.0, 0.0, 66, 26, 225)), (50.0, 51.0), "225 left");
+}
+
 /// Figures fold in document order: A, then `not` B, then `or` C gives
 /// (A − B) ∪ C — C survives inside the cut-out. Grouping all unions before
 /// the differences would erase it.
