@@ -183,6 +183,20 @@ fn a_turned_ellipses_top_row_is_lost_after_the_turn() {
     assert_eq!((e(-26.0, 0.0, 66, 26, 225), e(-27.0, 0.0, 66, 26, 225)), (50.0, 51.0), "225 left");
 }
 
+/// #242: the Bezier flattening's step count is not fixed. Four clone probes (a 50 extent in the original,
+/// each at a different size and angle) that a fixed 8 or 16 steps per curve push to 51: the fitted law
+/// (a power of two from the second differences) gives 50.
+#[test]
+fn the_flattening_of_a_turned_ellipse_is_not_a_fixed_step_count() {
+    let e = |cx: f64, cy: f64, w: u32, h: u32, angle: i32| {
+        extent_of(&format!(r#"<ellipse mode="on" xcenter="{cx}" ycenter="{cy}" width="{w}" height="{h}" angle="{angle}"/>"#))
+    };
+    assert_eq!(e(0.0, 33.0, 47, 10, 50), 50.0);
+    assert_eq!(e(0.0, 31.0, 31, 48, 45), 50.0);
+    assert_eq!(e(34.0, 0.0, 33, 21, 12), 50.0);
+    assert_eq!(e(0.0, 31.0, 35, 41, 325), 50.0);
+}
+
 /// Figures fold in document order: A, then `not` B, then `or` C gives
 /// (A − B) ∪ C — C survives inside the cut-out. Grouping all unions before
 /// the differences would erase it.

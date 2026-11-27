@@ -1174,8 +1174,10 @@ pub(crate) struct ScrollMenu {
 
 /// The items of the system's context menu of a window scroll bar (Windows' own
 /// resource: «Scroll Here», a rule, the two ends, a rule, the two pages, a
-/// rule, the two lines), in the system's English here: the vertical bar's and
-/// the horizontal one's.
+/// rule, the two lines) in the system's English, as a clone shows them: the
+/// vertical bar's and the horizontal one's. Kept for #88; the program shows
+/// [`SCROLL_MENU_RU`].
+#[allow(dead_code)]
 pub(crate) const SCROLL_MENU_EN: ([&str; 7], [&str; 7]) = (
     ["Scroll Here", "Top", "Bottom", "Page Up", "Page Down", "Scroll Up", "Scroll Down"],
     ["Scroll Here", "Left Edge", "Right Edge", "Page Left", "Page Right", "Scroll Left", "Scroll Right"],
@@ -1291,7 +1293,7 @@ pub(crate) fn scrollbar(ui: &mut egui::Ui, rect: Rect, horizontal: bool, value: 
     // (`0x45d81a`); WM_VSCROLL `0x45d870` takes nPos for SB_TOP and
     // SB_BOTTOM too (`0x45d917`) — 0, so both go to the top; the page items
     // step as the arrows (`0x45d848`, `0x45d97c`).
-    let menu = scroll_menu(ui, id, &r, rect, horizontal, if horizontal { SCROLL_MENU_EN.1 } else { SCROLL_MENU_EN.0 });
+    let menu = scroll_menu(ui, id, &r, rect, horizontal, if horizontal { SCROLL_MENU_RU.1 } else { SCROLL_MENU_RU.0 });
     if menu.open {
         let track = len - 2.0 * arrow;
         let thumb_len = (track * page / (max + page)).max(8.0_f32.min(track)).min(track).max(0.0);
@@ -5066,5 +5068,35 @@ mod menu_tests {
         h.frame(vec![]);
         assert_ne!(h.doc().merge_offset, before, "the lane moved in time");
         assert!(crate::app::stale_flags::swept(&h.app));
+    }
+    /// #227: the oscillogram's scroll bars open the same menu as the planes', in the program's one language
+    /// (Russian until #88), in the system's order.
+    #[test]
+    fn the_oscillograms_scroll_bar_menu_is_in_russian_too() {
+        for horizontal in [false, true] {
+            let rect = if horizontal { Rect::from_min_size(Pos2::new(100.0, 500.0), Vec2::new(300.0, 17.0)) } else { Rect::from_min_size(Pos2::new(400.0, 100.0), Vec2::new(17.0, 300.0)) };
+            let at = rect.center();
+            let ctx = egui::Context::default();
+            let mut t = 0.0;
+            let mut frame = |events: Vec<egui::Event>| {
+                t += 0.05;
+                let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(800.0, 600.0))), time: Some(t), events, ..Default::default() };
+                ctx.run(raw, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        scrollbar(ui, rect, horizontal, 10.0, 100.0, 50.0, 5.0, 50.0);
+                    });
+                })
+                .shapes
+            };
+            let ev = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+            frame(vec![]);
+            frame(vec![egui::Event::PointerMoved(at)]);
+            frame(vec![ev(true)]);
+            frame(vec![ev(false)]);
+            let shapes = frame(vec![]);
+            let shown: Vec<String> = shapes.iter().filter_map(|c| if let egui::Shape::Text(t) = &c.shape { Some(t.galley.text().to_string()) } else { None }).collect();
+            let names = if horizontal { SCROLL_MENU_RU.1 } else { SCROLL_MENU_RU.0 };
+            assert_eq!(shown, names, "horizontal {horizontal}");
+        }
     }
 }

@@ -330,8 +330,9 @@ pub fn integer_extent(ch: &Characteristic, figs: &[Option<FigureValues>]) -> f64
 /// keep theirs (a clone: apexes of every slope at 51, thin ones included).
 /// Returned as one rectangle per run of equal rows.
 fn scan_region(ring: &[Pt]) -> IShapes {
-    /// Rows beyond this are not worth the pixels: the lost row cannot change
-    /// the scale there, and a runaway polygon would build a million rectangles.
+    /// A guard against a runaway figure (near-parallel lines meeting a million
+    /// units away would build a million rectangles). Above it the old float ring
+    /// is used, so the lost row is not modelled there: not exact above 4096 rows.
     const MAX_ROWS: f64 = 4096.0;
     let n = ring.len();
     if n < 3 || ring.iter().any(|p| !p[0].is_finite() || !p[1].is_finite()) {
