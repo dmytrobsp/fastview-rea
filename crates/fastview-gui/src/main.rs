@@ -3063,6 +3063,24 @@ mod window_tests {
         }
     }
 
+    /// #219 (clone, 175 / 200 %, a work area so small that the first run's frame is clamped to 866 x 500): the
+    /// original's MDI area is 205 x 54 and 204 x 32 px; ours is within a pixel (205 / 204 wide) with the layout the
+    /// clamped frame gives.
+    #[test]
+    fn a_clamped_first_runs_mdi_area_is_the_originals_at_175_and_200() {
+        for (dpi, want) in [(168u32, (205.0, 54.0)), (192, (204.0, 32.0))] {
+            dpi::set(dpi);
+            let ctx = egui::Context::default();
+            let mut app = demo(&[]);
+            app.own_caption = true;
+            let [w, h] = first_run_client([1000.0, 566.0], dpi);
+            frames(&mut app, &ctx, Vec2::new(w, h), vec![vec![]; 4]);
+            let got = (app.mdi_area.width(), app.mdi_area.height());
+            assert!((got.0 - want.0).abs() <= 1.0 && (got.1 - want.1).abs() <= 1.0, "dpi {dpi}: {got:?} against {want:?}");
+        }
+        dpi::set(96);
+    }
+
     /// #147: restored maximised after the first run, ours' MDI area is the original's (clone:
     /// 566 × 359, 568 × 334, 571 × 310 at 100 / 125 / 150 %; the maximised frame's client the work
     /// area, Частотная keeping the half of the first-run span).
