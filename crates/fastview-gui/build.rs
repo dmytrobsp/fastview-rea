@@ -61,8 +61,18 @@ fn dib(n: usize, rgba: &[u8]) -> Vec<u8> {
             out.extend([p[2], p[1], p[0], p[3]]);
         }
     }
-    // Mask rows are padded to 32 bits.
-    out.extend(vec![0u8; n.div_ceil(32) * 4 * n]);
+    // The AND mask, rows bottom-up padded to 32 bits: set where the pixel is
+    // mostly clear, for readers that ignore the alpha channel.
+    let stride = n.div_ceil(32) * 4;
+    for row in rgba.chunks(n * 4).rev() {
+        let mut bits = vec![0u8; stride];
+        for (x, p) in row.chunks(4).enumerate() {
+            if p[3] < 128 {
+                bits[x / 8] |= 0x80 >> (x % 8);
+            }
+        }
+        out.extend(bits);
+    }
     out
 }
 
@@ -110,6 +120,7 @@ fn warn_if_no_windres() {
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/icon_art.rs");
+    println!("cargo:rerun-if-env-changed=RC");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }

@@ -99,6 +99,7 @@ impl App {
         let picking = st.pick.is_some();
         if let Some(mut e) = st.pick {
             self.screen.show_cursor();
+            self.screen.keep_capture();
             ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
             ctx.request_repaint();
             let evs = eyedrop::input_events(&ctx.input(|i| i.events.clone()));
@@ -122,7 +123,9 @@ impl App {
                 ui.allocate_exact_size(ctx.screen_rect().size(), egui::Sense::click_and_drag());
             });
         }
-        let can_pick = self.screen.available() && !picking;
+        // «Выбор...» stays enabled during the pick, as the original's (the shield
+        // stops clicks on it).
+        let can_pick = self.screen.available();
         let mut open = true;
         let mut done: Option<bool> = None;
         let mut start_pick = false;
@@ -535,6 +538,23 @@ mod tests {
         let st = state(&ctx).unwrap();
         assert!(st.pick.is_none());
         assert_eq!(st.new, START);
+        assert_eq!(log.borrow().released, 1);
+    }
+
+    /// The software runner hands a frame's press and release over in two
+    /// passes, with winit's capture already let go: the first pass must not
+    /// cancel, the second takes the colour.
+    #[test]
+    fn a_click_split_in_two_passes_takes_the_colour() {
+        use egui::PointerButton as B;
+        let (mut app, ctx, log) = picking();
+        frame(&mut app, &ctx, vec![button(B::Primary, true)]);
+        assert!(state(&ctx).unwrap().pick.is_some(), "the press alone ends nothing");
+        assert_eq!(log.borrow().released, 0);
+        frame(&mut app, &ctx, vec![button(B::Primary, false)]);
+        let st = state(&ctx).unwrap();
+        assert!(st.pick.is_none());
+        assert_eq!(st.new, SEEN);
         assert_eq!(log.borrow().released, 1);
     }
 

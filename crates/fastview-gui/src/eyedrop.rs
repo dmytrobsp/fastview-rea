@@ -59,7 +59,10 @@ pub trait ScreenSource {
     fn capture(&mut self) {}
     /// Gives the capture back (the mode ended, however).
     fn release(&mut self) {}
-    /// True when the capture was taken and something else has it now.
+    /// Called every frame of the mode: takes the capture again if winit's
+    /// own release at a button's up dropped it before the up reached us.
+    fn keep_capture(&mut self) {}
+    /// True when the capture was taken and another window has it now.
     fn capture_lost(&self) -> bool {
         false
     }
@@ -140,14 +143,58 @@ mod win {
     use eframe::egui::Color32;
     use windows_sys::Win32::Foundation::{HWND, POINT};
     use windows_sys::Win32::Graphics::Gdi::{GetDC, GetPixel, ReleaseDC, CLR_INVALID};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, GetCapture, ReleaseCapture, SetCapture};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, LoadCursorW, SetCursor, IDC_CROSS};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DestroyWindow, GetCursorPos, GetSystemMetrics, LoadCursorW, RegisterClassW, SetCursor, ShowWindow, IDC_CROSS, SM_CXVIRTUALSCREEN,
+        SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_SHOWNOACTIVATE, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
+    };
 
-    /// GDI's screen DC and the mouse capture on our frame.
+    /// Whether the capture, now held by `current` (0: nobody), counts as
+    /// taken from us (`held`: our frame). Nobody holding it is not a loss:
+    /// winit releases the capture itself when a button goes up, before the
+    /// up reaches our passes.
+    pub fn lost(held: isize, current: isize) -> bool {
+        held != 0 && current != 0 && current != held
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    /// The popup's class: no background, no painting, the cross as its class
+    /// cursor (MFC's helper window of the pick mode, 0x7602a: its class holds
+    /// the picker cursor).
+    fn register() -> Vec<u16> {
+        let name = wide("FastViewEyedropShield");
+        // SAFETY: a class of ours with the default window procedure; a second
+        // registration just fails, which is fine.
+        unsafe {
+            let wc = WNDCLASSW {
+                style: 0,
+                lpfnWndProc: Some(DefWindowProcW),
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: GetModuleHandleW(std::ptr::null()),
+                hIcon: std::ptr::null_mut(),
+                hCursor: LoadCursorW(std::ptr::null_mut(), IDC_CROSS),
+                hbrBackground: std::ptr::null_mut(),
+                lpszMenuName: std::ptr::null(),
+                lpszClassName: name.as_ptr(),
+            };
+            RegisterClassW(&wc);
+        }
+        name
+    }
+
+    /// GDI's screen DC, the mouse capture on our frame and MFC's helper
+    /// popup over the screen.
     #[derive(Default)]
     pub struct WinScreen {
         /// The window holding our capture (0: none taken).
         held: isize,
+        /// The popup of our thread over the whole virtual screen (0: none).
+        shield: isize,
     }
 
     impl ScreenSource for WinScreen {
@@ -174,31 +221,73 @@ mod win {
         }
 
         fn capture(&mut self) {
-            // SAFETY: our own frame (or this thread's active window).
+            // SAFETY: our own frame (or this thread's active window) and a
+            // popup of ours. SetCapture takes a press that began in another
+            // program's window only while the pointer is over a window of this
+            // thread: the popup, topmost over the whole screen (the taskbar
+            // too), makes every press one, and the capture hands it to the
+            // frame — MFC's way (0x75da5 – 0x75ddc).
             unsafe {
                 let hwnd: HWND = crate::minsize::frame().unwrap_or_else(|| GetActiveWindow());
-                if !hwnd.is_null() {
-                    SetCapture(hwnd);
-                    self.held = hwnd as isize;
+                if hwnd.is_null() {
+                    return;
                 }
+                if self.shield == 0 {
+                    let class = register();
+                    let (x, y) = (GetSystemMetrics(SM_XVIRTUALSCREEN), GetSystemMetrics(SM_YVIRTUALSCREEN));
+                    let (w, h) = (GetSystemMetrics(SM_CXVIRTUALSCREEN), GetSystemMetrics(SM_CYVIRTUALSCREEN));
+                    let pop = CreateWindowExW(
+                        WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                        class.as_ptr(),
+                        std::ptr::null(),
+                        WS_POPUP,
+                        x,
+                        y,
+                        w,
+                        h,
+                        std::ptr::null_mut(),
+                        std::ptr::null_mut(),
+                        GetModuleHandleW(std::ptr::null()),
+                        std::ptr::null(),
+                    );
+                    if !pop.is_null() {
+                        ShowWindow(pop, SW_SHOWNOACTIVATE);
+                        self.shield = pop as isize;
+                    }
+                }
+                SetCapture(hwnd);
+                self.held = hwnd as isize;
             }
         }
 
         fn release(&mut self) {
-            if self.held != 0 {
-                // SAFETY: only when the capture is still ours.
-                unsafe {
+            // SAFETY: only the capture that is still ours; our own popup.
+            unsafe {
+                if self.held != 0 {
                     if GetCapture() as isize == self.held {
                         ReleaseCapture();
                     }
+                    self.held = 0;
                 }
-                self.held = 0;
+                if self.shield != 0 {
+                    DestroyWindow(self.shield as HWND);
+                    self.shield = 0;
+                }
+            }
+        }
+
+        fn keep_capture(&mut self) {
+            // SAFETY: nobody holds the capture: take it again.
+            unsafe {
+                if self.held != 0 && GetCapture().is_null() {
+                    SetCapture(self.held as HWND);
+                }
             }
         }
 
         fn capture_lost(&self) -> bool {
             // SAFETY: a query.
-            self.held != 0 && unsafe { GetCapture() as isize != self.held }
+            lost(self.held, unsafe { GetCapture() } as isize)
         }
 
         fn show_cursor(&mut self) {
@@ -206,6 +295,12 @@ mod win {
             unsafe {
                 SetCursor(LoadCursorW(std::ptr::null_mut(), IDC_CROSS));
             }
+        }
+    }
+
+    impl Drop for WinScreen {
+        fn drop(&mut self) {
+            self.release();
         }
     }
 }
@@ -285,6 +380,17 @@ mod tests {
         ];
         assert_eq!(input_events(&evs), vec![Ev::OtherDown, Ev::OtherDown, Ev::Esc]);
         assert_eq!(input_events(&[key(Key::Enter, true)]), vec![Ev::Enter]);
+    }
+
+    /// Nobody holding the capture (winit let go at the button's up) is not a
+    /// loss; another window holding it is.
+    #[cfg(windows)]
+    #[test]
+    fn windows_capture_loss_is_another_holder_only() {
+        assert!(!win::lost(10, 10));
+        assert!(!win::lost(10, 0), "winit's own release at a button's up");
+        assert!(win::lost(10, 20));
+        assert!(!win::lost(0, 20), "never taken");
     }
 
     /// The real screen read (Windows): a desktop pixel comes back. Needs an
