@@ -1562,23 +1562,12 @@ fn measure_id() -> egui::Id {
     egui::Id::new("fv_ribbon_measure")
 }
 
-/// The name on a collapsed panel's button: the last panel of «Главная» has no caption when it is open (its title is a
-/// blank), and the original names its button «Осциллограмма» (string 314, the panel's only command) — ours had drawn
-/// an empty one (#225).
-fn collapsed_name(title: &str) -> &str {
-    if title.trim().is_empty() {
-        "Осциллограмма"
-    } else {
-        title
-    }
-}
-
 /// A collapsed panel's button width plus the divider: the default panel
 /// button (`0x10120c93`: a 16 px image, the 9 px arrow always counted) is
 /// max(16 + 2 + 10, T + 5) + 2, T its balanced bottom text.
 fn collapsed_width(ui: &egui::Ui, title: &str) -> f32 {
     let font = egui::FontId::proportional(crate::dpi::font(10.5));
-    let (_, t) = bottom_text(collapsed_name(title), 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), Color32::BLACK).size().x));
+    let (_, t) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), Color32::BLACK).size().x));
     large_width(img(16.0) + 2.0, t) + 2.0 + 6.0
 }
 
@@ -1619,7 +1608,7 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
         // 38 × 38 frame from the top + 3, the 16 px image at + 10 and the
         // text from + 40 with the arrow (`0x10193c7b`).
         let font = egui::FontId::proportional(crate::dpi::font(10.5));
-        let (lines, _) = bottom_text(collapsed_name(title), 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), p.text).size().x));
+        let (lines, _) = bottom_text(title, 9.0, |s| ui.fonts(|f| f.layout_no_wrap(s.to_owned(), font.clone(), p.text).size().x));
         let (rect, resp) = ui.allocate_exact_size(egui::vec2(collapsed_width(ui, title) - 6.0, body_inner() - 2.0), egui::Sense::click());
         let painter = ui.painter();
         if resp.hovered() {
@@ -2642,13 +2631,6 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// #225: the blank-titled last panel of «Главная» collapses to a button named «Осциллограмма», not an empty one.
-    #[test]
-    fn the_last_panel_collapses_under_the_oscillogram_name() {
-        assert_eq!(collapsed_name(" "), "Осциллограмма");
-        assert_eq!(collapsed_name("Вычисления"), "Вычисления");
-    }
 
     /// The maximise button is published as live only while no modal dialog is up (the original's frame is
     /// disabled by one): a bare context, no backdrop, only the modal flag decides.
