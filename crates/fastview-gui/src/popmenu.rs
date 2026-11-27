@@ -1140,6 +1140,13 @@ mod tests {
         frame(&mut m, Some(egui::Key::End));
         assert_eq!(m.hot, Some(59));
         assert!(visible(&m));
+        // ↑ walks the whole list and scrolls back up for the rows above the window (the original's keys
+        // wrap inside the rows left in view and never reach them: docs/IMPROVEMENTS.md, #216).
+        for _ in 0..20 {
+            frame(&mut m, Some(egui::Key::ArrowUp));
+            assert!(visible(&m), "row {:?} at scroll {}", m.hot, m.scroll);
+        }
+        assert_eq!(m.hot, Some(39));
         frame(&mut m, Some(egui::Key::Home));
         assert!(visible(&m) && m.scroll == 0.0, "back at the top: {}", m.scroll);
     }

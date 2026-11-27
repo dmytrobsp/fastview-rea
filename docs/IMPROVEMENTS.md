@@ -291,3 +291,12 @@ misbehaves and the better behaviour is obvious (the maintainer,
   scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
   the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
   and its line points at no sample it reports; the decision of the 2026-11-27 triage.
+- **Keys in a popup menu cut to the work area reach every row (#216).** In the original (CMFCPopupMenu, a work area
+  smaller than the menu, the style menu of the ribbon walked on a clone) ↓ keeps the highlighted row in view by
+  scrolling, but once the list is scrolled the rows above the window are out of the keys' reach: ↑ from the first
+  visible row wraps to the last row, ↓ from the last row wraps to the first row still in view without scrolling, Home
+  lights the first row in view (not the first of the menu), and only End reaches the real last row. The rows above can
+  then be reached only with the wheel or the arrow band. Ours walks the whole list: ↑ / ↓ / Home / End go to the
+  menu's real rows and scroll them into view. Reason: a key that cannot reach the first rows of a menu, and Home that
+  does not go to the first row, is a visible failure; the decision of the 2026-11-27 triage (keep ours if the
+  original's keys are worse).
