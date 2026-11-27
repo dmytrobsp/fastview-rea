@@ -4046,14 +4046,14 @@ mod menu_tests {
             h.shapes.iter().find_map(|c| if let Shape::Text(t) = &c.shape { (t.galley.text() == label).then(|| t.pos + t.galley.rect.center().to_vec2()) } else { None })
         };
         h.button(Pos2::new(400.0, y), egui::PointerButton::Secondary);
-        let at = item(&h, "Page Right").expect("the menu is open");
+        let at = item(&h, "Страница вправо").expect("the menu is open");
         h.button(at, egui::PointerButton::Primary);
         assert_eq!(h.doc().first, 2 * visible);
         h.button(Pos2::new(400.0, y), egui::PointerButton::Secondary);
-        let at = item(&h, "Left Edge").expect("the menu is open");
+        let at = item(&h, "К левому краю").expect("the menu is open");
         h.button(at, egui::PointerButton::Primary);
         assert_eq!(h.doc().first, 2 * visible, "SB_LEFT is ignored");
-        assert!(item(&h, "Left Edge").is_none(), "closed");
+        assert!(item(&h, "К левому краю").is_none(), "closed");
     }
 
     /// Dragging the thumb follows the pointer along the bar wherever it
