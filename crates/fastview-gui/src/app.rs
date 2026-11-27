@@ -3212,6 +3212,7 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.redo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
     }
 
     /// 57644 (`0x4548d0`), the mirror of [`App::undo`].
@@ -3221,6 +3222,15 @@ impl App {
         let cur = Self::snapshot_of_doc(d);
         d.undo.push(cur);
         Self::restore(d, snap);
+        self.keep_merge_bar();
+    }
+
+    /// The merge bar stays up through the undo and the redo of a paste (#231): the pasted lanes may be gone
+    /// from the record for the moment, the bar is not.
+    fn keep_merge_bar(&mut self) {
+        if let Some(b) = self.merge.as_mut() {
+            b.kept = true;
+        }
     }
 
     /// Append computed channels to the active record, evaluated in order in

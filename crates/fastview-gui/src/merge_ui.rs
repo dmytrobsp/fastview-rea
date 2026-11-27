@@ -66,6 +66,9 @@ pub struct MergeBar {
     pub status: String,
     /// The close button as last drawn.
     pub close: Option<egui::Rect>,
+    /// Set by an undo / redo: the bar stays up while no pasted lane is left (the original keeps it through
+    /// the paste's undo, #231). Cleared once the pasted lanes are there again.
+    pub kept: bool,
 }
 
 /// COLORREF (0x00BBGGRR) ↔ colour.
@@ -838,11 +841,15 @@ impl App {
     pub fn merge_bar_ui(&mut self, ui: &mut egui::Ui) {
         let Some(ai) = self.active else { return };
         self.docs[ai].prune_pending();
-        if self.docs[ai].pending.is_empty() {
-            self.merge = None;
-            return;
-        }
         let Some(mut bar) = self.merge.clone() else { return };
+        if self.docs[ai].pending.is_empty() {
+            if !bar.kept {
+                self.merge = None;
+                return;
+            }
+        } else {
+            bar.kept = false;
+        }
         let (mut sync, mut join) = (false, false);
         let d = &self.docs[ai];
         // CMergeBar's fixed layout (`0x479aa0`, `0x479db0`, `0x479e80`): the

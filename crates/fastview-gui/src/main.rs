@@ -5389,6 +5389,36 @@ mod window_tests {
         assert_eq!(w.app.docs[ai].computed.len(), n, "the paste undone");
     }
 
+    /// #231: the undo of a lane paste leaves the merge bar up, and so does the redo (the original keeps the bar
+    /// through both; a close of the bar is what hides it).
+    #[test]
+    fn the_merge_bar_stays_through_the_undo_and_redo_of_a_paste() {
+        let mut w = Win::new();
+        let ai = w.app.active.unwrap();
+        w.app.docs[ai].selection = [app::ChanKey::Analog(0)].into_iter().collect();
+        w.app.copy_channels_for_merge();
+        w.app.paste_channels_for_merge();
+        w.idle(3);
+        assert!(w.app.merge.is_some() && !w.app.docs[ai].pending.is_empty());
+        w.app.dispatch(app::Command::Undo);
+        w.idle(3);
+        assert!(w.app.docs[ai].pending.is_empty(), "the paste is undone");
+        assert!(w.app.merge.is_some(), "the merge bar stays through the undo");
+        w.app.dispatch(app::Command::Redo);
+        w.idle(3);
+        assert!(!w.app.docs[ai].pending.is_empty(), "the paste is back");
+        assert!(w.app.merge.is_some(), "the merge bar stays through the redo");
+        w.app.dispatch(app::Command::Undo);
+        w.idle(3);
+        assert!(w.app.merge.is_some(), "and through a second undo");
+        // A merge still hides it.
+        w.app.dispatch(app::Command::Redo);
+        w.idle(3);
+        w.app.merge_records();
+        w.idle(2);
+        assert!(w.app.merge.is_none(), "«Объединить» hides the bar");
+    }
+
     /// #44 at the lane menu's call site: near the screen's foot the menu's bottom edge lies at the point.
     #[test]
     fn the_lane_menu_near_the_foot_opens_upward_from_the_point() {
