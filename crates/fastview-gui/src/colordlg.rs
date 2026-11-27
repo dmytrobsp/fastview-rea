@@ -96,7 +96,6 @@ impl App {
         // «Выбор...»'s pick mode (L9.258): the mouse is captured; the new
         // colour follows the screen pixel under the pointer until a click,
         // Enter or Esc, read from this window's own input events.
-        let picking = st.pick.is_some();
         if let Some(mut e) = st.pick {
             self.screen.show_cursor();
             self.screen.keep_capture();
