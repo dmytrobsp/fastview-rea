@@ -3672,7 +3672,7 @@ mod menu_tests {
 
     /// #232: the commands that only open a dialog keep the Shift+wheel position while the dialog is up and when it
     /// is cancelled (L9.434); a confirmed one is the views' refresh and drops it. One run per command: Save As,
-    /// «Загрузка настроек...» and the exports.
+    /// «Загрузка настроек...», the exports and Сохранить on a record with no file of its own.
     #[test]
     fn the_kept_bar_position_waits_for_the_dialog_of_save_as_load_settings_and_the_exports() {
         let dir = std::env::temp_dir().join(format!("fv_kept_bar_{}", std::process::id()));
@@ -3681,12 +3681,16 @@ mod menu_tests {
         let ctx = egui::Context::default();
         let cmds = [
             (Command::SaveAs, "rec_a.cfg"),
+            // Save on a record with no file of its own asks for one, as Save As does.
+            (Command::Save, "rec_g.cfg"),
             (Command::LoadSettings, "rec_b.set"),
             (Command::ExportCsv, "rec_c.csv"),
             (Command::Archive, "rec_d.zip"),
             (Command::OpenFvb, "lib_e.fvb"),
             (Command::ExportImage, "img_f.png"),
         ];
+        // Every command is run before the failures are reported, so one broken command does not hide the others.
+        let mut failures: Vec<String> = Vec::new();
         for (cmd, file) in cmds {
             for confirmed in [false, true] {
                 let mut h = Harness::new();
@@ -3702,8 +3706,13 @@ mod menu_tests {
                 let (tx, rx) = std::sync::mpsc::channel();
                 *crate::sysdlg::testing::ANSWER.lock().unwrap() = Some(rx);
                 h.app.dispatch(cmd.clone());
-                assert!(h.app.sysdlg_busy(), "{cmd:?}: the dialog is up");
-                assert!(h.doc().hscroll_pos.is_some(), "{cmd:?}: kept while the dialog is up");
+                if !h.app.sysdlg_busy() {
+                    failures.push(format!("{cmd:?}: no dialog is up"));
+                    continue;
+                }
+                if h.doc().hscroll_pos.is_none() {
+                    failures.push(format!("{cmd:?}: dropped while the dialog is up"));
+                }
                 tx.send(confirmed.then(|| (dir.join(file), None))).unwrap();
                 for _ in 0..400 {
                     h.app.poll_sysdlg(&ctx);
@@ -3712,11 +3721,15 @@ mod menu_tests {
                     }
                     std::thread::sleep(std::time::Duration::from_millis(5));
                 }
-                assert!(!h.app.sysdlg_busy(), "{cmd:?}: the dialog answered");
-                assert_eq!(h.doc().hscroll_pos.is_none(), confirmed, "{cmd:?} (confirmed {confirmed}): the position after the dialog");
+                if h.app.sysdlg_busy() {
+                    failures.push(format!("{cmd:?}: the dialog did not answer"));
+                } else if h.doc().hscroll_pos.is_none() != confirmed {
+                    failures.push(format!("{cmd:?} (confirmed {confirmed}): the position after the dialog"));
+                }
             }
         }
         let _ = std::fs::remove_dir_all(&dir);
+        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     /// A colour no demo lane has.
@@ -3787,6 +3800,31 @@ mod menu_tests {
             _ => false,
         });
         assert!(line, "the Polyline through the NaN points");
+    }
+
+    /// #243: a file lane with finite and infinite samples (a hand-set shown series; a finite ratio cannot make one) is
+    /// ranged by its finite samples; one of nothing but infinite and NaN samples keeps the infinite extremes (#170).
+    #[test]
+    fn a_file_lanes_range_is_its_finite_samples_when_it_has_any() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.shown = vec![None; d.osc.analog.len()];
+        let series = |k: usize| match k % 5 {
+            0 => f64::INFINITY,
+            1 => f64::NEG_INFINITY,
+            2 => f64::NAN,
+            3 => 2.5,
+            _ => -7.25,
+        };
+        d.shown[0] = Some((0..n).map(series).collect());
+        d.series_gen += 1;
+        let (lo, hi) = chan_range(h.doc(), 0);
+        assert_eq!((lo, hi), (-7.25, 2.5), "the finite samples' range, not (-inf, inf)");
+        let d = h.app.active_doc_mut().unwrap();
+        d.shown[0] = Some((0..n).map(|k| if k % 2 == 0 { f64::INFINITY } else { f64::NEG_INFINITY }).collect());
+        d.series_gen += 1;
+        assert_eq!(chan_range(h.doc(), 0), (f64::NEG_INFINITY, f64::INFINITY), "none finite: the infinite extremes");
     }
 
     /// #243 (clone, #170): a file lane whose samples are all NaN (a 0 / 0 ratio) draws nothing, marks included; the

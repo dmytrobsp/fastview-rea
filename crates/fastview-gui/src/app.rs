@@ -2393,7 +2393,7 @@ impl App {
         // Nearly every command ends in the views' refresh (`0x45ac60`), which sets the horizontal bar from
         // the first sample again (`lanes::hscroll_page`).
         // Copy (`0x45acb0`, case 57634 returns at `0x45befa` before the refresh) and the commands that only
-        // open a dialog or a chooser (Open, Печать, its preview, Save As, «Загрузка настроек...», the exports)
+        // open a dialog or a chooser (Open, Печать, its preview, Save without a file of its own, Save As, «Загрузка настроек...», the exports)
         // leave the bar alone until the dialog is answered (#232): a confirmed one drops the position in its
         // own continuation ([`Doc::drop_bar_position`]), a cancelled one never does.
         if !matches!(
@@ -2402,6 +2402,7 @@ impl App {
                 | Command::Open
                 | Command::Print
                 | Command::PrintPreview
+                | Command::Save
                 | Command::SaveAs
                 | Command::LoadSettings
                 | Command::ExportCsv

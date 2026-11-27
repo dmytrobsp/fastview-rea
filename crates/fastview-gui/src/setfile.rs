@@ -1065,7 +1065,11 @@ impl App {
     pub fn save_active(&mut self) -> bool {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return false };
         match self.save_path_of(ai) {
-            Some(p) => self.report_save(ai, &p),
+            Some(p) => {
+                // The save onto the record's own file runs at once: the views' refresh follows (#232).
+                self.docs[ai].drop_bar_position();
+                self.report_save(ai, &p)
+            }
             None => {
                 self.ask_save_as(ai, |_, _, _| {});
                 false
