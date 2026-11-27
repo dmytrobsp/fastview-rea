@@ -363,11 +363,12 @@ impl App {
         ov.vizirs(&painter, dy, v_bottom, true);
         let tops: Vec<f32> = paged.tops.iter().map(|t| t + dy).collect();
         let ranges: Vec<(f64, f64)> = rows.iter().map(|r| lanes::row_range(doc, r)).collect();
+        let vranges: Vec<(f64, f64)> = rows.iter().zip(&ranges).map(|(r, &rg)| lanes::visor_window(doc, r, rg)).collect();
         // Horizontal визиры: the screen Draw `0x45f950` calls `0x493110` in
         // print as well (lines and the out-of-view labels).
         let ys = [0, 1].map(|j| {
             let hv = &doc.hviz[j];
-            let y = hv.chan.filter(|_| hv.value.is_finite()).and_then(|ch| rows.iter().position(|r| r.has(crate::app::ChanKey::Analog(ch)))).map(|li| g::value_y(doc.hviz[j].value, tops[li], rows[li].h, ranges[li].0, ranges[li].1));
+            let y = hv.chan.filter(|_| !hv.value.is_nan()).and_then(|ch| rows.iter().position(|r| r.has(crate::app::ChanKey::Analog(ch)))).map(|li| lanes::hviz_y(doc.hviz[j].value, tops[li], rows[li].h, vranges[li].0, vranges[li].1));
             (hv.shown, y)
         });
         lanes::paint_hvizirs(&painter, (x0, left, right), (dy, v_bottom), ys);

@@ -671,6 +671,33 @@ pub fn paint_hvizirs(painter: &egui::Painter, (x0, left, right): (f32, f32, f32)
     }
 }
 
+/// The window a horizontal визир's value is read from (`0x42b640`, ch+0xb0 / ch+0xa8): the lane's range, except for a
+/// lane none of whose samples is finite (a zero ratio field): the min / max loop never moved off its start, DBL_MAX
+/// and -DBL_MAX, so a value read off such a lane is minus infinity (the span overflows, clone, #244).
+pub(crate) fn visor_window(doc: &crate::app::Doc, r: &Row, range: (f64, f64)) -> (f64, f64) {
+    let finite = |k: &ChanKey| match k {
+        Lane::Analog(i) => doc.shown_samples(*i).iter().any(|v| v.is_finite()),
+        Lane::Computed(j) if doc.pending_of(*j).is_none() => doc.computed[*j].shown_series().iter().any(|v| v.is_finite()),
+        _ => true,
+    };
+    if r.members.iter().any(finite) {
+        range
+    } else {
+        (f64::MAX, -f64::MAX)
+    }
+}
+
+/// A horizontal визир's row: the lane's, from its value. An infinite value (read off a lane without a finite sample)
+/// is the float-to-int conversion's indefinite integer in the original, a row far above the view: `y <= top`, so the
+/// label is at the top and the line out of sight (clone, #244).
+pub(crate) fn hviz_y(v: f64, top: f32, h: f32, lo: f64, hi: f64) -> f32 {
+    if v.is_finite() {
+        g::value_y(v, top, h, lo, hi)
+    } else {
+        top - 1.0e5
+    }
+}
+
 /// A group member's block height (`0x461440`, `0x460290`): the name row
 /// + 33, + the stats line when the member has stat rows.
 fn group_stride(doc: &crate::app::Doc, m: ChanKey) -> f32 {
@@ -1486,6 +1513,9 @@ impl App {
             y += r.h;
         }
         let ranges: Vec<(f64, f64)> = rows.iter().map(|r| row_range(doc, r)).collect();
+        // The window the horizontal визиры read their value from (`0x42b640`): the lane's min / max as the loop left
+        // them, which for a lane without a finite sample is (DBL_MAX, -DBL_MAX) (#244).
+        let vranges: Vec<(f64, f64)> = rows.iter().zip(&ranges).map(|(r, &rg)| visor_window(doc, r, rg)).collect();
         let grid_bottom = client.bottom() - g::RULER_H;
         let lanes_clip = Rect::from_min_max(client.min, Pos2::new(plot_right, plot_bottom));
         let painter = ui.painter_at(client);
@@ -1561,14 +1591,14 @@ impl App {
         for (j, h) in doc.hviz.iter().enumerate() {
             let Some(ch) = h.chan else { continue };
             let Some(li) = rows.iter().position(|r| r.has(Lane::Analog(ch))) else { continue };
-            let (lo, hi) = ranges[li];
+            let (lo, hi) = vranges[li];
             if h.value.is_nan() {
                 // First show: 10 / 20 px from the top of its lane.
                 let v = g::y_value(tops[li] + 10.0 * (j as f32 + 1.0), tops[li], rows[li].h, lo, hi);
                 actions.push(Act::SetH(j, ch, v));
                 continue;
             }
-            let yy = g::value_y(h.value, tops[li], rows[li].h, lo, hi);
+            let yy = hviz_y(h.value, tops[li], rows[li].h, lo, hi);
             hrows[j] = Some((yy, li));
         }
         paint_hvizirs(&painter, (client.left(), left, plot_right), (client.top(), plot_bottom), [0, 1].map(|j| (doc.hviz[j].shown, hrows[j].map(|r| r.0))));
@@ -1734,7 +1764,7 @@ impl App {
                                 }
                             }
                         } else if shift {
-                            if let Some((ch, v)) = analog_at(pos.y, &geo, &ranges) {
+                            if let Some((ch, v)) = analog_at(pos.y, &geo, &vranges) {
                                 actions.push(Act::SetH(usize::from(pressed_r), ch, v));
                             }
                         } else if pressed_l && self.rect_zoom == RectZoom::Armed {
@@ -1794,7 +1824,7 @@ impl App {
                 match drag {
                     VizDrag::V(k) => actions.push(Act::MoveV(k, sample_at(pos.x.clamp(left, plot_right.max(left))))),
                     VizDrag::H(j) => {
-                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), (plot_bottom - 1.0).max(client.top())), &geo, &ranges) {
+                        if let Some((ch, v)) = analog_at(pos.y.clamp(client.top(), (plot_bottom - 1.0).max(client.top())), &geo, &vranges) {
                             actions.push(Act::SetH(j, ch, v));
                         }
                     }
@@ -2037,7 +2067,7 @@ impl App {
                     actions.push(Act::MoveV(vk, c as usize));
                 }
                 if let Some(y) = y[vk].filter(|_| moved_h[vk]) {
-                    if let Some((ch, v)) = analog_at(y, &geo, &ranges) {
+                    if let Some((ch, v)) = analog_at(y, &geo, &vranges) {
                         actions.push(Act::SetH(vk, ch, v));
                     }
                 }
@@ -2559,7 +2589,8 @@ impl App {
         }
         let hval = |j: usize| -> Option<(usize, f64)> {
             let h = &d.hviz[j];
-            (h.shown && h.value.is_finite()).then_some(())?;
+            // Infinite values show ("-1.#INF"); NaN is the never-placed sentinel.
+            (h.shown && !h.value.is_nan()).then_some(())?;
             Some((h.chan?, h.value))
         };
         // «Гор. визир N: %4g %s» (3171 / 3173): the value as stored, the
@@ -3781,6 +3812,45 @@ mod menu_tests {
         };
         assert!(own(false) > 0, "the lane with finite samples draws");
         assert_eq!(own(true), 0, "an all-NaN lane draws nothing");
+    }
+
+    /// #244 (clone): the horizontal визиры switched on over a lane none of whose samples is finite (a zero ratio
+    /// field) read minus infinity off it — the window is DBL_MAX .. -DBL_MAX and the span overflows —, both of
+    /// them; the status bar shows «-1.#INF» and the difference «1.#QNAN»; the lines are out of view above the lane,
+    /// so the labels «ГВ1» / «ГВ2» sit at its top.
+    #[test]
+    fn horizontal_visors_on_a_lane_without_a_finite_sample_read_minus_infinity() {
+        let mut h = Harness::new();
+        let d = h.app.active_doc_mut().unwrap();
+        let n = d.osc.sample_count();
+        d.shown = vec![None; d.osc.analog.len()];
+        d.shown[0] = Some((0..n).map(|k| if k % 3 == 0 { f64::NAN } else { f64::INFINITY }).collect());
+        d.series_gen += 1;
+        let unit = d.osc.analog[0].shown_unit().text;
+        h.app.dispatch(Command::ToggleVizir(3));
+        h.app.dispatch(Command::ToggleVizir(4));
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        let d = h.doc();
+        assert_eq!((d.hviz[0].value, d.hviz[1].value), (f64::NEG_INFINITY, f64::NEG_INFINITY), "read off the DBL_MAX window");
+        let s = h.app.cursor_status().unwrap();
+        assert_eq!(s[3], format!("Гор. визир 1: -1.#INF {unit}"));
+        assert_eq!(s[4], format!("Гор. визир 2: -1.#INF {unit}"));
+        assert_eq!(s[5], format!("Разница г. визиров: 1.#QNAN {unit}"));
+        let label = |t: &str| h.shapes.iter().find_map(|c| match &c.shape { Shape::Text(x) if x.galley.text() == t => Some(x.pos), _ => None });
+        let top = h.app.view_rects.unwrap().0.top();
+        for t in ["ГВ1", "ГВ2"] {
+            let at = label(t).unwrap_or_else(|| panic!("the label {t}"));
+            assert!((at.y - top).abs() < 3.0, "{t} at the top of the view: {at:?} (top {top})");
+        }
+        // A lane with finite samples keeps its normal value.
+        let mut h = Harness::new();
+        h.app.dispatch(Command::ToggleVizir(3));
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        assert!(h.doc().hviz[0].value.is_finite());
     }
 
     /// #245: with marks shown (above 4 px per sample) the first sample's mark is drawn whole at the plot's left
