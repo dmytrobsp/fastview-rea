@@ -100,6 +100,15 @@ misbehaves and the better behaviour is obvious (the maintainer,
   the settings change nothing it reads (the result is the same, tested).
   Reason: about 2 s less on the UI thread for a big record.
 
+- **ASCII times past 2³¹ µs (#212).** The original's ASCII loader converts a row's rounded µs time to 32 bits
+  (`0x4518b7` via `0x411bf0`): in a record longer than about 35.8 minutes every later row's time saturates at the
+  limit. Ours keeps the full value. Reason: a time axis stuck at one value is a visible failure; the decision of the
+  2026-11-27 triage.
+- **The time axis of a record whose steps disagree with its rate (#234).** On a malformed record whose time column
+  disagrees with its sampling rate (a synthetic 5-row record on a clone) the original labels every tick of the time
+  axis 0; ours labels the ticks by its rule (0 / 3 / 7 / 10 ms there). Normal records' axes are the same. Reason: a
+  row of zeros says nothing; the decision of the 2026-11-27 triage.
+
 ## Behaviour
 
 - **Channels that share a name (#58).** The original finds a channel's
@@ -264,3 +273,12 @@ misbehaves and the better behaviour is obvious (the maintainer,
   record, and the update's wrapped position is a wrong starting point for the next notch. Ours computes in 64 bits.
   Reason: a first sample far from where it belongs on a long record is a visible failure; the controller's ruling
   (2026-11-01).
+- **The merge bar's «Канал 1» after «Кодировка» (#48).** With a pending paste, after an encoding switch the
+  original's merge bar keeps showing the old name in «Канал 1» while every other place shows the re-decoded one (a
+  missing refresh). Ours shows the new name there too. Reason: one name in one place and another elsewhere is a
+  visible inconsistency; the decision of the 2026-11-27 triage.
+- **The oscillogram's printed page has no black areas (#180).** On some setups (a Windows 11 clone with Microsoft Print
+  to PDF, Letter and A4) the original's printed and previewed oscillogram page fills only the upper-left part of the
+  margin rectangle and the rest is black — its memory bitmap's unpainted area stretched in (`0x405970`, MM_ISOTROPIC).
+  Ours always fits the view to the margin rectangle. Reason: black areas on paper waste toner and hide nothing useful;
+  the decision of the 2026-11-27 triage (the rule behind the black area was not decoded).

@@ -217,3 +217,32 @@ maintainer), **issue**.
 - **Why it isn't fixed**: no such system is available to test a fix on, and the releases are long unsupported.
 - **Decided**: 2026-11-27, the controller (triage of old issues).
 - **Issue**: [#85](https://github.com/dmytrobsp/fastview-rea/issues/85).
+
+## The driver properties dialog's place at higher scales
+
+- **What differs**: the printer driver's «Свойства...» dialog, opened from «Печать», sits 1–2 px off the original's
+  place at 100 % and up to 5 px at 125 % (L9.438; a clone with Microsoft Print to PDF); 150 % and other drivers not
+  measured.
+- **Where it shows**: only in the position of a driver's dialog, by a few pixels.
+- **Why it isn't fixed**: the window belongs to the printer driver, and each driver may place its own sheet; the gain
+  is a few pixels.
+- **Decided**: 2026-11-27, the controller (triage of open issues).
+- **Issue**: [#228](https://github.com/dmytrobsp/fastview-rea/issues/228).
+
+## The printer list while the print dialog is open
+
+- **What differs**: ours reads the printer list when its print dialog opens; a printer added in Windows while the
+  dialog is open appears after the dialog is opened again. The original's behaviour in that case was not compared.
+- **Where it shows**: only when a printer is installed while the print dialog is open.
+- **Why it isn't fixed**: closing and opening the dialog shows the new printer in both programs; the case is rare.
+- **Decided**: 2026-11-27, the controller (triage of open issues).
+- **Issue**: [#235](https://github.com/dmytrobsp/fastview-rea/issues/235).
+
+## A pressed caption button
+
+- **What differs**: the original's caption buttons are Windows 11's own, which may show a pressed face while the mouse
+  button is held on them; ours draws the hover face for a held press too (checked on a real desktop, 2026-11-27).
+- **Where it shows**: only while the mouse button is held on a caption button.
+- **Why it isn't fixed**: a transient look with no effect on behaviour; not worth a clone measurement.
+- **Decided**: 2026-11-27, the controller (triage of open issues).
+- **Issue**: [#253](https://github.com/dmytrobsp/fastview-rea/issues/253).
