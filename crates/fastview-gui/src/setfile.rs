@@ -1,7 +1,7 @@
 //! The record settings file (`<base>.set`) and the document-modified flag
 //! (track S; `fvb_core::recset` holds the file format).
 //!
-//! Read (`0x44f5b0`, from the `.cfg` / `.osc` loaders): the tree replaces
+//! Read (`0x44f5b0`, from the `.cfg` / `.cff` loaders): the tree replaces
 //! the document's, then comments (unless loading settings by 32860),
 //! `Oscillogram` (rate, code page — a stored one wins over the guess), every
 //! channel's section, the formula channels, ОМП, the diagram pairs; the
@@ -152,20 +152,15 @@ pub fn needs_save_prompt(d: &Doc) -> bool {
 /// lowercased); anything else is refused.
 fn save_kind(p: &std::path::Path) -> Option<&'static str> {
     let s = p.to_string_lossy().to_lowercase();
-    [".cfg", ".osc", ".cff"].into_iter().find(|e| s.ends_with(e))
+    [".cfg", ".cff"].into_iter().find(|e| s.ends_with(e))
 }
 
 /// Save As's filter (`CDocManagerEx::DoPromptFileName` `0x447e30`, by the
-/// record path's last four characters): string 394 for an `.osc` record,
-/// 569 for the rest (`.cfg`, `.cff`, `.sto`; 399 for a `.zip`, which
-/// cannot be opened).
-pub fn save_filters(record: Option<&std::path::Path>) -> [(&'static str, &'static str); 2] {
-    let osc = record.is_some_and(|p| p.to_string_lossy().to_lowercase().ends_with(".osc"));
-    if osc {
-        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы OSC2 (*.osc)", "osc")]
-    } else {
-        [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы COMTRADE'13 (*.cff)", "cff")]
-    }
+/// record path's last four characters): string 569 (`.cfg`, `.cff`). The
+/// original lists string 394 (`.cfg`, `.osc`) for an `.osc` record, 399 for a
+/// `.zip`; we open neither (#59), so there is one list.
+pub fn save_filters() -> [(&'static str, &'static str); 2] {
+    [("Осциллограммы COMTRADE (*.cfg)", "cfg"), ("Осциллограммы COMTRADE'13 (*.cff)", "cff")]
 }
 
 /// The name after OK (`0x448208`–`0x448368`): lowered, tested against
@@ -959,11 +954,6 @@ impl App {
                     let bytes = comtrade::write_cff_numbered(&rec, &d.cff_sections(), d.codepage, &no).map_err(|e| e.to_string())?;
                     std::fs::write(target, bytes).map_err(|e| e.to_string())?;
                 }
-                ".osc" => {
-                    // `0x44ca80` writes the record's own bytes to the new name.
-                    let src = d.rec_path.clone().filter(|p| save_kind(p) == Some(".osc")).ok_or("Нет исходного файла .osc")?;
-                    std::fs::copy(src, target).map_err(|e| e.to_string())?;
-                }
                 _ => {
                     let (rec, no) = d.file_record();
                     let (cfg, dat) = comtrade::write_numbered(&rec, d.codepage, &no);
@@ -980,9 +970,7 @@ impl App {
         let d = &mut self.docs[di];
         // The `.cfg` / `.cff` writers set the trigger sample to 0 whether
         // or not they wrote the record (`0x44d6c5`, `0x44daaa`).
-        if kind != ".osc" {
-            d.osc.trigger_sample = 0;
-        }
+        d.osc.trigger_sample = 0;
         let mut t = std::mem::take(&mut d.set.tree);
         d.store_settings(&mut t, false);
         d.set.tree = t;
@@ -1050,7 +1038,7 @@ impl App {
     pub fn ask_save_as(&mut self, ai: usize, then: impl FnOnce(&mut App, &egui::Context, bool) + 'static) {
         let Some(d) = self.docs.get(ai) else { return };
         let serial = d.serial;
-        let filters = save_filters(d.path.as_deref());
+        let filters = save_filters();
         // Proposed: the record's folder and its title without extension.
         // `0x447e30` lowers the name in place (three MakeLower calls) before
         // splitting it: folder and title come out lowercase — harmless on
@@ -1510,10 +1498,8 @@ mod tests {
 
     #[test]
     fn save_as_filters_and_extension() {
-        let f = save_filters(Some(Path::new("/r/a.OSC")));
-        assert_eq!(f.map(|x| x.1), ["cfg", "osc"]);
-        assert_eq!(save_filters(Some(Path::new("/r/a.sto"))).map(|x| x.1), ["cfg", "cff"]);
-        assert_eq!(save_filters(None).map(|x| x.1), ["cfg", "cff"]);
+        assert_eq!(save_filters().map(|x| x.1), ["cfg", "cff"]);
+        assert_eq!(save_kind(Path::new("/r/a.OSC")), None, "an .osc is no longer a save format (#59)");
         let exts = ["cfg", "cff"];
         assert_eq!(save_target(PathBuf::from("/r/x.CFF"), &exts, None), PathBuf::from("/r/x.CFF"));
         assert_eq!(save_target(PathBuf::from("/r/x.txt"), &exts, None), PathBuf::from("/r/x.txt.cfg"));

@@ -1,7 +1,7 @@
 //! «Проводник» — the oscillogram finder (FileFinder22Dlg, DIALOG 558; ledger
 //! L9.9, `docs/original/specs/ui-behaviour.md` §7.5): a modal dialog that scans a
-//! folder (optionally with subfolders) on a worker thread for `.cfg`, `.cff`,
-//! `.osc` and `.sto` files, lists them with station, block and start time,
+//! folder (optionally with subfolders) on a worker thread for `.cfg` and `.cff`
+//! files (`.osc` is not read, #59), lists them with station, block and start time,
 //! filters them live and opens or deletes the selected ones.
 
 use crate::app::App;
@@ -157,7 +157,6 @@ pub struct Found {
     pub path: PathBuf,
     /// The path relative to the scanned folder (col 0).
     pub name: String,
-    pub osc: bool,
     pub station: String,
     pub block: String,
     pub time: Stamp,
@@ -207,42 +206,24 @@ pub fn read_comtrade_header(text: &str, cff: bool) -> Option<(String, String, St
     Some((station, block, Stamp { y: y as i32, mo: mo as u32, d: d as u32, h: nums[3] as u32, mi: nums[4] as u32, s: nums[5] as u32 }))
 }
 
-/// The OSC2 header reader (`0x46c730`): «OSC Осциллограф. Версия a.b»,
-/// block «-», the time from header bytes 6..11 (s, min, h, day, month,
-/// year − 2000).
-/// `0x46c730`: the version from block 0's bytes 0 / 1, the time from the
-/// info block (128 · H, H = byte 2) BCD-decoded — the trigger moment
-/// without its milliseconds.
-pub fn read_osc_header(b: &[u8]) -> Option<(String, String, Stamp)> {
-    let h = usize::from(*b.get(2)?);
-    let info = b.get(128 * h..128 * h + 12)?;
-    let [y, mo, d, hh, mi, s, _] = fvb_core::comtrade::osc_trigger(info)?;
-    let t = Stamp { y: y as i32, mo, d, h: hh, mi, s };
-    Some((format!("OSC Осциллограф. Версия {}.{}", b[0], b[1]), "-".into(), t))
-}
-
 /// Read one file by its last three characters, lower-cased (`0x46bec0`).
 fn read_entry(path: &Path, root: &Path) -> Option<Found> {
     let s = path.to_string_lossy().to_lowercase();
     let ext = &s[s.len().saturating_sub(3)..];
     let bytes = || std::fs::read(path).ok();
-    let (station, block, time, osc) = match ext {
+    let (station, block, time) = match ext {
         "cfg" => {
             let (a, b, t) = read_comtrade_header(&decode(&bytes()?), false)?;
-            (a, b, t, false)
+            (a, b, t)
         }
         "cff" => {
             let (a, b, t) = read_comtrade_header(&decode(&bytes()?), true)?;
-            (a, b, t, false)
-        }
-        "osc" => {
-            let (a, b, t) = read_osc_header(&bytes()?)?;
-            (a, b, t, true)
+            (a, b, t)
         }
         _ => return None,
     };
     let name = path.strip_prefix(root).unwrap_or(path).to_string_lossy().into_owned();
-    Some(Found { path: path.to_path_buf(), name, osc, station, block, time })
+    Some(Found { path: path.to_path_buf(), name, station, block, time })
 }
 
 /// Walk `root` (recursively when asked), checking `cancel` at every step.
@@ -277,7 +258,7 @@ pub fn companions(path: &Path) -> Vec<PathBuf> {
     let s = path.to_string_lossy().to_lowercase();
     let exts: &[&str] = match &s[s.len().saturating_sub(4)..] {
         ".cfg" => &["dat", "hdr", "ini", "inf", "set"],
-        ".cff" | ".osc" => &["set"],
+        ".cff" => &["set"],
         ".sto" => &["dst"],
         _ => &[],
     };
@@ -988,7 +969,7 @@ impl App {
                             // The file's image (the original's own: ours a
                             // page, green for an oscillogram description).
                             let ic = Rect::from_min_size(row.min + Vec2::new(4.0, 0.5 + ((row_h - 17.0) / 2.0).floor()), Vec2::new(12.0, 15.0));
-                            p.rect(ic, 0.0, Color32::from_rgb(244, 252, 245), Stroke::new(1.0f32, if x.osc { Color32::from_rgb(53, 104, 48) } else { Color32::from_gray(120) }));
+                            p.rect(ic, 0.0, Color32::from_rgb(244, 252, 245), Stroke::new(1.0f32, Color32::from_gray(120)));
                             let texts = [x.name.clone(), x.station.clone(), x.block.clone(), x.time.date(), x.time.time()];
                             for (k, t) in texts.into_iter().enumerate() {
                                 let (cx, cw) = xs[k];
@@ -1167,18 +1148,9 @@ mod tests {
     }
 
     #[test]
-    fn osc_header_and_filters() {
-        // H = 1: the info block at 128, its time in BCD (0x30 s, 0x15 min,
-        // 0x09 h, 0x01 day, 0x02 month, 0x21 year).
-        let mut b = vec![2, 6, 1];
-        b.resize(128, 0);
-        b.extend([0, 0, 0, 0, 0, 0x45, 0x30, 0x15, 0x09, 0x01, 0x02, 0x21]);
-        b.resize(256, 0);
-        let (st, bl, t) = read_osc_header(&b).unwrap();
-        assert_eq!(st, "OSC Осциллограф. Версия 2.6");
-        assert_eq!(bl, "-");
-        assert_eq!(t, Stamp { y: 2021, mo: 2, d: 1, h: 9, mi: 15, s: 30 });
-        let f = Found { path: "x".into(), name: "x".into(), osc: true, station: st.clone(), block: bl, time: t };
+    fn day_filters() {
+        let t = Stamp { y: 2021, mo: 2, d: 1, h: 9, mi: 15, s: 30 };
+        let f = Found { path: "x".into(), name: "x".into(), station: "Версия 2.6".into(), block: "-".into(), time: t };
         let day = |d| Stamp { y: 2021, mo: 2, d, ..Default::default() };
         assert!(passes(&f, ALL, ALL, day(1), day(1)), "the whole По day is included");
         assert!(!passes(&f, ALL, ALL, day(2), day(3)));
@@ -1198,7 +1170,7 @@ mod tests {
             f.poll();
         }
         let stamp = |d: u32| Stamp { y: 2024, mo: 1, d, ..Default::default() };
-        let found = |name: &str, st: &str, d: u32| Found { path: name.into(), name: name.into(), osc: false, station: st.into(), block: String::new(), time: stamp(d) };
+        let found = |name: &str, st: &str, d: u32| Found { path: name.into(), name: name.into(), station: st.into(), block: String::new(), time: stamp(d) };
         f.files = vec![found("b", "S1", 3), found("a", "S2", 1), found("c", "S1", 2)];
         (f.station, f.block, f.from, f.to) = (ALL.into(), ALL.into(), stamp(1), stamp(3));
         assert_eq!(f.rows(), [0, 1, 2], "scan order, though the arrow says Дата ▲");
@@ -1223,6 +1195,12 @@ mod tests {
         std::fs::write(dir.join("a.hdr"), "").unwrap();
         std::fs::write(sub.join("b.CFG"), CFG).unwrap();
         std::fs::write(dir.join("c.txt"), "x").unwrap();
+        // An OSC2 file is not listed (#59): it cannot be opened.
+        let mut osc = vec![2u8, 6, 1];
+        osc.resize(128, 0);
+        osc.extend([0, 0, 0, 0, 0, 0x45, 0x30, 0x15, 0x09, 0x01, 0x02, 0x21]);
+        osc.resize(256, 0);
+        std::fs::write(dir.join("d.osc"), osc).unwrap();
         let none = AtomicBool::new(false);
         assert_eq!(scan(&dir, false, &none).len(), 1);
         let all = scan(&dir, true, &none);

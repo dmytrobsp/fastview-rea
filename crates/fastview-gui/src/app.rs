@@ -559,7 +559,7 @@ pub struct Loading {
     pub shown: (u32, f64),
 }
 
-/// Parse a `.cfg` / `.cff` / `.osc` record.
+/// Parse a `.cfg` / `.cff` record.
 fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comtrade::Progress>) -> ParseResult {
     let lower = path.to_string_lossy().to_lowercase();
     if lower.ends_with(".sto") {
@@ -570,6 +570,11 @@ fn parse_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::com
         // that path (`0x4564cd`–`0x4564fe`); ours stops there.
         let sto = path.with_extension("sto");
         return Err(fvb_core::comtrade::ComtradeError::Plain(format!("Ошибка чтения файла {}", sto.display())));
+    }
+    if lower.ends_with(".osc") {
+        // An OSC2 record (`0x4524b0`) is not supported (#59): an open that
+        // fails like the `.sto` one, never a `.cfg` beside it.
+        return Err(fvb_core::comtrade::ComtradeError::Plain(format!("Ошибка чтения файла {}", path.display())));
     }
     if lower.ends_with(".cff") {
         std::fs::read(path)
@@ -589,7 +594,7 @@ fn open_file(path: &std::path::Path, enc: Encoding, prog: Option<&fvb_core::comt
 }
 
 /// The progress dialog shows when the `.dat` of a `.cfg` or the `.cff` is
-/// over 200 000 bytes, or the `.osc` over 20 000.
+/// over 200 000 bytes.
 pub fn loading_shown(path: &std::path::Path) -> bool {
     let size = |p: &std::path::Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     let lower = path.to_string_lossy().to_lowercase();
@@ -597,8 +602,6 @@ pub fn loading_shown(path: &std::path::Path) -> bool {
         size(&path.with_extension("dat")).max(size(&path.with_extension("DAT"))) > 200_000
     } else if lower.ends_with(".cff") {
         size(path) > 200_000
-    } else if lower.ends_with(".osc") {
-        size(path) > 20_000
     } else {
         false
     }
@@ -1288,7 +1291,7 @@ impl Doc {
 
     /// Reset the time view to the full record.
     /// CMDUI 155..157: comments can be placed only on records opened from a
-    /// `.cfg` or `.osc` file (our bundled demo record, with no file, too).
+    /// `.cfg` file (our bundled demo record, with no file, too).
     /// Pairs naming a channel the record no longer has go (`0x4554e0` R/X,
     /// `0x455210` differential — the circle / differential painters and
     /// 33027 call them): the analog and computed channels' names, compared
@@ -1324,7 +1327,7 @@ impl Doc {
             Some(p) => p
                 .extension()
                 .and_then(|e| e.to_str())
-                .is_some_and(|e| e.eq_ignore_ascii_case("cfg") || e.eq_ignore_ascii_case("osc")),
+                .is_some_and(|e| e.eq_ignore_ascii_case("cfg")),
         }
     }
 
@@ -2930,10 +2933,9 @@ impl App {
         // String 328 (`0x447e30` when opening); patterns in both cases for
         // the case-sensitive dialogs off Windows.
         let dlg = crate::dialogs::file_dialog()
-            .add_filter("Осциллограммы (*.cfg, *.cff, *.osc, *.sto)", &["cfg", "cff", "osc", "sto", "CFG", "CFF", "OSC", "STO"])
+            .add_filter("Осциллограммы (*.cfg, *.cff, *.sto)", &["cfg", "cff", "sto", "CFG", "CFF", "STO"])
             .add_filter("Осциллограммы COMTRADE (*.cfg)", &["cfg", "CFG"])
             .add_filter("Осциллограммы COMTRADE'13 (*.cff)", &["cff", "CFF"])
-            .add_filter("Осциллограммы OSC2 (*.osc)", &["osc", "OSC"])
             .add_filter("Осциллограммы Configurator-MT (*.sto)", &["sto", "STO"])
             .add_filter("Все файлы (*.*)", &["*"]);
         self.pick(crate::sysdlg::Job::Open(dlg), |app, _, picked| {
@@ -4428,6 +4430,32 @@ mod tests {
         assert!(app.docs.is_empty());
     }
 
+    /// An `.osc` (OSC2) record is not supported (#59): the open fails with
+    /// string 124 and never takes the `.cfg` beside it; no progress dialog; no
+    /// comments; no save format.
+    #[test]
+    fn an_osc_record_is_not_opened() {
+        let dir = std::env::temp_dir().join(format!("fv_osc_gone_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("r.cfg"), "S,1,1999
+").unwrap();
+        let osc = dir.join("r.osc");
+        std::fs::write(&osc, vec![0u8; 40_000]).unwrap();
+        let r = open_file(&osc, Encoding::Cp1251, None);
+        let want = format!("Ошибка чтения файла {}", osc.display());
+        assert!(matches!(&r, Err(fvb_core::comtrade::ComtradeError::Plain(m)) if *m == want), "{:?}", r.map(|_| ()));
+        assert!(!loading_shown(&osc), "the 20 000-byte rule of the .osc is gone");
+        let mut app = App::new();
+        let n = app.docs.len();
+        app.finish_load(&osc, open_file(&osc, Encoding::Cp1251, None));
+        assert_eq!(app.docs.len(), n);
+        assert_eq!(app.dlg.alert(), Some(want.as_str()));
+        let mut d = Doc::new(fvb_core::comtrade::parse(include_str!("../../../assets/demo/demo_fault.cfg"), include_bytes!("../../../assets/demo/demo_fault.dat")).unwrap(), "d".into());
+        d.path = Some(osc);
+        assert!(!d.comments_allowed());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Phase 2 of the open (`0x428490` under `0x44f5b0`) runs on the
     /// loader's thread: the worker hands over a document whose derived
     /// arrays are built.
@@ -4489,7 +4517,7 @@ mod tests {
         assert!(s.iter().all(|x| !x.is_empty()));
     }
 
-    /// `0x49484d`: with a trigger sample (`.osc`) the readouts count from
+    /// `0x49484d`: with a trigger sample (an OSC2 record's; none opens now) the readouts count from
     /// it — a визир on it reads 0 and sample 1.
     #[test]
     fn cursor_status_counts_from_the_trigger() {
