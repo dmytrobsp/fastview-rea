@@ -124,7 +124,7 @@ every clone you made.
 remaining time in the watermark; in a clone `cscript //nologo %windir%\system32\slmgr.vbs /xpr` prints the expiry
 date). After that Windows warns and may shut down hourly. Renewal is a **new base**: run `hyperv-base.ps1` again (the
 same command; it refuses an existing name, so build under a new `-Name` and set `FV_BASE`, or remove the old base
-first; after a failed build it prints the commands that remove what is left), then delete the old base's disk once no clone depends on it (`Get-VHD` of a clone shows its parent).
+first; a failed build removes what it made, the VM's empty `Virtual Machines` folder included; `-KeepOnFail` keeps it for a look and prints the commands that remove it), then delete the old base's disk once no clone depends on it (`Get-VHD` of a clone shows its parent).
 
 ## What a clone is
 
