@@ -14,9 +14,13 @@ use eframe::egui::{self, Color32, RichText};
 
 /// The ribbon's rows at the system DPI (#12; VM at 100 / 125 / 150 %): the
 /// caption row 30 / 36 / 43 px, the tab row 23 / 30 / 35, a panel's
-/// caption band 16 / 22 / 26.
+/// caption band 16 / 22 / 26. At 175 / 200 % (#224, clone, a 1000 × 700 frame, the original against ours) the tab
+/// row's line lies 99 / 118 px from the window's top and the body's bottom line 150 / 169 px under it: the caption
+/// row 59 / 73 px, the band 29 / 32 (the 3-point rule had extrapolated 50 / 57 and 34 / 38). The body's bottom line
+/// lies 2 rows above the original's (150 / 169 under the tab line) as at 125 / 150 %: ours draws two brush rows under
+/// it, so the info band below starts where the original's does (259 / 297 px from the top).
 pub(crate) fn caption_h() -> f32 {
-    crate::dpi::measured(30.0, 36.0, 43.0)
+    crate::dpi::measured5([30.0, 36.0, 43.0, 59.0, 73.0])
 }
 
 fn tab_row_h() -> f32 {
@@ -24,7 +28,7 @@ fn tab_row_h() -> f32 {
 }
 
 fn band_h() -> f32 {
-    crate::dpi::measured(16.0, 22.0, 26.0)
+    crate::dpi::measured5([16.0, 22.0, 26.0, 29.0, 32.0])
 }
 
 /// The large buttons' text line (our stand-in font's).
@@ -2639,6 +2643,24 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #224 (clone, 175 / 200 %): the ribbon's tab line lies 99 / 118 px from the window's top and the body's bottom
+    /// line 150 / 169 px under it; at 100 / 125 / 150 % the rows are as measured before.
+    #[test]
+    fn the_ribbon_rows_follow_the_clone_at_175_and_200() {
+        for (dpi, tab_line, body) in [(168, 99.0, 148.0), (192, 118.0, 167.0)] {
+            crate::dpi::set(dpi);
+            let tab = crate::dpi::measured(23.0, 30.0, 35.0);
+            assert_eq!(caption_h() + tab, tab_line, "{dpi}");
+            // The body's bottom line lies its inner height and one row under the tab line.
+            assert_eq!(body_inner() + 1.0, body, "{dpi} body");
+        }
+        for (dpi, c, b) in [(96, 30.0, 16.0), (120, 36.0, 22.0), (144, 43.0, 26.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((caption_h(), band_h()), (c, b), "{dpi}");
+        }
+        crate::dpi::set(96);
+    }
 
     /// #225 (150 % clone): the blank-titled last panel collapses to its image alone, without a name or an arrow.
     #[test]
