@@ -493,10 +493,53 @@ fn coef_channel_mut(doc: &mut Doc, k: ChanKey) -> Option<&mut fvb_core::comtrade
 /// A cell of the coefficient grid: (row, column 0 = primary / 1 = secondary).
 pub type Cell = (usize, usize);
 
+/// What the pointer is over in the list: a row, and its value column (`None`: the name column).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Hit {
+    pub row: usize,
+    pub col: Option<usize>,
+}
+
+impl Hit {
+    fn cell(self) -> Cell {
+        (self.row, self.col.unwrap_or(0))
+    }
+}
+
+/// The value cells of the rectangle between two hits; a hit on the name column
+/// spans both value columns (the whole rows).
+fn span(a: Hit, b: Hit) -> BTreeSet<Cell> {
+    let (r0, r1) = (a.row.min(b.row), a.row.max(b.row));
+    let (c0, c1) = match (a.col, b.col) {
+        (Some(x), Some(y)) => (x.min(y), x.max(y)),
+        _ => (0, 1),
+    };
+    (r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))).collect()
+}
+
+/// A press being dragged: the selection follows the pointer until the release.
+#[derive(Debug, Clone)]
+struct Drag {
+    /// Where the rectangle starts (the anchor for a Shift press).
+    start: Hit,
+    /// What the press itself made of the selection (the pointer still on its hit).
+    first: BTreeSet<Cell>,
+    /// The cells kept under a Ctrl drag's rectangle.
+    base: BTreeSet<Cell>,
+    /// The hit of the press.
+    press: Hit,
+    /// What the pointer dragged back onto the press cell leaves: the cell itself
+    /// for a press inside a group, otherwise what the press made.
+    back: BTreeSet<Cell>,
+    /// The pointer has left the press cell.
+    left: bool,
+}
+
 /// The coefficient grid (`CMultiplierDlg`): one row per analog-kind record
 /// but the formula ones (file and pasted analog channels), `%g` texts of
-/// `ch+0xd0` / `ch+0xd8`, a rectangular Shift selection and an in-place edit
-/// whose text fills every selected cell of its column.
+/// `ch+0xd0` / `ch+0xd8`, an Excel-like selection of value cells (a deliberate
+/// redesign of the original's Shift + double-click rectangle, #214) and an
+/// in-place edit whose text fills every selected cell on commit.
 #[derive(Debug, Clone, Default)]
 pub struct CoefDlg {
     /// Each row's record and its index in the record vector.
@@ -505,7 +548,15 @@ pub struct CoefDlg {
     pub cells: Vec<[String; 2]>,
     pub sel: BTreeSet<Cell>,
     pub anchor: Option<Cell>,
+    /// The moving end of a Shift + arrows selection.
+    cursor: Option<Cell>,
+    drag: Option<Drag>,
+    /// A press on a selected cell of a group: the selection resets to the cell
+    /// when no double-click follows (the cell and the release's time).
+    pending: Option<(Hit, f64)>,
     pub edit: Option<(Cell, String)>,
+    /// The edit was started by typing: its caret is at the end.
+    pub edit_typed: bool,
     pub dirty: bool,
     /// Top-left of the header row at the last frame (for tests).
     pub origin: Option<Pos2>,
@@ -513,6 +564,10 @@ pub struct CoefDlg {
     pub cell_rects: Vec<(Cell, Rect)>,
     /// The open edit's cell at the last frame: a press elsewhere commits.
     pub edit_rect: Option<Rect>,
+    /// A cell the keyboard moved to: scrolled into view at the next draw.
+    pub scroll_to: Option<Cell>,
+    /// The rows' visible area at the last frame (for tests and hit-testing).
+    pub list_rect: Option<Rect>,
 }
 
 impl CoefDlg {
@@ -533,47 +588,155 @@ impl CoefDlg {
         dlg
     }
 
-    /// A press anywhere but the edit (`0x47af90` → `0x47b3d0`): only the
-    /// commit — a single click selects nothing.
-    pub fn press(&mut self, shift: bool) {
-        self.commit(shift);
+    /// A press on a cell or a name (#214, Excel's way): the edit committed;
+    /// Shift extends the rectangle from the anchor; Ctrl toggles the cell (a drag
+    /// from it adds a rectangle); a plain press selects the cell — except on a
+    /// selected cell of a group, whose reset waits for the double-click delay.
+    pub fn press_cell(&mut self, hit: Hit, shift: bool, ctrl: bool) {
+        self.commit();
+        if self.pending.is_some_and(|(p, _)| p != hit) {
+            self.pending = None;
+        }
+        let cell = hit.cell();
+        let own = span(hit, hit);
+        if let (true, Some(a)) = (shift, self.anchor) {
+            let start = Hit { row: a.0, col: Some(a.1) };
+            self.sel = span(start, hit);
+            self.cursor = Some(cell);
+            self.drag = Some(Drag { start, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: self.sel.clone(), left: false });
+            return;
+        }
+        if ctrl {
+            let base = self.sel.clone();
+            if own.iter().all(|c| base.contains(c)) {
+                // Toggled off: the anchor never rests on an unselected cell.
+                self.sel.retain(|c| !own.contains(c));
+                if self.anchor.is_some_and(|a| !self.sel.contains(&a)) {
+                    self.anchor = self.sel.iter().next().copied();
+                }
+                self.cursor = self.anchor;
+            } else {
+                self.sel.extend(own);
+                self.anchor = Some(cell);
+                self.cursor = Some(cell);
+            }
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base, press: hit, back: self.sel.clone(), left: false });
+            return;
+        }
+        self.anchor = Some(cell);
+        self.cursor = Some(cell);
+        if self.sel.len() > 1 && own.iter().all(|c| self.sel.contains(c)) {
+            self.pending = Some((hit, f64::MAX));
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: own, left: false });
+        } else {
+            self.sel = own;
+            self.drag = Some(Drag { start: hit, first: self.sel.clone(), base: BTreeSet::new(), press: hit, back: self.sel.clone(), left: false });
+        }
     }
 
-    /// A double-click on a cell (`0x47b020`): the edit committed; with Shift
-    /// every row between the anchor's and this one takes the rectangle's
-    /// columns (those rows overwritten, the others kept); the cell joins the
-    /// selection and its edit opens.
-    pub fn double_click(&mut self, at: Cell, shift: bool) {
-        self.commit(shift);
-        if shift {
-            if let Some(a) = self.anchor {
-                let (r0, r1) = (a.0.min(at.0), a.0.max(at.0));
-                let (c0, c1) = (a.1.min(at.1), a.1.max(at.1));
-                self.sel.retain(|&(r, _)| !(r0..=r1).contains(&r));
-                self.sel.extend((r0..=r1).flat_map(|r| (c0..=c1).map(move |c| (r, c))));
+    /// The pointer moved with the button down: the selection is the rectangle
+    /// from the press (added to the kept cells under Ctrl).
+    pub fn drag_to(&mut self, hit: Hit) {
+        let Some(d) = &mut self.drag else { return };
+        if hit == d.press {
+            self.sel = if d.left { d.back.clone() } else { d.first.clone() };
+        } else {
+            d.left = true;
+            self.sel = d.base.union(&span(d.start, hit)).copied().collect();
+            self.pending = None;
+        }
+        self.cursor = Some(hit.cell());
+    }
+
+    /// Whether a press is being dragged.
+    pub fn dragging(&self) -> bool {
+        self.drag.is_some()
+    }
+
+    /// Whether a lone click's reset is waiting for the double-click delay.
+    pub fn reset_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
+    /// The button released at `now`.
+    pub fn release(&mut self, now: f64) {
+        self.drag = None;
+        if let Some(p) = &mut self.pending {
+            p.1 = now;
+        }
+    }
+
+    /// A frame at `now`: a click on a selected cell of a group that no second
+    /// click followed within `delay` resets the selection to the cell.
+    pub fn tick(&mut self, now: f64, delay: f64) {
+        if let Some((hit, t)) = self.pending {
+            if self.drag.is_none() && now - t > delay {
+                self.pending = None;
+                self.sel = span(hit, hit);
             }
         }
-        self.sel.insert(at);
-        self.edit = Some((at, self.cells[at.0][at.1].clone()));
     }
 
-    /// Commit the edit (`0x47b3d0`): a text that differs from the cell's
-    /// makes the grid dirty and goes into the edited cell and every selected
-    /// cell of either column (the rows' item-data bits); then the edited
-    /// cell is the anchor and, without Shift, the selection clears — after
-    /// the write.
-    pub fn commit(&mut self, shift: bool) {
+    /// A press that is on no cell (the empty list, the dialog's body): only
+    /// the commit; the selection stays.
+    pub fn press_elsewhere(&mut self) {
+        self.commit();
+    }
+
+    /// A double-click on a cell (#214): the edit committed and opened on the
+    /// cell; the selection stays when the cell is in it (the value typed goes
+    /// into all of it), otherwise it becomes that cell.
+    pub fn double_click(&mut self, at: Cell) {
+        self.commit();
+        self.pending = None;
+        self.drag = None;
+        self.begin_edit(at, None);
+    }
+
+    /// Open the edit on `at`; `typed` replaces the text (its caret at the end).
+    pub fn begin_edit(&mut self, at: Cell, typed: Option<&str>) {
+        if !self.sel.contains(&at) {
+            self.sel = BTreeSet::from([at]);
+        }
+        self.anchor = Some(at);
+        self.cursor = Some(at);
+        self.edit_typed = typed.is_some();
+        self.edit = Some((at, typed.map(str::to_string).unwrap_or_else(|| self.cells[at.0][at.1].clone())));
+    }
+
+    /// The arrows: move the single selection, or with `extend` the rectangle's
+    /// moving end (Shift); the anchor stays.
+    pub fn move_cursor(&mut self, dr: isize, dc: isize, extend: bool) {
+        let Some(from) = self.cursor.or(self.anchor) else { return };
+        let r = (from.0 as isize + dr).clamp(0, self.cells.len() as isize - 1) as usize;
+        let c = (from.1 as isize + dc).clamp(0, 1) as usize;
+        self.pending = None;
+        self.cursor = Some((r, c));
+        self.scroll_to = Some((r, c));
+        if extend {
+            let a = self.anchor.unwrap_or(from);
+            self.sel = span(Hit { row: a.0, col: Some(a.1) }, Hit { row: r, col: Some(c) });
+        } else {
+            self.anchor = Some((r, c));
+            self.sel = BTreeSet::from([(r, c)]);
+        }
+    }
+
+    /// Commit the edit (`0x47b3d0`): the text goes into the edited cell and
+    /// every selected cell whose own text differs from it (the dirty rule per
+    /// cell, so a group of mixed values is filled even when the edited cell
+    /// already held the value); any write makes the grid dirty. Unlike the
+    /// original (which clears the selection unless Ctrl is held) the
+    /// selection stays (#214).
+    pub fn commit(&mut self) {
         let Some(((r, c), text)) = self.edit.take() else { return };
-        if text != self.cells[r][c] {
-            self.cells[r][c] = text.clone();
-            for &(sr, sc) in &self.sel {
-                self.cells[sr][sc] = text.clone();
+        let mut targets = self.sel.clone();
+        targets.insert((r, c));
+        for (tr, tc) in targets {
+            if self.cells[tr][tc] != text {
+                self.cells[tr][tc] = text.clone();
+                self.dirty = true;
             }
-            self.dirty = true;
-        }
-        self.anchor = Some((r, c));
-        if !shift {
-            self.sel.clear();
         }
     }
 
@@ -589,7 +752,7 @@ impl CoefDlg {
     /// Each record reads the row at its vector index (`0x47b6b7`,
     /// `0x47b70b`): a row past the list reads "" — 0.
     pub fn apply(&mut self, doc: &mut Doc) -> Option<Vec<ChanKey>> {
-        self.commit(false);
+        self.commit();
         if !self.dirty {
             return None;
         }
@@ -909,13 +1072,29 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 st.cell_rects.clear();
-                let shift = ui.input(|i| i.modifiers.shift);
+                let (shift, ctrl, now) = ui.input(|i| (i.modifiers.shift, i.modifiers.ctrl, i.time));
+                let delay = ui.ctx().options(|o| o.input_options.max_double_click_delay);
+                st.tick(now, delay);
+                // An open edit takes Enter (commit into every selected cell)
+                // and Esc (cancel, the selection kept) — the dialog stays
+                // (#214; the original's edit passes them on as IDOK / IDCANCEL).
+                let (enter, esc) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
+                let mut key_used = false;
+                if st.edit.is_some() && (enter || esc) {
+                    if esc {
+                        st.cancel_edit();
+                    } else {
+                        st.commit();
+                    }
+                    key_used = true;
+                }
                 // Any press not on the open edit commits it (the dialog's
                 // PreTranslateMessage → `0x47b3d0`; VM: «5» typed, a click
                 // below the rows → the typed text kept in front of the ratio).
-                if let (Some(er), Some(p)) = (st.edit_rect, ui.input(|i| i.pointer.any_pressed().then(|| crate::lanes::press_pos(i)).flatten())) {
+                let pressed = ui.input(|i| i.pointer.primary_pressed().then(|| crate::lanes::press_pos(i)).flatten());
+                if let (Some(er), Some(p)) = (st.edit_rect, pressed) {
                     if st.edit.is_some() && !er.contains(p) {
-                        st.press(shift);
+                        st.press_elsewhere();
                     }
                 }
                 st.edit_rect = None;
@@ -959,10 +1138,48 @@ impl App {
                 // list, ОК, «Отмена»).
                 let list_id = egui::Id::new("fv_coef_list");
                 ui.interact(rows, list_id, Sense::click());
-                crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
+                let list_focused = crate::dialogs::tab_stop(ui, list_id, crate::dialogs::StopKind::Other);
+                // The keyboard, Excel's way, with the list focused (#214): the
+                // arrows move the selection (Shift extends it), F2 / Enter
+                // open the edit on the anchor, a typed digit starts one.
+                if list_focused && st.edit.is_none() && !key_used {
+                    // The dialog manager keeps the arrows from egui for the focused stop.
+                    let arrows = crate::dialogs::focused_arrows(ui, list_id);
+                    let (f2, typed) = ui.input(|i| {
+                        let typed = i.events.iter().find_map(|e| match e {
+                            egui::Event::Text(t) if t.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '-' || c == '.') => Some(t.clone()),
+                            _ => None,
+                        });
+                        (i.key_pressed(egui::Key::F2) || i.key_pressed(egui::Key::Enter), typed)
+                    });
+                    let arrow = arrows.first().map(|k| match k {
+                        egui::Key::ArrowUp => (0, -1, 0),
+                        egui::Key::ArrowDown => (0, 1, 0),
+                        egui::Key::ArrowLeft => (0, 0, -1),
+                        _ => (0, 0, 1),
+                    });
+                    if let Some((_, dr, dc)) = arrow {
+                        st.move_cursor(dr, dc, shift);
+                        key_used = true;
+                    } else if let Some(at) = st.anchor.filter(|_| f2 || typed.is_some()) {
+                        st.begin_edit(at, typed.as_deref());
+                        st.scroll_to = Some(at);
+                        key_used = true;
+                    }
+                }
                 ui.allocate_new_ui(egui::UiBuilder::new().max_rect(rows), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
-                egui::ScrollArea::vertical().max_height(rows.height()).show(ui, |ui| {
+                egui::ScrollArea::vertical().max_height(rows.height()).drag_to_scroll(false).show(ui, |ui| {
+                    // Dragging a selection past the view scrolls the list (Excel's).
+                    if st.dragging() && ui.input(|i| i.pointer.primary_down()) {
+                        if let Some(p) = ui.input(|i| i.pointer.latest_pos()) {
+                            let beyond = if p.y < rows.top() { p.y - rows.top() } else if p.y > rows.bottom() { p.y - rows.bottom() } else { 0.0 };
+                            if beyond != 0.0 {
+                                ui.scroll_with_delta(Vec2::new(0.0, -beyond.signum() * (beyond.abs() * 0.4).clamp(3.0, 40.0)));
+                                ui.ctx().request_repaint();
+                            }
+                        }
+                    }
                     for row in 0..st.cells.len() {
                         let (rr, _) = ui.allocate_exact_size(Vec2::new(rows.width(), row_h), Sense::hover());
                         let nr = Rect::from_min_size(rr.min, Vec2::new(cols[0].1 - 1.0, row_h - 1.0));
@@ -983,20 +1200,14 @@ impl App {
                                 let mut out = egui::TextEdit::singleline(text).id(id).frame(false).font(font.clone()).margin(egui::Margin { left: 3.0, right: 1.0, top: 1.0, bottom: 0.0 }).desired_width(er.width() - 4.0).show(&mut child);
                                 let te = out.response.clone();
                                 if !te.has_focus() && !te.lost_focus() {
-                                    out.state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(0))));
+                                    let at = if st.edit_typed { text.chars().count() } else { 0 };
+                                    out.state.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(at))));
                                     out.state.store(ui.ctx(), id);
                                     te.request_focus();
                                 }
-                                // The edit is a plain CEdit: Enter reaches IDOK
-                                // (commit, apply, close), Esc IDCANCEL.
-                                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                                    st.cancel_edit();
-                                    result = Some(false);
-                                } else if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                                    result = Some(true);
-                                } else if te.lost_focus() {
+                                if te.lost_focus() {
                                     // A press elsewhere commits (`0x47b3d0`).
-                                    st.press(shift);
+                                    st.commit();
                                 }
                                 continue;
                             }
@@ -1013,15 +1224,62 @@ impl App {
                                 font.clone(),
                                 if selected { Color32::WHITE } else { ink },
                             );
-                            if resp.double_clicked() {
-                                st.double_click((row, col), shift);
-                            } else if resp.clicked() {
-                                st.press(shift);
+                            if st.scroll_to == Some((row, col)) {
+                                ui.scroll_to_rect(r, None);
+                            }
+                            if resp.double_clicked() && !shift && !ctrl {
+                                st.double_click((row, col));
                             }
                         }
                     }
                 });
                 });
+                st.scroll_to = None;
+                st.list_rect = Some(rows);
+                // The pointer: a press on a cell or a name selects (Shift
+                // extends, Ctrl adds), the button held drags the rectangle,
+                // the release ends it (#214). The cells' places are this
+                // frame's.
+                let hit_at = |st: &CoefDlg, p: Pos2, clamp: bool| -> Option<Hit> {
+                    let tops: Vec<(usize, Rect)> = st.cell_rects.iter().filter(|(c, _)| c.1 == 0).map(|(c, r)| (c.0, *r)).collect();
+                    let (first, last) = (tops.first()?, tops.last()?);
+                    // Only the visible rows: a drag past the view clamps to its edge rows.
+                    let y = if clamp { p.y.clamp(rows.top(), rows.bottom() - 1.0) } else { p.y };
+                    let row = match tops.iter().find(|(_, r)| y >= r.top() && y < r.bottom() + 1.0) {
+                        Some(t) => t.0,
+                        None if !clamp => return None,
+                        None if y < first.1.top() => first.0,
+                        None => last.0,
+                    };
+                    let col = if p.x < inner.left() + cols[1].0 {
+                        None
+                    } else if p.x < inner.left() + cols[2].0 {
+                        Some(0)
+                    } else {
+                        Some(1)
+                    };
+                    Some(Hit { row, col })
+                };
+                let on_list = |p: Pos2| rows.contains(p) && p.x < inner.left() + cols[2].0 + cols[2].1 && ui.ctx().layer_id_at(p) == Some(ui.layer_id());
+                if let Some(p) = pressed.filter(|p| on_list(*p) && !st.edit_rect.is_some_and(|er| er.contains(*p))) {
+                    match hit_at(&st, p, false) {
+                        Some(h) => st.press_cell(h, shift, ctrl),
+                        None => st.press_elsewhere(),
+                    }
+                }
+                if ui.input(|i| i.pointer.primary_down()) {
+                    if let Some(p) = ui.input(|i| i.pointer.latest_pos()) {
+                        if let Some(h) = hit_at(&st, p, true) {
+                            st.drag_to(h);
+                        }
+                    }
+                }
+                if ui.input(|i| i.pointer.primary_released()) {
+                    st.release(now);
+                }
+                if st.reset_pending() {
+                    ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(delay + 0.05));
+                }
                 let btn = |x: f32| crate::dialogs::dp(client, x, 380.0, 110.0, 23.0);
                 // No WS_GROUP on the buttons: with the control before them they make one span for the arrows (clone, 477: ↑ from ОК focuses the list).
                 crate::dialogs::group_continue(ui);
@@ -1032,7 +1290,7 @@ impl App {
                     result = Some(false);
                 }
                 // OK is the default button, Esc cancels.
-                if st.edit.is_none() && result.is_none() {
+                if st.edit.is_none() && result.is_none() && !key_used {
                     result = ui.input(|i| if i.key_pressed(egui::Key::Enter) { Some(true) } else if i.key_pressed(egui::Key::Escape) { Some(false) } else { None });
                 }
             });
@@ -1213,32 +1471,33 @@ mod tests {
         assert_eq!(wtof(".5"), 0.5);
     }
 
-    /// `0x47b020` / `0x47b3d0`: the range is built by Shift + double-click
-    /// from the anchor; the commit fills every selected cell, then clears
-    /// the selection without Shift; a single click selects nothing.
+    /// #214: a Shift + click rectangle from the anchor, the edit opened on a cell of it; the
+    /// commit fills every selected cell and keeps the selection; no validation (bad text is 0).
     #[test]
-    fn coefficient_bulk_entry_fills_the_shift_range() {
+    fn coefficient_bulk_entry_fills_the_selection() {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
         assert_eq!(g.cells[0], ["1".to_string(), "1".to_string()]);
-        // Double-click row 0 primary, then Shift + double-click row 2
-        // secondary: the rectangle, its edit open; type and commit.
-        g.double_click((0, 0), false);
-        g.double_click((2, 1), true);
+        let hit = |row, col| Hit { row, col: Some(col) };
+        g.press_cell(hit(0, 0), false, false);
+        g.release(0.0);
+        g.press_cell(hit(2, 1), true, false);
+        g.release(0.0);
         assert_eq!(g.sel.len(), 6);
+        g.double_click((2, 1));
+        assert_eq!(g.sel.len(), 6, "the group stays");
         g.edit.as_mut().unwrap().1 = "110000".into();
-        g.press(false);
+        g.commit();
         for r in 0..3 {
             assert_eq!(g.cells[r], ["110000".to_string(), "110000".to_string()]);
         }
         assert_eq!(g.cells[3][0], "1");
-        assert!(g.sel.is_empty(), "cleared after the write");
-        // A single click selects nothing; a double-click edits one cell.
-        g.press(false);
-        assert!(g.sel.is_empty());
-        g.double_click((4, 1), false);
+        assert_eq!(g.sel.len(), 6, "the selection stays after the write");
+        // A double-click outside the selection makes that cell the selection.
+        g.double_click((4, 1));
+        assert_eq!(g.sel.iter().copied().collect::<Vec<_>>(), [(4, 1)]);
         g.edit.as_mut().unwrap().1 = "bad".into();
-        g.press(false);
+        g.commit();
         assert_eq!(g.cells[4][1], "bad");
         let changed = g.apply(&mut d);
         assert_eq!(changed, Some([0, 1, 2, 4].map(ChanKey::Analog).to_vec()));
@@ -1271,10 +1530,10 @@ mod tests {
     fn coefficients_ok_without_edits_changes_nothing() {
         let mut d = demo_doc();
         let mut g = CoefDlg::new(&d);
-        g.press(false);
+        g.press_elsewhere();
         // An edit that keeps the text is no change either.
-        g.double_click((1, 1), false);
-        g.press(false);
+        g.double_click((1, 1));
+        g.commit();
         assert!(g.apply(&mut d).is_none(), "nothing dirty: OnCancel");
     }
 }
@@ -1339,6 +1598,60 @@ mod ui_tests {
             for _ in 0..7 {
                 self.frame(vec![]);
             }
+        }
+
+        fn ptr(&mut self, pos: Pos2, pressed: Option<bool>, m: egui::Modifiers) {
+            let mut ev = vec![egui::Event::PointerMoved(pos)];
+            if let Some(pressed) = pressed {
+                ev = vec![egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: m }];
+            }
+            self.frame_mod(ev, m);
+        }
+
+        /// Press at `from`, move through the middle to `to`, release there.
+        fn drag_mod(&mut self, from: Pos2, to: Pos2, m: egui::Modifiers) {
+            for _ in 0..7 {
+                self.frame(vec![]);
+            }
+            self.ptr(from, None, m);
+            self.ptr(from, Some(true), m);
+            self.ptr(from.lerp(to, 0.5), None, m);
+            self.ptr(to, None, m);
+            self.ptr(to, Some(false), m);
+            self.frame_mod(vec![], m);
+        }
+
+        fn key_mod(&mut self, key: egui::Key, m: egui::Modifiers) {
+            self.frame_mod(vec![egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: m }], m);
+            self.frame_mod(vec![], m);
+        }
+
+        fn key(&mut self, key: egui::Key) {
+            self.key_mod(key, Default::default());
+        }
+
+        fn coef_open() -> Harness {
+            let mut h = Harness::new();
+            h.app.dispatch(Command::Coefficients);
+            for _ in 0..7 {
+                h.frame(vec![]);
+            }
+            h
+        }
+
+        fn at(&self, r: usize, c: usize) -> Pos2 {
+            let st = self.app.dlg.coef.as_ref().expect("dialog drawn");
+            st.cell_rects.iter().find(|(at, _)| *at == (r, c)).map(|(_, rect)| rect.center()).expect("cell drawn")
+        }
+
+        /// The name column of row `r`.
+        fn name_at(&self, r: usize) -> Pos2 {
+            let p = self.at(r, 0);
+            Pos2::new(p.x - 200.0, p.y)
+        }
+
+        fn sel(&self) -> Vec<Cell> {
+            self.app.dlg.coef.as_ref().expect("dialog open").sel.iter().copied().collect()
         }
 
         fn double_click(&mut self, pos: Pos2) {
@@ -1430,35 +1743,317 @@ mod ui_tests {
         assert_eq!(h.app.docs[0].osc.analog[0].id, "Ua1", "the rename is dropped");
     }
 
+    const NONE: egui::Modifiers = egui::Modifiers::NONE;
+    const CTRL: egui::Modifiers = egui::Modifiers::CTRL;
+
+    /// #214: a click selects one cell; a click elsewhere resets the selection to that cell.
     #[test]
-    fn coefficients_double_click_type_and_shift_click_fill() {
-        let mut h = Harness::new();
-        h.app.dispatch(Command::Coefficients);
-        h.frame(vec![]);
-        for _ in 0..6 {
-            h.frame(vec![]);
-        }
-        // The cells' places as drawn.
-        let cell = |h: &Harness, r: usize, c: usize| {
-            let st = h.app.dlg.coef.as_ref().expect("dialog drawn");
-            st.cell_rects.iter().find(|(at, _)| *at == (r, c)).map(|(_, rect)| rect.center()).expect("cell drawn")
-        };
-        let at = cell(&h, 0, 0);
+    fn a_click_selects_one_cell_and_a_click_elsewhere_resets_it() {
+        let mut h = Harness::coef_open();
+        let at = h.at(1, 0);
+        h.click(at);
+        assert_eq!(h.sel(), [(1, 0)]);
+        let at = h.at(2, 1);
+        h.click(at);
+        assert_eq!(h.sel(), [(2, 1)]);
+    }
+
+    /// #214: press and drag selects the rectangle the pointer spans, a column,
+    /// or (over the name column) the whole rows' value cells.
+    #[test]
+    fn a_drag_selects_the_rectangle_the_pointer_spans() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(2, 1));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)]);
+        let (a, b) = (h.at(0, 1), h.at(3, 1));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(0, 1), (1, 1), (2, 1), (3, 1)]);
+        let (a, b) = (h.at(3, 1), h.at(1, 1));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(1, 1), (2, 1), (3, 1)], "upwards too");
+        let (a, b) = (h.at(1, 1), h.name_at(3));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(1, 0), (1, 1), (2, 0), (2, 1), (3, 0), (3, 1)], "over the name column: whole rows");
+    }
+
+    /// #214: a double-click on a cell of the selection edits it without resetting the
+    /// selection; the value typed goes into every selected cell on Enter; the dialog stays.
+    #[test]
+    fn a_double_click_edits_and_the_value_goes_into_every_selected_cell() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel().len(), 3);
+        let at = h.at(1, 0);
         h.double_click(at);
-        assert_eq!(h.app.dlg.coef.as_ref().unwrap().edit.as_ref().map(|e| e.0), Some((0, 0)));
-        // Shift + double-click row 3 of the same column (`0x47b020`): the
-        // range from the anchor, the edit on row 3; type, press elsewhere.
-        let at = cell(&h, 3, 0);
-        h.double_click_mod(at, egui::Modifiers::SHIFT);
-        assert_eq!(h.app.dlg.coef.as_ref().unwrap().sel.len(), 4);
-        h.app.dlg.coef.as_mut().unwrap().edit.as_mut().unwrap().1 = "6000".into();
-        let at = cell(&h, 5, 1);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!(st.edit.as_ref().map(|e| e.0), Some((1, 0)));
+        assert_eq!(st.sel.len(), 3, "the first click of the double-click did not reset the selection");
+        h.app.dlg.coef.as_mut().unwrap().edit.as_mut().unwrap().1 = "1234".into();
+        h.key(egui::Key::Enter);
+        let st = h.app.dlg.coef.as_ref().expect("Enter in the edit keeps the dialog");
+        assert!(st.edit.is_none() && st.dirty);
+        assert_eq!((0..4).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["1234", "1234", "1234", "1"]);
+        assert!(st.cells.iter().all(|c| c[1] == "1"));
+        assert_eq!(st.sel.len(), 3, "the selection stays after the commit");
+    }
+
+    /// #214: a click elsewhere commits the edit into every selected cell and resets the selection to it.
+    #[test]
+    fn a_click_elsewhere_commits_the_group_edit_and_resets() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 1), h.at(2, 1));
+        h.drag_mod(a, b, NONE);
+        let at = h.at(2, 1);
+        h.double_click(at);
+        h.app.dlg.coef.as_mut().unwrap().edit.as_mut().unwrap().1 = "77".into();
+        let at = h.at(4, 0);
         h.click(at);
         let st = h.app.dlg.coef.as_ref().unwrap();
         assert!(st.edit.is_none());
-        assert_eq!((0..4).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["6000"; 4]);
-        assert_eq!(st.cells[4][0], "1");
-        assert!(st.cells.iter().all(|c| c[1] == "1"));
+        assert_eq!((0..4).map(|r| st.cells[r][1].as_str()).collect::<Vec<_>>(), ["77", "77", "77", "1"]);
+        assert_eq!(h.sel(), [(4, 0)]);
+    }
+
+    /// #214: Esc cancels the edit and keeps the selection and the dialog.
+    #[test]
+    fn esc_cancels_the_edit_and_keeps_the_selection() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(1, 1));
+        h.drag_mod(a, b, NONE);
+        let at = h.at(0, 0);
+        h.double_click(at);
+        h.app.dlg.coef.as_mut().unwrap().edit.as_mut().unwrap().1 = "9".into();
+        h.key(egui::Key::Escape);
+        let st = h.app.dlg.coef.as_ref().expect("Esc in the edit keeps the dialog");
+        assert!(st.edit.is_none() && !st.dirty);
+        assert_eq!(st.cells[0][0], "1");
+        assert_eq!(st.sel.len(), 4);
+    }
+
+    /// #214: a single click on a selected cell resets the selection to it once
+    /// no second click follows.
+    #[test]
+    fn a_lone_click_inside_the_selection_resets_it_after_the_double_click_delay() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        let at = h.at(1, 0);
+        h.click(at);
+        for _ in 0..10 {
+            h.frame(vec![]);
+        }
+        assert_eq!(h.sel(), [(1, 0)]);
+    }
+
+    /// #214: Shift + click extends the rectangle from the anchor.
+    #[test]
+    fn shift_click_extends_from_the_anchor() {
+        let mut h = Harness::coef_open();
+        let at = h.at(1, 0);
+        h.click(at);
+        let at = h.at(3, 1);
+        h.click_mod(at, egui::Modifiers::SHIFT);
+        assert_eq!(h.sel(), [(1, 0), (1, 1), (2, 0), (2, 1), (3, 0), (3, 1)]);
+        let at = h.at(0, 0);
+        h.click_mod(at, egui::Modifiers::SHIFT);
+        assert_eq!(h.sel(), [(0, 0), (1, 0)], "re-spanned from the same anchor");
+    }
+
+    /// #214: Ctrl + click toggles a cell; Ctrl + drag adds a rectangle.
+    #[test]
+    fn ctrl_click_toggles_and_ctrl_drag_adds() {
+        let mut h = Harness::coef_open();
+        let at = h.at(0, 0);
+        h.click(at);
+        let at = h.at(2, 1);
+        h.click_mod(at, CTRL);
+        assert_eq!(h.sel(), [(0, 0), (2, 1)]);
+        h.click_mod(at, CTRL);
+        assert_eq!(h.sel(), [(0, 0)], "toggled off");
+        let (a, b) = (h.at(3, 0), h.at(4, 1));
+        h.drag_mod(a, b, CTRL);
+        assert_eq!(h.sel(), [(0, 0), (3, 0), (3, 1), (4, 0), (4, 1)]);
+    }
+
+    /// #214: the arrows move the single selection, Shift + arrows extend it, F2 / Enter open the
+    /// edit on the anchor cell, a typed digit starts an edit replacing the text.
+    #[test]
+    fn the_keyboard_moves_extends_and_edits() {
+        let mut h = Harness::coef_open();
+        let at = h.at(1, 0);
+        h.click(at);
+        h.key(egui::Key::ArrowDown);
+        assert_eq!(h.sel(), [(2, 0)]);
+        h.key(egui::Key::ArrowRight);
+        assert_eq!(h.sel(), [(2, 1)]);
+        h.key(egui::Key::ArrowRight);
+        assert_eq!(h.sel(), [(2, 1)], "stops at the last column");
+        h.key_mod(egui::Key::ArrowDown, egui::Modifiers::SHIFT);
+        h.key_mod(egui::Key::ArrowDown, egui::Modifiers::SHIFT);
+        assert_eq!(h.sel(), [(2, 1), (3, 1), (4, 1)]);
+        h.key_mod(egui::Key::ArrowLeft, egui::Modifiers::SHIFT);
+        assert_eq!(h.sel(), [(2, 0), (2, 1), (3, 0), (3, 1), (4, 0), (4, 1)]);
+        h.key(egui::Key::F2);
+        assert_eq!(h.app.dlg.coef.as_ref().unwrap().edit.as_ref().map(|e| e.0), Some((2, 1)), "the anchor's edit");
+        h.key(egui::Key::Escape);
+        assert!(h.app.dlg.coef.as_ref().unwrap().edit.is_none());
+        h.key(egui::Key::Enter);
+        assert_eq!(h.app.dlg.coef.as_ref().unwrap().edit.as_ref().map(|e| e.0), Some((2, 1)), "Enter edits too");
+        h.key(egui::Key::Escape);
+        h.frame(vec![egui::Event::Text("7".into())]);
+        h.frame(vec![]);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!(st.edit.as_ref().map(|e| e.1.as_str()), Some("7"), "typing replaces the text");
+        h.key(egui::Key::Enter);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert!(st.edit.is_none());
+        assert_eq!((2..5).map(|r| (st.cells[r][0].as_str(), st.cells[r][1].as_str())).collect::<Vec<_>>(), [("7", "7"); 3]);
+    }
+
+    /// A list of 40 rows (taller than its view), opened and settled.
+    fn long_list() -> Harness {
+        let mut h = Harness::coef_open();
+        let st = h.app.dlg.coef.as_mut().unwrap();
+        for i in st.cells.len()..40 {
+            st.keys.push((ChanKey::Analog(0), i));
+            st.names.push(format!("Ch{i}"));
+            st.cells.push(["1".into(), "1".into()]);
+        }
+        for _ in 0..4 {
+            h.frame(vec![]);
+        }
+        h
+    }
+
+    /// The rows drawn inside the list's view, from the cells' places.
+    fn visible_rows(h: &Harness) -> Vec<usize> {
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        let view = st.list_rect.unwrap();
+        st.cell_rects.iter().filter(|((_, c), r)| *c == 0 && r.top() >= view.top() && r.bottom() <= view.bottom()).map(|((r, _), _)| *r).collect()
+    }
+
+    /// #268 review: on a list taller than its view a drag upwards selects the rows spanned
+    /// (egui's drag-to-scroll must not move the list under the pointer).
+    #[test]
+    fn a_drag_up_on_a_long_list_selects_the_rows_spanned() {
+        let mut h = long_list();
+        let (a, b) = (h.at(8, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), (2..=8).map(|r| (r, 0)).collect::<Vec<_>>());
+    }
+
+    /// After the list scrolled, a drag between two visible rows spans exactly those.
+    #[test]
+    fn a_drag_on_a_scrolled_long_list_selects_the_rows_spanned() {
+        let mut h = long_list();
+        let at = h.at(1, 0);
+        h.click(at);
+        for _ in 0..28 {
+            h.key(egui::Key::ArrowDown);
+        }
+        for _ in 0..6 {
+            h.frame(vec![]);
+        }
+        let vis = visible_rows(&h);
+        assert!(vis[0] > 3, "the list scrolled: {vis:?}");
+        let (r0, r1) = (vis[2], vis[6]);
+        let (a, b) = (h.at(r0, 1), h.at(r1, 1));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), (r0..=r1).map(|r| (r, 1)).collect::<Vec<_>>());
+    }
+
+    /// A press on the scroll bar selects nothing and a drag of its thumb leaves the selection.
+    #[test]
+    fn the_scroll_bar_does_not_select_cells() {
+        let mut h = long_list();
+        let at = h.at(1, 0);
+        h.click(at);
+        let view = h.app.dlg.coef.as_ref().unwrap().list_rect.unwrap();
+        let (a, b) = (Pos2::new(view.right() - 4.0, view.top() + 30.0), Pos2::new(view.right() - 4.0, view.top() + 150.0));
+        h.drag_mod(a, b, NONE);
+        assert_eq!(h.sel(), [(1, 0)]);
+    }
+
+    /// Dragging past the bottom of the view scrolls the list and the rectangle grows into rows the
+    /// user then sees; the rows hidden below are not taken in unseen.
+    #[test]
+    fn a_drag_past_the_view_autoscrolls_the_list() {
+        let mut h = long_list();
+        let vis = visible_rows(&h);
+        let last = *vis.last().unwrap();
+        let (a, view) = (h.at(2, 0), h.app.dlg.coef.as_ref().unwrap().list_rect.unwrap());
+        let below = Pos2::new(a.x, view.bottom() + 30.0);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.ptr(a, None, NONE);
+        h.ptr(a, Some(true), NONE);
+        h.ptr(Pos2::new(a.x, view.bottom() - 5.0), None, NONE);
+        let early = h.sel().iter().map(|c| c.0).max().unwrap();
+        assert!(early <= last + 1, "hidden rows are not selected by geometry");
+        for _ in 0..30 {
+            h.ptr(below, None, NONE);
+        }
+        let max = h.sel().iter().map(|c| c.0).max().unwrap();
+        assert!(max > last + 3, "the rectangle grew into rows scrolled into view: {max} vs {last}");
+        h.ptr(below, Some(false), NONE);
+        assert!(visible_rows(&h).contains(&max) || visible_rows(&h).iter().any(|r| *r + 2 >= max));
+    }
+
+    /// Dragging back onto the press cell inside a group leaves the single cell.
+    #[test]
+    fn dragging_back_onto_the_press_cell_in_a_group_leaves_the_cell() {
+        let mut h = Harness::coef_open();
+        let (a, b) = (h.at(0, 0), h.at(3, 0));
+        h.drag_mod(a, b, NONE);
+        let (p, away) = (h.at(1, 0), h.at(1, 1));
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.ptr(p, None, NONE);
+        h.ptr(p, Some(true), NONE);
+        h.ptr(away, None, NONE);
+        h.ptr(p, None, NONE);
+        h.ptr(p, Some(false), NONE);
+        assert_eq!(h.sel(), [(1, 0)]);
+    }
+
+    /// A Ctrl toggle-off leaves the anchor on a selected cell: F2 edits it, the selection stays.
+    #[test]
+    fn a_ctrl_toggle_off_does_not_leave_the_anchor_on_an_unselected_cell() {
+        let mut h = Harness::coef_open();
+        let at = h.at(0, 0);
+        h.click(at);
+        let at = h.at(2, 1);
+        h.click_mod(at, CTRL);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        h.click_mod(at, CTRL);
+        assert_eq!(h.sel(), [(0, 0)]);
+        for _ in 0..7 {
+            h.frame(vec![]);
+        }
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!(st.anchor, Some((0, 0)));
+    }
+
+    /// With several cells selected the typed value goes into every one whose own text differs,
+    /// also when the edited cell already holds it.
+    #[test]
+    fn a_group_commit_fills_the_cells_that_differ_even_if_the_edited_one_has_the_value() {
+        let mut h = Harness::coef_open();
+        h.app.dlg.coef.as_mut().unwrap().cells[1][0] = "5".into();
+        let (a, b) = (h.at(0, 0), h.at(2, 0));
+        h.drag_mod(a, b, NONE);
+        let at = h.at(1, 0);
+        h.double_click(at);
+        h.key(egui::Key::Enter);
+        let st = h.app.dlg.coef.as_ref().unwrap();
+        assert_eq!((0..3).map(|r| st.cells[r][0].as_str()).collect::<Vec<_>>(), ["5", "5", "5"]);
+        assert!(st.dirty);
     }
 
     /// The edit opens with its caret at the start; a press below the rows
