@@ -12,7 +12,7 @@
 # "WINS name.txt" (the program's top-level windows: handle, owner, visible,
 # enabled, class, title — into shots/), "CURSOR name.txt" (the cursor now
 # shown, by its IDC_ name when it is a system one — appended to shots/),
-# "FOCUS name.txt" (the keyboard focus of the front window's thread: the
+# "MODULES name.txt" (the program's loaded modules, one file name per line, into shots/), "FOCUS name.txt" (the keyboard focus of the front window's thread: the
 # focus window's handle, class, visibility and its ancestors, and its
 # untitled children — appended to shots/), "CLIP name.txt" (the clipboard's
 # formats now, by number or registered name — appended to shots/), "TREE
@@ -190,7 +190,29 @@ if ($Soft) { $env:FV_SOFTWARE = '1' }
 if ($SoftLog) { $env:FV_SOFTLOG = Join-Path (Join-Path $here 'shots') $SoftLog }
 $wsh = New-Object -ComObject WScript.Shell
 $p = if ($ArgLine) { Start-Process -FilePath $Exe -ArgumentList $ArgLine -PassThru } elseif ($Open) { Start-Process -FilePath $Exe -ArgumentList "`"$Open`"" -PassThru } else { Start-Process -FilePath $Exe -PassThru }
-Start-Sleep -Seconds $WaitSec
+# Fail fast, before any key: a program that died, or never showed a window, would send the keys to Windows (the
+# maximise keys of hyperv.ps1 open Search, whose flyout then stays over every later shot). The wait is at least
+# $WaitSec as before; a program that exits meanwhile ends the run at once (exit 3, "FAIL" in the log). A launcher that
+# hands the window to a child process of the same name (ours falling back to its software runner) is followed.
+function Stop-Run([string]$Why) {
+    "FAIL $Why" | Out-File $log -Append -Encoding utf8
+    if (-not $Leave) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+    exit 3
+}
+$t0 = Get-Date
+while ($true) {
+    $p.Refresh()
+    if ($p.HasExited) {
+        $code = $p.ExitCode
+        $q = @(Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }) | Select-Object -First 1
+        if (-not $q) { Stop-Run "the program exited (code $code) before its window appeared: no key was sent" }
+        $p = $q
+    }
+    $sec = ((Get-Date) - $t0).TotalSeconds
+    if ($sec -ge $WaitSec -and $p.MainWindowHandle -ne 0) { break }
+    if ($sec -ge $WaitSec + 24) { Stop-Run "no window of the program after $([int]$sec) s: no key was sent" }
+    Start-Sleep -Milliseconds 200
+}
 $ok = $wsh.AppActivate($p.Id)
 "activated $ok pid $($p.Id)" | Out-File $log -Append -Encoding utf8
 foreach ($k in ($Keys -split ';')) {
@@ -269,6 +291,10 @@ foreach ($k in ($Keys -split ';')) {
         [In]::Tree() | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^WINS (.+)$') {
         [In]::List([uint32]$p.Id) | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
+    } elseif ($k -match '^MODULES (.+)$') {
+        # The program's loaded modules (one file name per line; a 32-bit program under 64-bit PowerShell: a note).
+        $m = try { @($p.Modules | ForEach-Object { $_.ModuleName }) -join "`n" } catch { "(modules not readable: $($_.Exception.Message))" }
+        $m | Out-File (Join-Path (Join-Path $here 'shots') $Matches[1]) -Encoding utf8
     } elseif ($k -match '^SHOT (.+)$') {
         & (Join-Path $here 'shot.ps1') -Out (Join-Path (Join-Path $here 'shots') $Matches[1])
     } else {

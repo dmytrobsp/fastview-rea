@@ -10,6 +10,8 @@
 #                                first drops its saved state (a first run);
 #                                every SHOT named in the keys lands in $FV_SHOTS
 #   clone.sh push SRC DST | pull SRC DST | exec CMD... | desk CMD... | shot OUT.png
+#                                `run` exits non-zero when the program died or showed no window (3) or did not finish
+#                                (124); `exec` and `desk` exit with the guest command's code
 #   clone.sh ours                push a fresh ours (after a rebuild); an exe already there with the
 #                                same SHA-256 is not pushed again (FV_FORCE=1 pushes anyway)
 #   clone.sh rm                  remove the clone
@@ -143,17 +145,22 @@ run)
             tb_exec 'if exist "%APPDATA%\fastview-rea" rmdir /s /q "%APPDATA%\fastview-rea"'
         fi
     fi
-    tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\drive.ps1 -Exe $exe $open $extra -Keys \"$keys\"" 2>&1 | grep -v '^step' | tail -3
+    # drive.ps1's exit code is the run's: 3 = the program died or showed no window before the first key (nothing was
+    # sent), 124 = it did not finish in time. The log is shown and the shots pulled first, then the code is returned.
+    rc=0
+    out=$(tb_exec "powershell -NoProfile -ExecutionPolicy Bypass -File $H\\drive.ps1 -Exe $exe $open $extra -Keys \"$keys\"" 2>&1) || rc=$?
+    printf '%s\n' "$out" | { grep -v '^step' || true; } | tail -3
     for s in $(printf '%s' "$keys" | grep -o 'SHOT [^;]*' | cut -d' ' -f2); do
-        "${TB[@]}" instance pull "$name" "$id" "$H\\shots\\$s" "$shots/$s"
-        pull_clean "$H\\shots\\$s"
+        # After a failed run a shot may not exist: what is there is still pulled, the failure stays the answer.
+        if "${TB[@]}" instance pull "$name" "$id" "$H\\shots\\$s" "$shots/$s"; then pull_clean "$H\\shots\\$s"; elif [ "$rc" -eq 0 ]; then exit 1; fi
     done
     overlay
+    [ "$rc" -eq 0 ] || { echo "clone.sh run $who: failed in the clone (code $rc; 3 = the program died or showed no window, no key was sent; 124 = timeout)" >&2; exit "$rc"; }
     ;;
 push) load; tb_push "$2" "$3"; overlay ;;
 pull) load; "${TB[@]}" instance pull "$name" "$id" "$2" "$3"; pull_clean "$2"; overlay ;;
 exec) load; shift; tb_exec "$@"; overlay ;;
-desk) load; shift; tb_desk "$@"; overlay ;;
+desk) load; shift; rc=0; tb_desk "$@" || rc=$?; overlay; exit "$rc" ;;
 shot) load; "${TB[@]}" instance shot "$name" "$id" "$2" ;;
 ours) load; push_ours; overlay ;;
 rm)

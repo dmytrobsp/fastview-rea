@@ -29,8 +29,13 @@ records are in the base, a clone inherits them. Needs membership in "Hyper-V Adm
 Layout in the guest as clone.sh: C:\Users\tbuser\fv-test\{FastView5,harness,records,out,ours}. A clone has no network
 adapter. Run it as: powershell -NoProfile -ExecutionPolicy Bypass -File tools\vm\hyperv.ps1 <command> ...
 Arguments: give a command with quotes or /options as ONE argument; from Git Bash in single quotes, from PowerShell
-without embedded double quotes (see docs/agents/windows-testing.md, "Calling it"). `desk` and `run` exit 0 once the
-step was started: read their output / shots to see how it went.
+without embedded double quotes (see docs/agents/windows-testing.md, "Calling it").
+Exit codes: `exec` and `desk` exit with the guest command's code (`desk`: 124 when it ran longer than 120 s). `run`
+exits 0 when the keys ran; 3 when the program died or showed no window before the first key (no key is sent then, so
+none reaches Windows Search; the failure is seen within seconds, or after 30 s for a program that stays windowless),
+124 when drive.ps1 timed out, 4 for any other failure of the driver; the shots that exist are still pulled. Any other
+error of this script is 1 (2: a usage error, 5: `new` failed and removed its clone). clone.sh's `run` and `desk` do
+the same.
 #>
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -104,7 +109,7 @@ function Invoke-Guest([string]$Name, $Cred, [string]$Cmd, [switch]$Desktop) {
         if ($Desktop) {
             Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
             & "$G\harness\insession.ps1" -Exe "$env:windir\System32\cmd.exe" -Args "/c $Cmd" -Wait
-            0
+            $LASTEXITCODE
         } else {
             & "$env:windir\System32\cmd.exe" /c $Cmd 2>&1 | ForEach-Object { "$_" }
             $LASTEXITCODE
@@ -292,21 +297,33 @@ try {
                 if ($open) { $a += @('-Open', $open) }
                 if ($soft) { $a += '-Soft' }
                 $a += @('-Keys', $Keys)
-                & "$H\drive.ps1" @a 2>&1 | Where-Object { "$_" -notmatch '^step' } | Select-Object -Last 3
+                $lines = @(& "$H\drive.ps1" @a 2>&1 | Where-Object { "$_" -notmatch '^step' } | Select-Object -Last 3 | ForEach-Object { "$_" })
+                [pscustomobject]@{ Lines = $lines; Code = [int64]$LASTEXITCODE }
             }
-            @($out) | ForEach-Object { Write-Host $_ }
+            @($out.Lines) | ForEach-Object { Write-Host $_ }
+            $failed = [int64]$out.Code -ne 0
             $names = @([regex]::Matches($keys, 'SHOT ([^;]+)') | ForEach-Object { $_.Groups[1].Value.Trim() })
             if ($names.Count -gt 0) {
                 New-Item -ItemType Directory -Force $Shots | Out-Null
                 $s = New-PSSession -VMName $name -Credential $cred
                 try {
                     foreach ($f in $names) {
-                        Copy-FromGuest $s "$G\harness\shots\$f" (Join-Path $Shots $f)
-                        Remove-Pulled $s "$G\harness\shots\$f"
+                        # After a failed run a shot may not exist: what is there is still pulled, the failure stays the answer.
+                        try {
+                            Copy-FromGuest $s "$G\harness\shots\$f" (Join-Path $Shots $f)
+                            Remove-Pulled $s "$G\harness\shots\$f"
+                        } catch { if (-not $failed) { throw } }
                     }
                 } finally { Remove-PSSession $s }
             }
             Show-Overlay $name
+            if ($failed) {
+                # 3 = the program died or showed no window before the first key (keys.ps1); 124 = drive.ps1 timed out;
+                # any other code of the guest's powershell (or one that does not fit an exit code) is 4.
+                $c = [int64]$out.Code
+                $code = if ($c -eq 3 -or $c -eq 124) { [int]$c } else { 4 }
+                Fail "run ${who}: failed in the clone (code $c; the log above says why; 3 = the program died or showed no window, no key was sent; 124 = timeout)" $code
+            }
         }
         'push' {
             if ($Rest.Count -ne 2) { Fail 'usage: hyperv.ps1 push SRC DST' }
@@ -330,8 +347,9 @@ try {
         'desk' {
             if ($Rest.Count -lt 1) { Fail 'usage: hyperv.ps1 desk CMD...' }
             $name = Get-CloneName
-            $null = Invoke-Guest $name (Get-Cred) ($Rest -join ' ') -Desktop
+            $code = Invoke-Guest $name (Get-Cred) ($Rest -join ' ') -Desktop
             Show-Overlay $name
+            exit $code
         }
         'shot' {
             if ($Rest.Count -ne 1) { Fail 'usage: hyperv.ps1 shot OUT.png' }

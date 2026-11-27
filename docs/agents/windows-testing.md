@@ -84,8 +84,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $h rm             # always, 
 - A step prints the clone's disk size on stderr (a clone costs about 2 GB of the host's disk after a run or two and 4 GB
   of RAM while it runs; `FV_MEM_GB` changes the RAM). Several clones fit as far as the host's RAM does.
 - Never run the commands of one clone from two shells at once; a different clone is independent.
-- `desk` and `run` exit 0 once the step was started (a failing `drive.ps1` inside is not reflected); read their output and
-  the shots. `exec` returns the guest command's exit code. Non-ASCII output of `exec` can come back mangled from Git Bash.
+- **Exit codes**, the same in `hyperv.ps1` and `clone.sh`: `exec` and `desk` return the guest command's exit code (`desk`
+  gives up after 120 s with 124, the command still running). `run` returns 0 when the keys ran; **3** when the program
+  died or showed no window before its first key (`keys.ps1` checks within seconds, 30 s for a program that stays
+  windowless, and then sends no key: the maximise keys no longer open Windows Search, whose flyout stayed over later
+  shots); 124 when it did not finish in 180 s; 4 for another failure of the driver. The log shows why, and the shots
+  that exist are still pulled. Non-ASCII output of `exec` can come back mangled from Git Bash. (`clone.sh` passes on
+  testbox's exit status for `desk`; not run here.)
 - `new` and every `run` stop the clone's OneDrive (clone.sh does too): its setup window takes the foreground of a fresh clone and the keys of `run` (SIZE, CLICK) would act on it. After a restart inside the clone (a DPI change) it starts again at the next sign-in; the next `run` stops it.
 
 **Calling it** - the two shells each break arguments in their own way, so pass a command with quotes or `/options` as
