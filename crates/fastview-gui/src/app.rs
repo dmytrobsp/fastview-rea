@@ -1330,7 +1330,11 @@ impl Doc {
 
     /// 32813 / 32814 / 139 (`0x45c120`): a never-placed vertical визир is
     /// placed at ¼ / ½ / ¾ of the plot width and shown, else its visibility
-    /// flips. 32815 / 32816: a never-placed horizontal визир goes on the first
+    /// flips. `width` is the view's client width, which excludes the vertical
+    /// scroll bar (the original's `GetClientRect`); the quarter is a truncated
+    /// integer division of `width − left`, as in the original (#47).
+    ///
+    /// 32815 / 32816: a never-placed horizontal визир goes on the first
     /// analog lane (10 / 20 px from its top, resolved at the next layout),
     /// else it flips.
     pub fn toggle_vizir(&mut self, k: usize, width: f32, left: f32) {
@@ -1342,7 +1346,7 @@ impl Doc {
             };
             if !self.v_shown[k] && *s == 0 {
                 let f = self.xscale.unwrap_or(1.0);
-                let x = left + (width - left) * (k as f32 + 1.0) / 4.0;
+                let x = left + (((width - left) as i32 / 4) * (k as i32 + 1)) as f32;
                 let n = self.osc.sample_count().max(1);
                 *s = crate::oscgeom::sample_at(x, self.first, f, left).clamp(0, n as i64 - 1) as usize;
             }
@@ -2397,7 +2401,9 @@ impl App {
                 self.run_definition_batch();
             }
             Command::ToggleVizir(k) => {
-                let (w, left) = (self.view_width, self.view_left);
+                // The view's client: without the vertical scroll bar (`view_rects.1`, the plot).
+                let w = self.view_rects.map_or(self.view_width, |(_, plot)| plot.width());
+                let left = self.view_left;
                 if let Some(d) = self.active_doc_mut() {
                     d.toggle_vizir(k, w, left);
                 }
