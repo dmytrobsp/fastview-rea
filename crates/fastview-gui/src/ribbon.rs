@@ -14,9 +14,13 @@ use eframe::egui::{self, Color32, RichText};
 
 /// The ribbon's rows at the system DPI (#12; VM at 100 / 125 / 150 %): the
 /// caption row 30 / 36 / 43 px, the tab row 23 / 30 / 35, a panel's
-/// caption band 16 / 22 / 26.
+/// caption band 16 / 22 / 26. At 175 / 200 % (#224, clone, a 1000 × 700 frame, the original against ours) the tab
+/// row's line lies 99 / 118 px from the window's top and the body's bottom line 150 / 169 px under it: the caption
+/// row 59 / 73 px, the band 29 / 32 (the 3-point rule had extrapolated 50 / 57 and 30 / 34). The body's bottom line
+/// lies 2 rows above the original's (150 / 169 under the tab line) as at 125 / 150 %: ours draws two brush rows under
+/// it, so the info band below starts where the original's does (259 / 297 px from the top).
 pub(crate) fn caption_h() -> f32 {
-    crate::dpi::measured(30.0, 36.0, 43.0)
+    crate::dpi::measured5([30.0, 36.0, 43.0, 59.0, 73.0])
 }
 
 fn tab_row_h() -> f32 {
@@ -24,7 +28,7 @@ fn tab_row_h() -> f32 {
 }
 
 fn band_h() -> f32 {
-    crate::dpi::measured(16.0, 22.0, 26.0)
+    crate::dpi::measured5([16.0, 22.0, 26.0, 29.0, 32.0])
 }
 
 /// The large buttons' text line (our stand-in font's).
@@ -575,7 +579,7 @@ impl App {
         let p = self.skin.palette();
         // Объединение
         // Steps (`Repos` `0x101227d5`): the small column goes icon-only.
-        ribbon_group(ui, p, "Объединение", 2, |ui, step| {
+        ribbon_group(ui, p, "Объединение", 1, |ui, step| {
             // 57637 needs the clipboard and no pending paste; 57634 a selected
             // file channel; 57643 / 57644 the undo / redo counts.
             let can_paste = self.active_doc().is_some_and(|d| self.clip.available() && !crate::omp_ui::has_pending_paste(d));
@@ -1547,7 +1551,11 @@ fn ribbon_tab(ui: &mut egui::Ui, label: &str, active: bool, p: crate::theme::Pal
 /// A ribbon group: content row/area + centered caption + right divider.
 /// The panels of each category, left to right.
 /// Each panel: title, its layouts before collapsing, a single element.
-const HOME_GROUPS: [(&str, usize, bool); 5] = [("Объединение", 2, false), ("Диаграммы", 3, false), ("Видимость", 1, false), ("Вычисления", 3, false), (" ", 1, true)];
+/// «Объединение» has one width, then its collapsed button: the original's reduction (the default one, "most steps left,
+/// ties rightmost": FastView sets no collapse order, `RecalcLayout` 0x10106b37 takes its default loop 0x10106d96, as
+/// L9.91 says) leaves it in its full layout until «Осциллограмма», «Вычисления» and «Видимость» have collapsed
+/// (clone, 100 - 200 %, #225); its icon-only layout (`Repos` 0x101227d5) is drawable but is not a width step.
+const HOME_GROUPS: [(&str, usize, bool); 5] = [("Объединение", 1, false), ("Диаграммы", 3, false), ("Видимость", 1, false), ("Вычисления", 3, false), (" ", 1, true)];
 const OMP_GROUPS: [(&str, usize, bool); 1] = [("ОМП", 1, false)];
 fn group_width_id(title: &str, step: usize) -> egui::Id {
     egui::Id::new(("fv_ribbon_group_w", title, step))
@@ -1560,6 +1568,12 @@ pub(crate) fn group_step_id(title: &str) -> egui::Id {
 /// While set, panels draw this layout step and record their widths.
 fn measure_id() -> egui::Id {
     egui::Id::new("fv_ribbon_measure")
+}
+
+/// Whether a collapsed panel's button draws the arrow under its name: the blank-titled last panel of «Главная»
+/// collapses to its small image alone (150 % clone, the original: no name and no arrow, #225).
+fn collapsed_shows_arrow(title: &str) -> bool {
+    !title.trim().is_empty()
 }
 
 /// A collapsed panel's button width plus the divider: the default panel
@@ -1627,7 +1641,9 @@ fn ribbon_group<R>(ui: &mut egui::Ui, p: crate::theme::Palette, title: &str, lay
         // The arrow after the last line (on line 2 when the text is one line).
         let last = lines.last().map(|l| ui.fonts(|f| f.layout_no_wrap(l.clone(), font.clone(), p.text).size().x)).unwrap_or(0.0);
         let (ax, ay) = if lines.len() > 1 { (cx + last / 2.0 + 5.0, text_top + line_h() + 2.0) } else { (cx, text_top + line_h() + 2.0) };
-        painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(crate::dpi::font(9.0)), p.text);
+        if collapsed_shows_arrow(title) {
+            painter.text(egui::pos2(ax, ay), egui::Align2::CENTER_TOP, "▾", egui::FontId::proportional(crate::dpi::font(9.0)), p.text);
+        }
         let popup = egui::Id::new(("fv_ribbon_group_popup", title));
         if resp.clicked() {
             ui.memory_mut(|m| m.toggle_popup(popup));
@@ -2631,6 +2647,31 @@ pub(crate) fn caption_buttons(ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #224 (clone, 175 / 200 %): the ribbon's tab line lies 99 / 118 px from the window's top and the body's bottom
+    /// line 150 / 169 px under it; at 100 / 125 / 150 % the rows are as measured before.
+    #[test]
+    fn the_ribbon_rows_follow_the_clone_at_175_and_200() {
+        for (dpi, tab_line, body) in [(168, 99.0, 148.0), (192, 118.0, 167.0)] {
+            crate::dpi::set(dpi);
+            let tab = crate::dpi::measured(23.0, 30.0, 35.0);
+            assert_eq!(caption_h() + tab, tab_line, "{dpi}");
+            // The body's bottom line lies its inner height and one row under the tab line.
+            assert_eq!(body_inner() + 1.0, body, "{dpi} body");
+        }
+        for (dpi, c, b) in [(96, 30.0, 16.0), (120, 36.0, 22.0), (144, 43.0, 26.0)] {
+            crate::dpi::set(dpi);
+            assert_eq!((caption_h(), band_h()), (c, b), "{dpi}");
+        }
+        crate::dpi::set(96);
+    }
+
+    /// #225 (150 % clone): the blank-titled last panel collapses to its image alone, without a name or an arrow.
+    #[test]
+    fn the_blank_panel_collapses_to_its_image_alone() {
+        assert!(!collapsed_shows_arrow(" "));
+        assert!(collapsed_shows_arrow("Вычисления"));
+    }
 
     /// The maximise button is published as live only while no modal dialog is up (the original's frame is
     /// disabled by one): a bare context, no backdrop, only the modal flag decides.
