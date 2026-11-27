@@ -169,3 +169,51 @@ maintainer), **issue**.
   than a behaviour a user relies on.
 - **Decided**: 2026-11-27, the controller (triage of old issues).
 - **Issue**: [#206](https://github.com/dmytrobsp/fastview-rea/issues/206).
+
+## The «Стиль» looks other than the default
+
+- **What differs**: of the original's nine «Стиль» looks, the default (Office 2007 Blue) is matched pixel by pixel.
+  The other three Office 2007 looks (Black, Silver, Aqua) use derived or Blue colours in a few parts — pane captions,
+  the frame's splitter bands and border, the MDI tab group edge, the document strip's ▾ band, the application menu's
+  panel (L9.186, L9.232, L9.234, L9.263, L9.265, L9.341). The five older looks (Windows 2000, XP, Office XP, Office 2003,
+  VS 2005) have their base colours matched, but their hot and pressed faces, active pane caption, menus, dialogs and
+  panel details are drawn flat or in Office 2007 colours (L9.223).
+- **Where it shows**: only after switching «Стиль» away from the default, in those states and parts.
+- **Why it isn't fixed**: a large amount of per-look pixel capture for looks that the planned light / dark themes and
+  modern look (#91, #92) are meant to replace.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issues**: [#19](https://github.com/dmytrobsp/fastview-rea/issues/19), [#20](https://github.com/dmytrobsp/fastview-rea/issues/20).
+
+## MSVCR120's number parsing in the last bit
+
+- **What differs**: the original reads a COMTRADE ASCII record's analog values with MSVCR120's `atof`, which goes
+  through an 80-bit intermediate: a value of 13 or more significant digits with an exponent above about 1e16 can differ
+  from ours in the last bit (ours is correctly rounded), and an underflowing denormal such as 3e-324 reads 0 in the
+  original, the nearest denormal in ours (clone probe of about 6000 inputs, L9.424).
+- **Where it shows**: nowhere visible: shown values have 6–7 digits, and every value up to 9 digits reads the same.
+- **Why it isn't fixed**: modelling an x87-style 80-bit parse for a last-bit difference nobody can see.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#198](https://github.com/dmytrobsp/fastview-rea/issues/198).
+
+## Lower-casing 199 rare characters
+
+- **What differs**: the original lower-cases wide text with MSVCR120's `towlower`, which leaves 199 BMP characters
+  unchanged that ours lower-cases — parts of Latin extended, Greek (U+037F, U+03F4), Cherokee, Georgian, newer
+  Cyrillic-supplement, Coptic, Glagolitic, capital sharp s (U+1E9E) and the Ohm, Kelvin and Angstrom signs (U+2126,
+  U+212A, U+212B) (clone probe, L9.424). The single-byte 1251 fold is the same for all 256 bytes.
+- **Where it shows**: only for a UTF-8 channel or file name containing one of those characters, in a case-insensitive
+  comparison (a formula's name lookup, the window list's sort).
+- **Why it isn't fixed**: ours follows Unicode; copying the runtime's gaps would buy nothing for such names.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#199](https://github.com/dmytrobsp/fastview-rea/issues/199).
+
+## Windows 10 before 1607 above 100 %
+
+- **What differs**: on Windows 10 1507 / 1511 at more than 100 % display scaling ours starts (the DPI functions are
+  resolved at run time) but keeps one point per device pixel and the chrome's 96 dpi: content crisp at 1:1, the ribbon,
+  captions, menus and dialogs at their 100 % size — not v0.3.0's egui-scaled fallback (from the code, not run).
+- **Where it shows**: only on those two Windows 10 releases (2015), out of Microsoft's support since 2017, at more
+  than 100 %.
+- **Why it isn't fixed**: no such system is available to test a fix on, and the releases are long unsupported.
+- **Decided**: 2026-11-27, the controller (triage of old issues).
+- **Issue**: [#85](https://github.com/dmytrobsp/fastview-rea/issues/85).
