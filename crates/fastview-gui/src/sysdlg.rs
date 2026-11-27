@@ -144,10 +144,12 @@ fn wants_centring(job: &Job) -> bool {
     matches!(job, Job::Print(_))
 }
 
-/// Where a driver's dialog that Windows leaves at the screen's top-left opens: centred over the frame, kept on the
-/// monitor's work area. (Clone, #190: Print to PDF's «Save Print Output As», raised in StartDoc, opens at the
-/// screen's corner under ours, where the original's sits where Windows puts a file dialog it remembers; the Open
-/// dialog is the same place in both programs without any help, and keeps it.)
+/// Where a driver's dialog that Windows leaves at the screen's top-left opens: its window of the size it was
+/// created at (the dialog shrinks after that) centred over the frame, kept on the monitor's work area. (Clone,
+/// #190, #240: Print to PDF's «Save Print Output As», raised in StartDoc, is created 664 x 510 at (0, 0) and ends
+/// 640 x 480; the original's lands with its top-left at its owner's centre less half of the created size, at every
+/// frame size (measured at 900 x 600 and 1100 x 700), and ours stays at the screen's corner. The Open dialog is the
+/// same place in both programs without any help.)
 #[cfg(any(windows, test))]
 pub fn centred_over(owner: (i32, i32, i32, i32), dialog: (i32, i32), work: (i32, i32, i32, i32)) -> (i32, i32) {
     let (ow, oh) = (owner.2 - owner.0, owner.3 - owner.1);
@@ -156,23 +158,39 @@ pub fn centred_over(owner: (i32, i32, i32, i32), dialog: (i32, i32), work: (i32,
     (x.min(work.2 - dialog.0).max(work.0), y.min(work.3 - dialog.1).max(work.1))
 }
 
+/// The size a driver's dialog is centred by: the one it was created at when the hook saw it, else its size now.
+#[cfg(any(windows, test))]
+pub fn dialog_size(created: Option<(i32, i32)>, now: (i32, i32)) -> (i32, i32) {
+    created.unwrap_or(now)
+}
+
 /// A WH_CBT hook on this thread for the duration of a task that raises a dialog: the first window activated on this
-/// thread but the owner itself is centred over the owner ([`centred_over`]), by a timer a moment after its
-/// activation — a file dialog places itself while it is shown and would undo an earlier move.
+/// thread but the owner itself is centred over the owner ([`centred_over`], by [`dialog_size`]), by a timer a moment
+/// after its activation — a file dialog places itself while it is shown and would undo an earlier move.
 #[cfg(all(windows, not(test)))]
 mod centre {
     use std::sync::atomic::{AtomicIsize, Ordering};
     use windows_sys::Win32::Foundation::{HWND, RECT};
     use windows_sys::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows_sys::Win32::System::Threading::GetCurrentThreadId;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, GetWindowRect, KillTimer, SetTimer, SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, HCBT_ACTIVATE, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WH_CBT};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{CallNextHookEx, GetWindowRect, KillTimer, SetTimer, SetWindowPos, SetWindowsHookExW, UnhookWindowsHookEx, CBT_CREATEWNDW, HCBT_ACTIVATE, HCBT_CREATEWND, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, WH_CBT, WS_POPUP};
 
     static OWNER: AtomicIsize = AtomicIsize::new(0);
+    /// The size the dialog's frame was created at (HCBT_CREATEWND: a popup owned by the owner, large), packed
+    /// `width << 32 | height`; 0 until seen.
+    static CREATED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     /// The dialog found by the hook, moved by the timer a moment later: a common dialog places itself while it is
     /// shown, after its first activation, and would undo a move made there.
     static DIALOG: AtomicIsize = AtomicIsize::new(0);
 
     unsafe extern "system" fn hook(code: i32, w: usize, l: isize) -> isize {
+        if code == HCBT_CREATEWND as i32 {
+            // SAFETY: HCBT_CREATEWND's lParam is a CBT_CREATEWNDW whose CREATESTRUCT is valid for the call.
+            let cs = unsafe { &*(*(l as *const CBT_CREATEWNDW)).lpcs };
+            if cs.hwndParent as isize == OWNER.load(Ordering::Acquire) && (cs.style as u32) & WS_POPUP != 0 && cs.cx >= 300 && cs.cy >= 300 && CREATED.load(Ordering::Acquire) == 0 {
+                CREATED.store((cs.cx as u64) << 32 | cs.cy as u32 as u64, Ordering::Release);
+            }
+        }
         if code == HCBT_ACTIVATE as i32 {
             let owner = OWNER.load(Ordering::Acquire);
             if owner != 0 && w as isize != owner && OWNER.compare_exchange(owner, 0, Ordering::AcqRel, Ordering::Acquire).is_ok() {
@@ -196,13 +214,16 @@ mod centre {
             if win.is_null() || owner.is_null() {
                 return;
             }
+            // Taken first, so the created size never outlives this dialog.
+            let created = CREATED.swap(0, Ordering::AcqRel);
             let empty = RECT { left: 0, top: 0, right: 0, bottom: 0 };
             let (mut o, mut d) = (empty, empty);
             if GetWindowRect(owner, &mut o) != 0 && GetWindowRect(win, &mut d) != 0 {
                 let mut mi: MONITORINFO = std::mem::zeroed();
                 mi.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
                 let work = if GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTONEAREST), &mut mi) != 0 { (mi.rcWork.left, mi.rcWork.top, mi.rcWork.right, mi.rcWork.bottom) } else { (i32::MIN / 2, i32::MIN / 2, i32::MAX / 2, i32::MAX / 2) };
-                let (x, y) = super::centred_over((o.left, o.top, o.right, o.bottom), (d.right - d.left, d.bottom - d.top), work);
+                let size = super::dialog_size((created != 0).then_some(((created >> 32) as i32, created as u32 as i32)), (d.right - d.left, d.bottom - d.top));
+                let (x, y) = super::centred_over((o.left, o.top, o.right, o.bottom), size, work);
                 SetWindowPos(win, std::ptr::null_mut(), x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
@@ -213,6 +234,7 @@ mod centre {
         if owner == 0 {
             return f();
         }
+        clear();
         OWNER.store(owner, Ordering::Release);
         // SAFETY: a thread hook on this thread, removed before returning.
         let h = unsafe { SetWindowsHookExW(WH_CBT, Some(hook), std::ptr::null_mut(), GetCurrentThreadId()) };
@@ -221,8 +243,17 @@ mod centre {
             // SAFETY: the hook set above.
             unsafe { UnhookWindowsHookEx(h) };
         }
-        OWNER.store(0, Ordering::Release);
+        clear();
         r
+    }
+
+    /// Nothing of an earlier print stays for the next one: a created size no dialog used, a dialog the timer
+    /// never moved.
+    fn clear() {
+        OWNER.store(0, Ordering::Release);
+        CREATED.store(0, Ordering::Release);
+        DIALOG.store(0, Ordering::Release);
+        OWNER_OF_DIALOG.store(0, Ordering::Release);
     }
 }
 
@@ -408,6 +439,18 @@ mod tests {
         // An owner at the screen's corner: the dialog stays on the screen.
         assert_eq!(centred_over((-50, -40, 350, 260), (600, 400), work), (0, 0));
         assert_eq!(centred_over((1000, 500, 1400, 800), (600, 400), work), (680, 352));
+    }
+
+    /// #240 (clone): the driver's save dialog is created 664 x 510 and ends 640 x 480; the original's lands centred by
+    /// the created size, so its visible left / top edges (a shadow of 8 / 1 px) are 126 / 46 in a 900 x 600 frame at
+    /// the screen's corner and 226 / 96 in a 1100 x 700 one. Centred by the final size it would be 12 / 15 px off.
+    #[test]
+    fn the_drivers_save_dialog_is_centred_by_the_size_it_was_created_at() {
+        let work = (0, 0, 1280, 752);
+        let size = dialog_size(Some((664, 510)), (640, 480));
+        assert_eq!(centred_over((0, 0, 900, 600), size, work), (118, 45));
+        assert_eq!(centred_over((0, 0, 1100, 700), size, work), (218, 95));
+        assert_eq!(dialog_size(None, (640, 480)), (640, 480), "with no creation seen, the size now");
     }
 
     /// A cancelled dialog does nothing.
