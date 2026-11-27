@@ -243,10 +243,16 @@ pub fn value_y(v: f64, top: f32, h: f32, min: f64, max: f64) -> f32 {
 
 /// Inverse of [`value_y`] (`0x495b40`).
 pub fn y_value(y: f32, top: f32, h: f32, min: f64, max: f64) -> f64 {
-    if max <= min || h <= 10.0 {
+    if max == min || h <= 10.0 {
         return min;
     }
-    min + f64::from(top + h - 5.0 - y) * (max - min) / f64::from(h - 10.0)
+    let off = f64::from(top + h - 5.0 - y);
+    if max < min {
+        // A lane without a finite sample: the window is still (DBL_MAX, -DBL_MAX), the original divides the row by
+        // (h - 10) / (max - min) (`0x495e47`–`0x495e5d`) and the span overflows to minus infinity (#244).
+        return off / (f64::from(h - 10.0) / (max - min)) + min;
+    }
+    min + off * (max - min) / f64::from(h - 10.0)
 }
 
 /// A channel's vertical window zoom (`ch+0x114` on, window `+0x128` /

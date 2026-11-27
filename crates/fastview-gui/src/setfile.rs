@@ -878,13 +878,18 @@ impl Doc {
         let SettingsPass { comment_recs, calc, .. } = pass;
         let mut alerts = Vec::new();
         if !calc.is_empty() {
-            let batch: Vec<(String, String)> = calc;
-            // A failing batch is its box; the rows stay in the definition list like any kept row, so the next
-            // command that runs the batch shows the box again (clone, #174).
-            if let Err(m) = d.append_computed_core(&batch) {
-                alerts.push(m);
-                let fresh: Vec<_> = batch.into_iter().filter(|(n, _)| !d.loose_defs.iter().any(|l| l.0 == *n) && !d.computed.iter().any(|c| c.name == *n)).collect();
-                d.loose_defs.extend(fresh);
+            // The rows join the record's definition list in the file's order and `0x415780` runs over the whole
+            // list: each row becomes a channel in turn, and a failing one ends the walk with its box, the rows
+            // before it kept as channels and the failing one left in the list (clone, #174 / #247: «good, good,
+            // failing» shows both good channels, the box once, and all three rows in the list). A row whose name
+            // the record already uses enters the list under the name the batch gives it (`0x41699d`, «<name>_2»).
+            let names = fvb_core::quick::batch_names(&d.osc, d.computed.iter().map(|c| c.name.as_str()).chain(d.loose_defs.iter().map(|l| l.0.as_str())), &calc);
+            for (n, (_, f)) in names.into_iter().zip(&calc) {
+                d.loose_defs.push((n, f.clone()));
+            }
+            let show_primary = d.primary_values();
+            if let Err(e) = d.run_batch(show_primary) {
+                alerts.push(e.to_string());
             }
         }
         for j in 0..d.computed.len() {
@@ -991,6 +996,7 @@ impl App {
     }
 
     pub fn load_settings_from(&mut self, di: usize, path: &std::path::Path) {
+        self.docs[di].drop_bar_position();
         self.docs[di].set.tree.load_path(path);
         self.apply_record_settings(di, true);
         self.docs[di].set.modified = true;
@@ -1059,7 +1065,11 @@ impl App {
     pub fn save_active(&mut self) -> bool {
         let Some(ai) = self.active.filter(|&a| a < self.docs.len()) else { return false };
         match self.save_path_of(ai) {
-            Some(p) => self.report_save(ai, &p),
+            Some(p) => {
+                // The save onto the record's own file runs at once: the views' refresh follows (#232).
+                self.docs[ai].drop_bar_position();
+                self.report_save(ai, &p)
+            }
             None => {
                 self.ask_save_as(ai, |_, _, _| {});
                 false
@@ -1126,6 +1136,7 @@ impl App {
                 }
                 _ => path,
             };
+            app.docs[ai].drop_bar_position();
             let ok = app.report_save(ai, &path);
             then(app, ctx, ok);
         });
@@ -2299,6 +2310,46 @@ mod tests {
         app.after_flag_command(crate::chansel::ChanFlag::Invert);
         assert_eq!(app.dlg.alerts.len(), 1, "the box again after a flag command");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// #247 (clone): a `.set` whose definitions are good, good, failing: the two good ones are channels (the batch
+    /// `0x415780` never rolls back), the box shows once, and the list holds all three rows in the file's order. A
+    /// failing row in the middle ends the walk: the row after it stays a row without a channel.
+    #[test]
+    fn good_definitions_before_a_failing_one_become_channels_and_the_list_keeps_all() {
+        let load = |rows: &[(&str, &str)]| {
+            let dir = temp_dir("goodgoodbad");
+            let cfg = write_record(&dir);
+            let mut app = App::new();
+            app.persist = false;
+            let di = open(&mut app, &cfg);
+            app.active = Some(di);
+            app.dlg.alerts.clear();
+            let sec = app.docs[di].set.tree.section_mut("CalculatedChannels");
+            for (i, (n, f)) in rows.iter().enumerate() {
+                sec.set_str(&format!("Channel{i}"), &format!("{n},{f}"));
+            }
+            app.apply_record_settings(di, true);
+            let _ = std::fs::remove_dir_all(&dir);
+            app
+        };
+        let app = load(&[("G1", "Ua*2"), ("G2", "Ub+Uc"), ("Bad", "NoSuchChannel+1")]);
+        let d = &app.docs[0];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["G1", "G2"], "the good rows are channels");
+        assert_eq!(d.loose_defs, [("Bad".to_string(), "NoSuchChannel+1".to_string())]);
+        assert_eq!(app.dlg.alerts.len(), 1, "one box");
+        assert_eq!(d.definition_pairs().iter().map(|p| p.0.as_str()).collect::<Vec<_>>(), ["G1", "G2", "Bad"], "the list keeps all three");
+        let app = load(&[("G1", "Ua*2"), ("Bad", "NoSuchChannel+1"), ("G3", "Ub+Uc")]);
+        let d = &app.docs[0];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["G1"]);
+        assert_eq!(d.definition_pairs().iter().map(|p| p.0.as_str()).collect::<Vec<_>>(), ["G1", "Bad", "G3"]);
+        assert_eq!(app.dlg.alerts.len(), 1);
+        // A row named like a channel of the record: the batch names its channel «Ua_2», and no row is left over.
+        let app = load(&[("Ua", "Ua*2")]);
+        let d = &app.docs[0];
+        assert_eq!(d.computed.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["Ua_2"]);
+        assert!(d.loose_defs.is_empty(), "no stray row: {:?}", d.loose_defs);
+        assert_eq!(d.definition_pairs(), [("Ua_2".to_string(), "Ua*2".to_string())]);
     }
 
     /// #31: «Загрузка настроек» (32860, `0x4156e0`) empties the calculation manager's lists with the channels: a

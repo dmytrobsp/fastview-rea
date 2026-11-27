@@ -284,3 +284,10 @@ misbehaves and the better behaviour is obvious (the maintainer,
   margin rectangle and the rest is black — its memory bitmap's unpainted area stretched in (`0x405970`, MM_ISOTROPIC).
   Ours always fits the view to the margin rectangle. Reason: black areas on paper waste toner and hide nothing useful;
   the decision of the 2026-11-27 triage (the rule behind the black area was not decoded).
+- **A визир switched on beyond the end of a short record (#251).** The original's ribbon toggle (`0x45c120`) clamps the
+  placed sample only at 0. On a record shorter than three quarters of the plot, В2 / В3 land past the last sample. The
+  status bar and the difference band then give times beyond the record's end, while the lines (and their labels) are
+  drawn one label-column width left of that position, over samples they do not belong to (clone, one run at the opening
+  scale on a 60-sample record; the cause of the offset was not read). Ours limits the placement to the last sample, so
+  the line, the band and the status name the same sample. Reason: the original's three readouts of one визир disagree,
+  and its line points at no sample it reports; the decision of the 2026-11-27 triage.
