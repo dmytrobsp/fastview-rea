@@ -75,9 +75,6 @@ struct ColorState {
     spectrum: bool,
     /// «Выбор...»'s pick mode, while it runs.
     pick: Option<Eyedrop>,
-    /// Frames still to leave Enter / Esc alone after the pick mode ended
-    /// by one (the key's event may reach the dialog a frame later).
-    quiet: u8,
 }
 
 impl App {
@@ -85,17 +82,27 @@ impl App {
     /// selected channel's colour (the «Текущий» half of the swatch); OK
     /// gives the new colour to every selected channel.
     pub fn color_window(&mut self, ctx: &egui::Context) {
-        let Some(current) = self.color_dialog else { return };
         let key = egui::Id::new("fv_color_state");
-        let mut st: ColorState = ctx.data(|d| d.get_temp(key)).unwrap_or(ColorState { new: current, spectrum: false, pick: None, quiet: 0 });
-        // «Выбор...»'s pick mode (L9.258): the new colour follows the screen
-        // pixel under the pointer until a click, Enter or Esc.
-        let mut screen = eyedrop::system();
+        let Some(current) = self.color_dialog else {
+            // The dialog went away (a document closed, say) in the middle of
+            // a pick: the capture goes back.
+            if ctx.data(|d| d.get_temp::<ColorState>(key)).is_some_and(|st| st.pick.is_some()) {
+                self.screen.release();
+            }
+            ctx.data_mut(|d| d.remove::<ColorState>(key));
+            return;
+        };
+        let mut st: ColorState = ctx.data(|d| d.get_temp(key)).unwrap_or(ColorState { new: current, spectrum: false, pick: None });
+        // «Выбор...»'s pick mode (L9.258): the mouse is captured; the new
+        // colour follows the screen pixel under the pointer until a click,
+        // Enter or Esc, read from this window's own input events.
+        let picking = st.pick.is_some();
         if let Some(mut e) = st.pick {
-            screen.show_cursor();
+            self.screen.show_cursor();
             ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
             ctx.request_repaint();
-            match e.step(screen.sample(), st.new) {
+            let evs = eyedrop::input_events(&ctx.input(|i| i.events.clone()));
+            match e.step(&evs, self.screen.pixel(), st.new, self.screen.capture_lost()) {
                 Step::Preview(c) => {
                     st.new = c;
                     st.pick = Some(e);
@@ -103,22 +110,22 @@ impl App {
                 Step::Done(c) | Step::Restore(c) => {
                     st.new = c;
                     st.pick = None;
-                    st.quiet = 1;
+                    self.screen.release();
                 }
             }
-        }
-        // The keys that steer the pick mode are not the dialog's.
-        if st.pick.is_some() || st.quiet > 0 {
-            ctx.input_mut(|i| {
-                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter);
-                i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
+            // Every key but the two that steer the mode is dropped, and
+            // those are not the dialog's (Enter / Esc end the pick only).
+            ctx.input_mut(|i| i.events.retain(|ev| !matches!(ev, egui::Event::Key { .. } | egui::Event::Text(_) | egui::Event::Copy | egui::Event::Cut | egui::Event::Paste(_))));
+            // The click that ends the pick reaches no widget: a screen-wide
+            // shield over everything of ours.
+            egui::Area::new(egui::Id::new("fv_eyedrop_shield")).order(egui::Order::Foreground).fixed_pos(ctx.screen_rect().min).interactable(true).show(ctx, |ui| {
+                ui.allocate_exact_size(ctx.screen_rect().size(), egui::Sense::click_and_drag());
             });
-            if st.pick.is_none() {
-                st.quiet -= 1;
-            }
         }
+        let can_pick = self.screen.available() && !picking;
         let mut open = true;
         let mut done: Option<bool> = None;
+        let mut start_pick = false;
         // The «Цвета» template: 252 × 180 DLU (378 × 293 px).
         crate::dialogs::dlg(ctx, "Цвета").margin(0.0).collapsible(false).resizable(false).open(&mut open).show(ctx, |ui| {
             let (client, _) = ui.allocate_exact_size(crate::dialogs::dlu_size(252, 180), egui::Sense::hover());
@@ -238,8 +245,9 @@ impl App {
             }
             // «Выбор...» picks a colour off the screen (eyedrop.rs); greyed
             // where the platform has no screen read.
-            if win_button_en(ui, dlu(client, 194, 65, 53, 14), "Выбор...", false, screen.available() && st.pick.is_none()).clicked() {
+            if win_button_en(ui, dlu(client, 194, 65, 53, 14), "Выбор...", false, can_pick).clicked() {
                 st.pick = Some(Eyedrop::new(st.new));
+                start_pick = true;
             }
             let new_l = dlu(client, 194, 110, 53, 9);
             p.text(Pos2::new(new_l.center().x, new_l.top()), egui::Align2::CENTER_TOP, "Новый", dlg_font(), Color32::BLACK);
@@ -253,6 +261,14 @@ impl App {
             p.text(Pos2::new(cur_l.center().x, cur_l.top()), egui::Align2::CENTER_TOP, "Текущий", dlg_font(), Color32::BLACK);
         });
         let done = done.or_else(|| self.dialog_keys(ctx));
+        // The mode starts here (the button's click) with the capture taken;
+        // a dialog that ends this frame hands it back at once.
+        if start_pick {
+            self.screen.capture();
+        }
+        if (done.is_some() || !open) && st.pick.is_some() {
+            self.screen.release();
+        }
         match done {
             Some(true) => {
                 if let Some(d) = self.active_doc_mut() {
@@ -402,5 +418,133 @@ mod tests {
                 assert!((*a as i32 - b as i32).abs() <= 1, "{c:?} → {back:?}");
             }
         }
+    }
+
+    use crate::eyedrop::{Eyedrop, ScreenSource};
+    use std::{cell::RefCell, rc::Rc};
+
+    /// A screen of the test's making: the pixel under the pointer, and a log
+    /// of the capture calls.
+    #[derive(Default)]
+    struct Log {
+        pixel: Option<Color32>,
+        released: u32,
+        lost: bool,
+    }
+    struct Fake(Rc<RefCell<Log>>);
+    impl ScreenSource for Fake {
+        fn available(&self) -> bool {
+            true
+        }
+        fn pixel(&mut self) -> Option<Color32> {
+            self.0.borrow().pixel
+        }
+        fn release(&mut self) {
+            self.0.borrow_mut().released += 1;
+        }
+        fn capture_lost(&self) -> bool {
+            self.0.borrow().lost
+        }
+    }
+
+    const START: Color32 = Color32::from_rgb(40, 50, 60);
+    const SEEN: Color32 = Color32::from_rgb(11, 22, 33);
+
+    /// An app with the dialog open and the pick mode running over `Fake`.
+    fn picking() -> (App, egui::Context, Rc<RefCell<Log>>) {
+        let mut app = App::new();
+        app.color_dialog = Some(Color32::from_rgb(1, 2, 3));
+        let log = Rc::new(RefCell::new(Log { pixel: Some(SEEN), ..Log::default() }));
+        app.screen = Box::new(Fake(log.clone()));
+        let ctx = egui::Context::default();
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("fv_color_state"), ColorState { new: START, spectrum: false, pick: Some(Eyedrop::new(START)) }));
+        (app, ctx, log)
+    }
+
+    fn frame(app: &mut App, ctx: &egui::Context, events: Vec<egui::Event>) {
+        let _ = ctx.run(egui::RawInput { events, ..Default::default() }, |c| app.color_window(c));
+    }
+
+    fn state(ctx: &egui::Context) -> Option<ColorState> {
+        ctx.data(|d| d.get_temp(egui::Id::new("fv_color_state")))
+    }
+
+    fn key(key: egui::Key) -> egui::Event {
+        egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE }
+    }
+
+    fn button(button: egui::PointerButton, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton { pos: Pos2::new(5.0, 5.0), button, pressed, modifiers: egui::Modifiers::NONE }
+    }
+
+    #[test]
+    fn the_new_colour_follows_the_pointer_and_the_capture_stays() {
+        let (mut app, ctx, log) = picking();
+        frame(&mut app, &ctx, vec![]);
+        let st = state(&ctx).unwrap();
+        assert_eq!(st.new, SEEN);
+        assert!(st.pick.is_some());
+        assert_eq!(log.borrow().released, 0);
+    }
+
+    /// Enter and Esc end the pick only: the dialog stays open, the capture
+    /// goes back (the original's loop keeps them from the dialog).
+    #[test]
+    fn enter_and_escape_end_the_pick_and_leave_the_dialog_open() {
+        for (k, want) in [(egui::Key::Enter, SEEN), (egui::Key::Escape, START)] {
+            let (mut app, ctx, log) = picking();
+            frame(&mut app, &ctx, vec![key(k)]);
+            assert!(app.color_dialog.is_some(), "{k:?}: the dialog stays");
+            let st = state(&ctx).unwrap();
+            assert!(st.pick.is_none(), "{k:?}: the pick ended");
+            assert_eq!(st.new, want, "{k:?}");
+            assert_eq!(log.borrow().released, 1, "{k:?}: the capture was given back");
+        }
+    }
+
+    /// A press and its release inside one frame (a tap) end the pick; so
+    /// does a right button's press. Neither reaches the dialog's widgets.
+    #[test]
+    fn a_quick_click_and_the_right_button_end_the_pick() {
+        use egui::PointerButton as B;
+        for evs in [vec![button(B::Primary, true), button(B::Primary, false)], vec![button(B::Secondary, true)]] {
+            let (mut app, ctx, log) = picking();
+            frame(&mut app, &ctx, evs);
+            assert!(app.color_dialog.is_some());
+            let st = state(&ctx).unwrap();
+            assert!(st.pick.is_none());
+            assert_eq!(st.new, SEEN);
+            assert_eq!(log.borrow().released, 1);
+        }
+    }
+
+    /// Other keys are dropped during the pick (the dialog's Tab, Space, typing).
+    #[test]
+    fn other_keys_do_nothing_during_the_pick() {
+        let (mut app, ctx, log) = picking();
+        frame(&mut app, &ctx, vec![key(egui::Key::Tab), key(egui::Key::Space), egui::Event::Text("x".into())]);
+        assert!(state(&ctx).unwrap().pick.is_some());
+        assert_eq!(log.borrow().released, 0);
+    }
+
+    #[test]
+    fn a_lost_capture_cancels_the_pick() {
+        let (mut app, ctx, log) = picking();
+        log.borrow_mut().lost = true;
+        frame(&mut app, &ctx, vec![]);
+        let st = state(&ctx).unwrap();
+        assert!(st.pick.is_none());
+        assert_eq!(st.new, START);
+        assert_eq!(log.borrow().released, 1);
+    }
+
+    /// The dialog going away in the middle of a pick gives the capture back.
+    #[test]
+    fn closing_the_dialog_mid_pick_releases_the_capture() {
+        let (mut app, ctx, log) = picking();
+        app.color_dialog = None;
+        frame(&mut app, &ctx, vec![]);
+        assert_eq!(log.borrow().released, 1);
+        assert!(state(&ctx).is_none());
     }
 }
