@@ -45,15 +45,17 @@ maintainer), **issue**.
 - **Decided**: 2026-10-30, the maintainer.
 - **Issue**: [#52](https://github.com/dmytrobsp/fastview-rea/issues/52).
 
-## Splitter and tab-drag pointers
+## Splitter, tab-drag and colour-pick pointers
 
 - **What differs**: over the split bars and while dragging an MDI tab the original shows MFC's own cursors; ours shows
-  the system's resize / move cursors in the same places (L9.263, L9.392).
-- **Where it shows**: the pointer's picture only; where it changes and what dragging does are the same.
+  the system's resize / move cursors in the same places (L9.263, L9.392). While «Выбор...» of the colour dialog picks a
+  colour from the screen, the original shows MFC's eyedropper cursor; ours shows the system cross (L9.448).
+- **Where it shows**: the pointer's picture only; where it changes and what dragging or picking does are the same.
 - **Why it isn't fixed**: egui sets system cursors only and resets the cursor every frame; MFC's cursor images are
   Microsoft's.
-- **Decided**: 2026-10-30, the maintainer.
-- **Issue**: [#53](https://github.com/dmytrobsp/fastview-rea/issues/53).
+- **Decided**: 2026-10-30, the maintainer (splitters, tab drag); 2026-11-27, the controller with the user (the
+  colour pick).
+- **Issues**: [#53](https://github.com/dmytrobsp/fastview-rea/issues/53), [#36](https://github.com/dmytrobsp/fastview-rea/issues/36).
 
 ## Scroll-bar timing and animation, the first window's position
 
